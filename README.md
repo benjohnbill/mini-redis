@@ -1,11 +1,7 @@
 <!-- readme: archetype=team -->
-<!-- 배너 이미지가 생기면 아래 주석을 풉니다.
 <p align="center">
   <img src="docs/images/mini-redis_README_banner.png" width="100%" alt="mini-redis 배너">
 </p>
--->
-
-# mini-redis
 
 [![CI](https://github.com/benjohnbill/mini-redis/actions/workflows/ci.yml/badge.svg)](https://github.com/benjohnbill/mini-redis/actions/workflows/ci.yml)
 ![C](https://img.shields.io/badge/C-11-A8B9CC?logo=c&logoColor=white)
@@ -86,4 +82,10 @@ mini-redis/
 
 ### Team
 
-<!-- 팀원 이름을 적습니다. -->
+이민호 · 안다빈 · 조진근
+
+### 상표
+
+이 프로젝트는 Krafton Jungle 과제로 만든 학습용 구현이며, Redis Ltd.가 보증, 지원, 인증하지 않습니다. This project is not endorsed, supported, or certified by Redis.
+
+Redis® is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd.
