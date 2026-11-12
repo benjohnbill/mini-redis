@@ -10,7 +10,7 @@ LDFLAGS  := -fsanitize=address,undefined
 BUILD    := build
 
 # 서버의 main이 없는 라이브러리 소스입니다. 테스트와 서버가 함께 링크합니다.
-LIB_SRCS := $(filter-out src/server.c,$(wildcard src/*.c))
+LIB_SRCS := src/hash.c src/list.c
 LIB_OBJS := $(LIB_SRCS:src/%.c=$(BUILD)/%.o)
 
 # tests/acutest.h: https://github.com/mity/acutest (MIT),
