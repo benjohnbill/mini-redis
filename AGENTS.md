@@ -1,5 +1,10 @@
 # AGENTS.md
 
+Before you change code, docs, or tests, or commit, read `CONVENTION.md` and `GLOSSARY.md`.
+
+@CONVENTION.md
+@GLOSSARY.md
+
 ## Agent skills
 
 ### Issue tracker
