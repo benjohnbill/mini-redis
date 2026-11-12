@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # 러너 커널의 주소 무작위화 비트가 크면 AddressSanitizer가 시작하지 못하는 경우가 있어 줄입니다.
+      - run: sudo sysctl vm.mmap_rnd_bits=28
+      - run: make verify

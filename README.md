@@ -22,7 +22,16 @@ Krafton Jungle Week 11-12: a key-value store on a hash table, usable through an 
 
 ## 실행
 
-M0에서 적습니다.
+gcc(또는 clang), make, python3가 필요합니다.
+
+```bash
+make verify              # 빌드, 테스트, ID 검사 (CI와 같은 명령)
+make test                # 테스트만 실행
+./build/mini-redis 8080  # 서버 실행 (포트를 생략하면 8080)
+curl http://127.0.0.1:8080/
+```
+
+지금 서버는 요청을 하나씩 처리하고, 어떤 요청에도 `ok`를 돌려줍니다.
 
 ## 알려진 한계
 
