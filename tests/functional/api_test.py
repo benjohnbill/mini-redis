@@ -124,6 +124,22 @@ def encoded_nul_key_is_not_truncated(server):
     expect(truncated_body, b'{"error":"key_not_found"}', "nul 조회의 body")
 
 
+def raw_question_mark_rejected_and_encoded_one_kept(server):
+    status, content_type, body = server.request("PUT", "/keys/query?b=1", body=b"v")
+    # ? 앞까지를 key로 읽었다면 key "query"가 저장됐을 것입니다.
+    stored_status, _, _ = server.request("GET", "/keys/query")
+    encoded_status, _, _ = server.request("PUT", "/keys/query%3Fb=1", body=b"w")
+    found_status, _, found_body = server.request("GET", "/keys/query%3fb=1")
+
+    expect(status, 400, "인코딩하지 않은 ? 저장의 상태 코드")
+    expect(content_type, "application/json", "인코딩하지 않은 ? 저장의 Content-Type")
+    expect(body, b'{"error":"bad_key_encoding"}', "인코딩하지 않은 ? 저장의 body")
+    expect(stored_status, 404, "query 조회의 상태 코드")
+    expect(encoded_status, 204, "%3F 저장의 상태 코드")
+    expect(found_status, 200, "%3f 조회의 상태 코드")
+    expect(found_body, b"w", "%3f 조회의 body")
+
+
 def headers_only_request(server, path, header, value):
     """헤더만 보내고 응답을 읽습니다. body는 보내지 않습니다. 보내면 서버가 읽지
     않은 데이터를 남긴 채 연결을 닫을 때 커널이 연결을 리셋해서, 클라이언트가
@@ -227,6 +243,8 @@ TESTS = [
     ("[T5] (기능) 실제 서버에 저장한 value를 조회로 돌려받는다", put_then_get_returns_value),
     ("[T6] (기능) '\\0'과 UTF-8이 아닌 바이트가 든 value를 그대로 돌려받는다", binary_value_round_trips),
     ("[T7] (기능) %00이 든 key가 실제 서버를 지나도 잘리지 않는다", encoded_nul_key_is_not_truncated),
+    ("(기능) 경로의 인코딩하지 않은 ?는 400 bad_key_encoding을 받고, %3F로 보낸 ?는 key에 남는다",
+     raw_question_mark_rejected_and_encoded_one_kept),
     ("[T8] (기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다", headers_only_over_limit_returns_413),
     ("(기능) 헤더만 보내도 Transfer-Encoding: chunked이면 411을 받는다", headers_only_chunked_returns_411),
     ("(기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다", body_at_limit_round_trips),

@@ -229,6 +229,41 @@ static void broken_encoding_returns_400_bad_key_encoding(void)
     store_destroy(store);
 }
 
+static void raw_question_mark_returns_400_bad_key_encoding(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response with_query =
+        request(store, "PUT", "/keys/a?b=1", "v", 1);
+    struct api_response empty_query = request(store, "PUT", "/keys/a?", "v", 1);
+    /* ? 앞까지를 key로 읽었다면 key "a"가 저장됐을 것입니다. */
+    struct api_response stored = request(store, "GET", "/keys/a", NULL, 0);
+
+    expect_error(with_query, 400, "{\"error\":\"bad_key_encoding\"}");
+    expect_error(empty_query, 400, "{\"error\":\"bad_key_encoding\"}");
+    expect_error(stored, 404, "{\"error\":\"key_not_found\"}");
+    store_destroy(store);
+}
+
+static void encoded_question_mark_becomes_question_mark_byte_in_key(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    struct api_response saved = request(store, "PUT", "/keys/a%3Fb", "v", 1);
+    TEST_CHECK(saved.status == 204);
+
+    /* 소문자 16진수 %3f도 같은 ? 바이트이므로, 같은 key "a?b"입니다. */
+    struct api_response response =
+        request(store, "GET", "/keys/a%3fb", NULL, 0);
+
+    TEST_CHECK(response.status == 200);
+    TEST_MSG("상태 코드: %d", response.status);
+    TEST_ASSERT(response.body_len == 1);
+    TEST_CHECK(memcmp(response.body, "v", 1) == 0);
+    store_destroy(store);
+}
+
 static void path_outside_keys_returns_404_route_not_found(void)
 {
     struct store *store = store_create();
@@ -346,6 +381,11 @@ TEST_LIST = {
      empty_key_returns_400_empty_key},
     {"%G1이나 끝이 잘린 %2는 400과 {\"error\":\"bad_key_encoding\"}을 돌려준다",
      broken_encoding_returns_400_bad_key_encoding},
+    {"경로에 인코딩하지 않은 ?가 있으면 400과 "
+     "{\"error\":\"bad_key_encoding\"}을 돌려주고 저장하지 않는다",
+     raw_question_mark_returns_400_bad_key_encoding},
+    {"%3F는 key 안의 ? 바이트가 된다",
+     encoded_question_mark_becomes_question_mark_byte_in_key},
     {"/keys/로 시작하지 않는 경로는 404와 {\"error\":\"route_not_found\"}를 "
      "돌려준다",
      path_outside_keys_returns_404_route_not_found},

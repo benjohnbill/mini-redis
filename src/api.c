@@ -135,12 +135,19 @@ static struct api_response key_request_handle(struct store *store,
 
 /* %HH를 정확히 한 번 풀어 key에 쓰고, 그 길이를 *key_len에 둡니다. 푼 결과는
    다시 보지 않으므로 %2541은 %41이 됩니다. %00도 길이에 들어가 잘리지 않습니다.
-   %가 16진수 두 자리로 이어지지 않으면 false를 돌려줍니다. */
+   %가 16진수 두 자리로 이어지지 않거나 인코딩하지 않은 ?가 있으면 false를
+   돌려줍니다. */
 static bool key_decode(const char *encoded, size_t encoded_len, char *key,
                        size_t *key_len)
 {
     size_t written = 0;
     for (size_t i = 0; i < encoded_len; i++) {
+        /* ?는 HTTP에서 경로와 query를 나누는 문자라서, 인코딩하지 않은 ?를
+           key의 바이트로 쓰면 다른 서버와 라이브러리가 key를 다르게 읽습니다.
+           key 안의 ?는 %3F로 보내야 합니다(spec Q3). */
+        if (encoded[i] == '?') {
+            return false;
+        }
         if (encoded[i] != '%') {
             key[written++] = encoded[i];
             continue;

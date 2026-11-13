@@ -37,6 +37,7 @@ static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
+static size_t target_len(const struct mg_http_message *message);
 static void response_send(struct mg_connection *connection,
                           const struct api_response *response);
 static const char *status_reason(int status);
@@ -181,9 +182,21 @@ static void request_handle(struct mg_connection *connection,
     struct store *store = connection->fn_data;
     struct api_response response = api_handle(
         store, message->method.buf, message->method.len, message->uri.buf,
-        message->uri.len, message->body.buf, message->body.len);
+        target_len(message), message->body.buf, message->body.len);
     /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. */
     response_send(connection, &response);
+}
+
+/* mongoose는 요청 줄의 대상을 ? 앞(uri)과 뒤(query)로 나눕니다. api 층은 ?를
+   직접 판단하므로 둘을 합친 대상 전부의 길이를 돌려줍니다. 두 조각은 수신
+   버퍼에서 ?를 사이에 두고 이어져 있고, ?가 없으면 query.buf가 NULL입니다. */
+static size_t target_len(const struct mg_http_message *message)
+{
+    if (message->query.buf == NULL) {
+        return message->uri.len;
+    }
+
+    return (size_t)(message->query.buf + message->query.len - message->uri.buf);
 }
 
 /* body는 mg_send로 보냅니다. mg_http_reply는 printf 형식이라 '\0'에서
