@@ -1,0 +1,21 @@
+# Team naming and brace rules (CONVENTION.md, section 코드). clangd shows them
+# as live warnings in the editor; `make lint` runs the same checks.
+# Only convention checks are on. Bug-finding is the job of ASan and UBSan in
+# `make test`.
+Checks: '-*,readability-identifier-naming,readability-braces-around-statements,readability-identifier-length'
+CheckOptions:
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.StructCase: lower_case
+  readability-identifier-naming.UnionCase: lower_case
+  readability-identifier-naming.EnumCase: lower_case
+  readability-identifier-naming.EnumConstantCase: UPPER_CASE
+  readability-identifier-naming.TypedefCase: lower_case
+  # Function-like macros may be lower_case (hash_entry, list_entry).
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^[a-z][a-z0-9_]*$'
+  # A name says what it holds, so two letters are too short. The defaults
+  # still allow loop counters i, j, k and a parameter named n.
+  readability-identifier-length.MinimumVariableNameLength: 3
+  readability-identifier-length.MinimumParameterNameLength: 3

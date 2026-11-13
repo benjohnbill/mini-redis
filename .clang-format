@@ -1,0 +1,22 @@
+# Team C style: Linux kernel style with two changes, the same file as the
+# Pintos team repositories (week08, week09).
+#   1. 4-space indent instead of 8-wide tabs.
+#   2. Braces are always required, even around one statement.
+# The editor (clangd) and `make format` both read this file.
+BasedOnStyle: LLVM
+BreakBeforeBraces: Linux
+IndentWidth: 4
+ContinuationIndentWidth: 4
+UseTab: Never
+ColumnLimit: 80
+InsertBraces: true
+SpaceBeforeParens: ControlStatements
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+IndentCaseLabels: false
+PointerAlignment: Right
+SortIncludes: Never
+ReflowComments: false
