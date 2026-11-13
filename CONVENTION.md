@@ -26,7 +26,7 @@
 
 ## 코드
 
-모양은 Pintos 팀 레포와 같은 `.clang-format`이 정합니다. Linux 스타일에 스페이스 4칸 들여쓰기, 항상 쓰는 중괄호, 80열을 더했습니다. 이름의 형식(snake_case, 상수는 대문자)과 길이는 `.clang-tidy`가 검사합니다. 아래 `이름` 규칙은 도구가 잡지 못하므로 리뷰에서 봅니다.
+모양은 Pintos 팀 레포와 같은 `.clang-format`이 정합니다. Linux 스타일에 스페이스 4칸 들여쓰기, 항상 쓰는 중괄호, 80열을 더했습니다. 이름의 형식(snake_case, 상수는 대문자)과 길이는 `.clang-tidy`가 검사합니다. 아래 `이름`과 `함수` 규칙은 도구가 잡지 못하므로 리뷰에서 봅니다.
 
 ```bash
 make lint     # 위반을 출력하고, 위반이 있으면 실패로 끝납니다. make verify도 실행합니다
@@ -75,8 +75,29 @@ make format   # 모양 위반을 고치고, 바꾼 줄을 보여 줍니다
    | value와 그 바이트 길이 | `value`, `value_len` | `v`, `val`, `vlen` |
    | 파일 디스크립터 | `fd` | `file_descriptor` |
 
-5. **공개 함수는 단계의 나열로 읽히게 씁니다.** 목적이 하나인 덩어리가 3줄을 넘으면 동사 이름의 `static` 함수로 뺍니다. `store_set`은 `entry_create`로 만들고 `hash_replace`로 넣는 두 단계로 읽힙니다.
-6. **구조체에는 `typedef`를 붙이지 않고, 숫자 상수에는 이름을 붙입니다**(`REQUEST_MAX`). `struct`가 보여야 값인지 구조체인지 바로 알 수 있기 때문입니다.
+5. **구조체에는 `typedef`를 붙이지 않고, 숫자 상수에는 이름을 붙입니다**(`REQUEST_MAX`). `struct`가 보여야 값인지 구조체인지 바로 알 수 있기 때문입니다.
+
+### 함수
+
+1. **함수는 단계의 나열로 읽히게 씁니다.** 목적이 하나인 덩어리가 3줄을 넘으면 동사 이름의 `static` 함수로 뺍니다. 함수 하나가 큰 단계와 세부 작업을 섞지 않게 하기 위해서입니다. `store_set`은 `entry_create`로 만들고 `hash_replace`로 넣는 두 단계로 읽히고, `entry_create`의 필드 대입 4줄은 `entry_init`이 맡습니다.
+2. **파일은 위에서 아래로 읽히게 배치합니다.** 파일 위쪽에 `static` 함수 선언을 모으고, 공개 함수(서버는 `main`)를 먼저 둡니다. helper는 공개 함수가 처음 부르는 순서대로 그 뒤에 둡니다. 읽는 사람이 큰 흐름을 먼저 보고, 필요할 때만 세부로 내려가게 하기 위해서입니다.
+3. **함수의 마지막 `return` 위에 빈 줄 없이 이어진 줄이 3줄 이상이면, 그 `return` 앞에 빈 줄을 하나 둡니다.** 일하는 부분과 결과를 돌려주는 부분을 눈으로 나누기 위해서입니다. 중간에서 빠져나가는 `return`과 본문이 짧은 함수에는 두지 않습니다. clang-format은 이 빈 줄을 지우지 않지만 강제하지도 않으므로 리뷰에서 봅니다.
+
+   ```c
+   static struct entry *entry_create(const void *key, size_t key_len,
+                                     const void *value, size_t value_len)
+   {
+       ...
+       if (entry == NULL) {
+           return NULL;          /* 중간에서 빠져나감: 빈 줄 없음 */
+       }
+       memcpy(entry->bytes, bytes_or_empty(key, key_len), key_len);
+       memcpy(entry->bytes + key_len, bytes_or_empty(value, value_len), value_len);
+       entry_init(entry, key_len, value_len);
+
+       return entry;             /* 위에 3줄 이상: 빈 줄 하나 */
+   }
+   ```
 
 ## 마일스톤
 
