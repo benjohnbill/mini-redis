@@ -23,6 +23,9 @@ STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
 BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), spec Q10
 LARGE_REQUEST_TIMEOUT = 15.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
+PROMPT_TIMEOUT = 0.5  # 느린 연결이 있어도 다른 요청이 이 시간 안에 응답을 받아야 합니다
+SLOW_BODY_CHUNK = 64 * 1024
+SLOW_BODY_CHUNKS = 4
 SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime error:")
 
 
@@ -154,6 +157,46 @@ def body_at_limit_round_trips(server):
         raise AssertionError("조회한 body가 저장한 body와 다릅니다")
 
 
+def expect_prompt_response(server, key):
+    """느린 연결과 별개인 새 연결의 요청이 PROMPT_TIMEOUT 안에 응답을 받는지 봅니다."""
+    started = time.monotonic()
+    status, _, body = server.request("GET", f"/keys/{key}", timeout=PROMPT_TIMEOUT)
+    elapsed = time.monotonic() - started
+
+    expect(status, 404, "다른 요청의 상태 코드")
+    expect(body, b'{"error":"key_not_found"}', "다른 요청의 body")
+    if elapsed >= PROMPT_TIMEOUT:
+        raise AssertionError(f"다른 요청이 {elapsed:.3f}초 걸렸습니다")
+
+
+def half_sent_headers_do_not_block_others(server):
+    # 요청 줄과 헤더 일부만 보내고 빈 줄(헤더의 끝)은 보내지 않습니다.
+    with socket.create_connection((HOST, server.port), timeout=REQUEST_TIMEOUT) as slow:
+        slow.sendall(b"PUT /keys/half-headers HTTP/1.1\r\nHost: x\r\nContent-Le")
+        time.sleep(0.05)  # 서버가 조각을 읽고 다음 바이트를 기다리는 상태가 되게 합니다
+
+        expect_prompt_response(server, "other-while-half-headers")
+
+
+def slow_large_body_does_not_block_others(server):
+    # 바이트마다 값이 바뀌어, 조각 사이에서 잘리거나 밀리면 조회 비교가 실패합니다.
+    value = bytes(range(256)) * (SLOW_BODY_CHUNK * SLOW_BODY_CHUNKS // 256)
+    head = f"PUT /keys/slow-body HTTP/1.1\r\nHost: x\r\nContent-Length: {len(value)}\r\n\r\n"
+    with socket.create_connection((HOST, server.port), timeout=REQUEST_TIMEOUT) as slow:
+        slow.sendall(head.encode("ascii"))
+        for index in range(SLOW_BODY_CHUNKS):
+            slow.sendall(value[index * SLOW_BODY_CHUNK:(index + 1) * SLOW_BODY_CHUNK])
+            time.sleep(0.05)  # 서버가 조각을 읽고 나머지 body를 기다리는 상태가 되게 합니다
+            expect_prompt_response(server, f"other-while-slow-body-{index}")
+        status_line = slow.makefile("rb").readline()
+
+    expect(status_line.split(b" ")[1:2], [b"204"], "느린 저장의 상태 코드")
+    status, _, body = server.request("GET", "/keys/slow-body")
+    expect(status, 200, "느린 저장 뒤 조회의 상태 코드")
+    if body != value:
+        raise AssertionError("조회한 body가 천천히 보낸 body와 다릅니다")
+
+
 def stop_exits_zero_without_sanitizer_errors(server):
     code = server.stop()
 
@@ -171,6 +214,8 @@ TESTS = [
     ("(기능) %00이 든 key가 실제 서버를 지나도 잘리지 않는다", encoded_nul_key_is_not_truncated),
     ("(기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다", headers_only_over_limit_returns_413),
     ("(기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다", body_at_limit_round_trips),
+    ("(기능) 헤더를 반쯤 보내고 멈춘 연결이 있어도 다른 요청은 바로 응답을 받는다", half_sent_headers_do_not_block_others),
+    ("(기능) 큰 body를 천천히 보내는 연결이 있어도 다른 요청은 바로 응답을 받는다", slow_large_body_does_not_block_others),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
 ]
 
