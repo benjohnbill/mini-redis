@@ -19,3 +19,7 @@ CheckOptions:
   # still allow loop counters i, j, k and a parameter named n.
   readability-identifier-length.MinimumVariableNameLength: 3
   readability-identifier-length.MinimumParameterNameLength: 3
+  # fd is the POSIX name for a file descriptor (CONVENTION.md, 같은 개념은
+  # 같은 이름). n stays allowed for a parameter, as in the default.
+  readability-identifier-length.IgnoredVariableNames: '^fd$'
+  readability-identifier-length.IgnoredParameterNames: '^(n|fd)$'

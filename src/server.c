@@ -16,38 +16,38 @@
 #define REQUEST_MAX 8192
 
 /* 헤더 끝(빈 줄)까지 읽습니다. 본문은 아직 다루지 않습니다. */
-static int read_request(int fd, char *buf, size_t cap)
+static int read_request(int fd, char *request, size_t capacity)
 {
     size_t len = 0;
-    while (len < cap - 1) {
-        ssize_t n = read(fd, buf + len, cap - 1 - len);
-        if (n < 0 && errno == EINTR) {
+    while (len < capacity - 1) {
+        ssize_t read_len = read(fd, request + len, capacity - 1 - len);
+        if (read_len < 0 && errno == EINTR) {
             continue;
         }
-        if (n <= 0) {
+        if (read_len <= 0) {
             return -1;
         }
-        len += (size_t)n;
-        buf[len] = '\0';
-        if (strstr(buf, "\r\n\r\n") != NULL) {
+        len += (size_t)read_len;
+        request[len] = '\0';
+        if (strstr(request, "\r\n\r\n") != NULL) {
             return 0;
         }
     }
     return -1;
 }
 
-static void write_all(int fd, const char *s, size_t len)
+static void write_all(int fd, const char *bytes, size_t len)
 {
     while (len > 0) {
-        ssize_t n = write(fd, s, len);
-        if (n < 0 && errno == EINTR) {
+        ssize_t written_len = write(fd, bytes, len);
+        if (written_len < 0 && errno == EINTR) {
             continue;
         }
-        if (n <= 0) {
+        if (written_len <= 0) {
             return;
         }
-        s += n;
-        len -= (size_t)n;
+        bytes += written_len;
+        len -= (size_t)written_len;
     }
 }
 
@@ -65,8 +65,9 @@ int main(int argc, char **argv)
     }
 
     /* 서버를 다시 켤 때 TIME_WAIT에 남은 포트를 바로 쓰기 위해서입니다. */
-    int yes = 1;
-    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
+    int reuse_addr = 1;
+    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_addr,
+               sizeof reuse_addr);
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
@@ -98,8 +99,8 @@ int main(int argc, char **argv)
             perror("accept");
             continue;
         }
-        char buf[REQUEST_MAX];
-        if (read_request(client_fd, buf, sizeof buf) == 0) {
+        char request[REQUEST_MAX];
+        if (read_request(client_fd, request, sizeof request) == 0) {
             write_all(client_fd, response, sizeof response - 1);
         }
         close(client_fd);
