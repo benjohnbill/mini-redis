@@ -44,8 +44,14 @@ struct api_response api_handle(struct store *store, const char *method,
         return response_error(500, ERROR_BODY("out_of_memory"));
     }
     size_t key_len = 0;
-    struct api_response response = response_unhandled();
-    if (key_decode(encoded_key, encoded_key_len, key, &key_len)) {
+    struct api_response response;
+    if (!key_decode(encoded_key, encoded_key_len, key, &key_len)) {
+        response = response_error(400, ERROR_BODY("bad_key_encoding"));
+    } else if (key_len == 0) {
+        /* store는 0바이트 key를 받지만, HTTP 입구에서는 "key 목록"으로 읽힐
+           여지를 없애려고 거절합니다(spec Q3). */
+        response = response_error(400, ERROR_BODY("empty_key"));
+    } else {
         response = key_dispatch(store, method, method_len, key, key_len, body,
                                 body_len);
     }

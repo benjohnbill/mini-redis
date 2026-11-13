@@ -204,6 +204,30 @@ static void encoded_hangul_becomes_utf8_bytes_in_key(void)
     store_destroy(store);
 }
 
+static void empty_key_returns_400_empty_key(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response = request(store, "PUT", "/keys/", "v", 1);
+
+    expect_error(response, 400, "{\"error\":\"empty_key\"}");
+    store_destroy(store);
+}
+
+static void broken_encoding_returns_400_bad_key_encoding(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response not_hex = request(store, "GET", "/keys/%G1", NULL, 0);
+    struct api_response cut_short = request(store, "GET", "/keys/a%2", NULL, 0);
+
+    expect_error(not_hex, 400, "{\"error\":\"bad_key_encoding\"}");
+    expect_error(cut_short, 400, "{\"error\":\"bad_key_encoding\"}");
+    store_destroy(store);
+}
+
 TEST_LIST = {
     {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
@@ -229,5 +253,9 @@ TEST_LIST = {
      percent_encoding_is_decoded_only_once},
     {"한글을 인코딩한 key를 그 UTF-8 바이트 그대로 key로 쓴다",
      encoded_hangul_becomes_utf8_bytes_in_key},
+    {"/keys/처럼 key가 비면 400과 {\"error\":\"empty_key\"}를 돌려준다",
+     empty_key_returns_400_empty_key},
+    {"%G1이나 끝이 잘린 %2는 400과 {\"error\":\"bad_key_encoding\"}을 돌려준다",
+     broken_encoding_returns_400_bad_key_encoding},
     {NULL, NULL},
 };
