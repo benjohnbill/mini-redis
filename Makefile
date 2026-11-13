@@ -26,7 +26,7 @@ MONGOOSE_DIR   := vendor/mongoose
 MONGOOSE_OBJ   := $(BUILD)/mongoose.o
 MONGOOSE_FLAGS := -D_DEFAULT_SOURCE
 
-.PHONY: all test verify lint format clean
+.PHONY: all test functional verify lint format clean
 
 SERVER   := $(BUILD)/mini-redis
 
@@ -51,7 +51,12 @@ $(BUILD):
 test: $(TEST_BINS)
 	@set -e; for t in $(TEST_BINS); do echo "== $$t"; ./$$t; done
 
-verify: $(SERVER) test
+# 기능 테스트는 실제 서버를 띄우고 바깥에서 요청을 보냅니다. -B는 tests/ 아래에
+# .pyc를 만들지 않게 합니다(scripts/check-ids.py가 tests/의 모든 파일을 텍스트로 읽습니다).
+functional: $(SERVER)
+	python3 -B tests/functional/api_test.py $(SERVER)
+
+verify: $(SERVER) test functional
 	python3 scripts/check-ids.py
 	python3 scripts/convention.py lint
 

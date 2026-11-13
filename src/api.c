@@ -33,6 +33,7 @@ struct api_response api_handle(struct store *store, const char *method,
     if (method_is(method, method_len, "PUT")) {
         return key_set(store, key, key_len, body, body_len);
     }
+
     return response_unhandled();
 }
 
