@@ -54,8 +54,8 @@ mini-redis/
 | 순서 | 이름 | 주제 | 요구사항 | 상태 | Redis와 대조 |
 |---|---|---|---|---|---|
 | M0 | — | 준비: Pintos `hash.c` 이식, 요청을 하나씩 받는 서버, 테스트 도구, CI | — | 완료 | — |
-| M1 | [`store`](docs/milestones/store/overview.md) | 저장, 조회, 삭제 | L2 L4 L13 | 진행 전 | |
-| M2 | `api` | 외부에서 부르기 | L3 L10 L14 | 진행 전 | |
+| M1 | [`store`](docs/milestones/store/overview.md) | 저장, 조회, 삭제 | L2 L4 L13 | 완료 | [대조](docs/milestones/store/spec.md#redis와-대조) |
+| M2 | [`api`](docs/milestones/api/overview.md) | 외부에서 부르기 | L3 L10 L14 | 진행 전 | |
 | M3 | `concurrency` | 동시성 | L8 | 진행 전 | |
 | M4 | `expire` | 보관 기간 | L9 | 진행 전 | |
 | M5 | `cache` | API 응답 캐시, 무효화, 성능 비교 | L15 L11 L17 | 진행 전 | |
@@ -66,6 +66,7 @@ mini-redis/
 ## 알려진 한계
 
 - eviction(메모리가 가득 찰 때 key를 내보내는 정책)은 LMS에 없어 구현하지 않습니다.
+- key의 해시(`hash_bytes`)에 서버마다 다른 무작위 seed를 섞지 않습니다. 같은 버킷에 떨어지는 key를 일부러 골라 많이 넣으면, 조회가 상수 시간이 아니라 그 버킷의 entry 수에 비례해 느려집니다. LMS에 없는 요구라 M1에서 다루지 않았습니다(`docs/milestones/store/spec.md`의 `Redis와 대조`).
 
 ## 문서
 
