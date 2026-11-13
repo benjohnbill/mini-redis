@@ -41,6 +41,7 @@ static struct api_response key_set(struct store *store, const char *key,
 static struct api_response key_delete(struct store *store, const char *key,
                                       size_t key_len);
 static struct api_response response_error(int status, const char *body);
+static struct api_response response_no_content(void);
 
 /* 경로, 메서드, key 순서로 검사하고 처음 걸린 오류 하나로 답합니다. 경로가
    틀린 요청에 메서드나 key 오류를 알리면 다른 서버가 엉뚱한 곳을 고치게
@@ -230,9 +231,7 @@ static struct api_response key_set(struct store *store, const char *key,
     if (!store_set(store, key, key_len, value, value_len)) {
         return response_error(500, ERROR_BODY("out_of_memory"));
     }
-    struct api_response response = {.status = 204};
-
-    return response;
+    return response_no_content();
 }
 
 static struct api_response key_delete(struct store *store, const char *key,
@@ -241,9 +240,7 @@ static struct api_response key_delete(struct store *store, const char *key,
     if (!store_delete(store, key, key_len)) {
         return response_error(404, ERROR_BODY("key_not_found"));
     }
-    struct api_response response = {.status = 204};
-
-    return response;
+    return response_no_content();
 }
 
 /* body는 오류 이유를 담은 JSON 리터럴(ERROR_BODY)입니다. */
@@ -253,5 +250,12 @@ static struct api_response response_error(int status, const char *body)
                                     .content_type = "application/json",
                                     .body = body,
                                     .body_len = strlen(body)};
+    return response;
+}
+
+/* 저장과 삭제의 성공입니다. 204에는 body도 Content-Type도 없습니다. */
+static struct api_response response_no_content(void)
+{
+    struct api_response response = {.status = 204};
     return response;
 }
