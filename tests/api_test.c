@@ -12,6 +12,19 @@ static struct api_response request(struct store *store, const char *method,
                       body_len);
 }
 
+/* 오류 응답이 상태 코드, application/json, 기대한 body인지 확인합니다. */
+static void expect_error(struct api_response response, int status,
+                         const char *body)
+{
+    TEST_CHECK(response.status == status);
+    TEST_MSG("상태 코드: %d", response.status);
+    TEST_ASSERT(response.content_type != NULL);
+    TEST_CHECK(strcmp(response.content_type, "application/json") == 0);
+    TEST_MSG("Content-Type: %s", response.content_type);
+    TEST_ASSERT(response.body_len == strlen(body));
+    TEST_CHECK(memcmp(response.body, body, response.body_len) == 0);
+}
+
 static void get_after_put_returns_200_and_value(void)
 {
     struct store *store = store_create();
@@ -47,10 +60,23 @@ static void put_returns_204_for_new_and_overwrite(void)
     store_destroy(store);
 }
 
+static void get_missing_key_returns_404_key_not_found(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response = request(store, "GET", "/keys/none", NULL, 0);
+
+    expect_error(response, 404, "{\"error\":\"key_not_found\"}");
+    store_destroy(store);
+}
+
 TEST_LIST = {
     {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
     {"저장에 성공하면 새로 만들었든 덮어썼든 204를 돌려준다",
      put_returns_204_for_new_and_overwrite},
+    {"없는 key를 조회하면 404와 {\"error\":\"key_not_found\"}를 돌려준다",
+     get_missing_key_returns_404_key_not_found},
     {NULL, NULL},
 };

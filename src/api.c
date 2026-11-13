@@ -5,6 +5,8 @@
 
 #define KEYS_PREFIX "/keys/"
 #define KEYS_PREFIX_LEN (sizeof KEYS_PREFIX - 1)
+/* 오류 응답의 body입니다. 리터럴을 이어 붙여 컴파일 때 문자열 하나가 됩니다. */
+#define ERROR_BODY(reason) "{\"error\":\"" reason "\"}"
 
 static bool method_is(const char *method, size_t method_len, const char *name);
 static struct api_response key_get(struct store *store, const char *key,
@@ -12,6 +14,7 @@ static struct api_response key_get(struct store *store, const char *key,
 static struct api_response key_set(struct store *store, const char *key,
                                    size_t key_len, const void *value,
                                    size_t value_len);
+static struct api_response response_error(int status, const char *body);
 static struct api_response response_unhandled(void);
 
 struct api_response api_handle(struct store *store, const char *method,
@@ -48,7 +51,7 @@ static struct api_response key_get(struct store *store, const char *key,
     const void *value = NULL;
     size_t value_len = 0;
     if (!store_get(store, key, key_len, &value, &value_len)) {
-        return response_unhandled();
+        return response_error(404, ERROR_BODY("key_not_found"));
     }
     struct api_response response = {200, "application/octet-stream", value,
                                     value_len};
@@ -66,6 +69,14 @@ static struct api_response key_set(struct store *store, const char *key,
         response.status = 204;
     }
 
+    return response;
+}
+
+/* body는 오류 이유를 담은 JSON 리터럴(ERROR_BODY)입니다. */
+static struct api_response response_error(int status, const char *body)
+{
+    struct api_response response = {status, "application/json", body,
+                                    strlen(body)};
     return response;
 }
 

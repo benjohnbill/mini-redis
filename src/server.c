@@ -154,6 +154,8 @@ static const char *status_reason(int status)
         return "OK";
     case 204:
         return "No Content";
+    case 404:
+        return "Not Found";
     case 500:
         return "Internal Server Error";
     case 501:
