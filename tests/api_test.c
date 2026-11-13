@@ -308,13 +308,13 @@ static void body_at_limit_is_accepted(void)
 }
 
 TEST_LIST = {
-    {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
+    {"[T9] 저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
     {"저장에 성공하면 새로 만들었든 덮어썼든 204를 돌려준다",
      put_returns_204_for_new_and_overwrite},
     {"없는 key를 조회하면 404와 {\"error\":\"key_not_found\"}를 돌려준다",
      get_missing_key_returns_404_key_not_found},
-    {"있는 key를 지우면 204를, 없는 key를 지우면 404와 "
+    {"[T10] 있는 key를 지우면 204를, 없는 key를 지우면 404와 "
      "{\"error\":\"key_not_found\"}를 돌려준다",
      delete_returns_204_or_404_key_not_found},
     {"0바이트 value를 저장하고 조회하면 200과 0바이트 body를 돌려준다",
@@ -344,7 +344,8 @@ TEST_LIST = {
     {"/keys/<key>에 POST를 보내면 405와 {\"error\":\"method_not_allowed\"}를 "
      "돌려준다",
      post_to_key_returns_405_method_not_allowed},
-    {"경로와 메서드가 모두 틀리면 경로 오류인 404와 route_not_found를 돌려준다",
+    {"[T11] 경로와 메서드가 모두 틀리면 경로 오류인 404와 route_not_found를 "
+     "돌려준다",
      wrong_path_and_method_returns_404_route_not_found},
     {"메서드가 틀리고 key가 비면 메서드 오류인 405를 돌려준다",
      wrong_method_and_empty_key_returns_405},
