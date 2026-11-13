@@ -68,11 +68,12 @@ static struct api_response key_set(struct store *store, const char *key,
                                    size_t key_len, const void *value,
                                    size_t value_len)
 {
-    /* store_set의 false는 메모리 부족뿐입니다. 오류 body는 뒤 티켓이 더합니다. */
-    struct api_response response = {500, NULL, NULL, 0};
-    if (store_set(store, key, key_len, value, value_len)) {
-        response.status = 204;
+    /* store_set의 false는 메모리 부족뿐입니다. 할당 함수를 바꿔 끼울 seam이
+       없어서 이 분기는 자동 테스트하지 않고 리뷰로 확인합니다. */
+    if (!store_set(store, key, key_len, value, value_len)) {
+        return response_error(500, ERROR_BODY("out_of_memory"));
     }
+    struct api_response response = {204, NULL, NULL, 0};
 
     return response;
 }
