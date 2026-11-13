@@ -172,6 +172,55 @@ static void destroy_leaves_no_leak(void) {
     store_destroy(s);
 }
 
+static void set_twice_returns_later_value(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(s, "name", 4, "krafto", 6));
+
+    const void *value = NULL;
+    size_t value_len = 0;
+    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
+    TEST_CHECK(value_len == 6);
+    TEST_CHECK(memcmp(value, "krafto", 6) == 0);
+
+    store_destroy(s);
+}
+
+static void overwrite_with_different_length_returns_new_length(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(s, "name", 4, "ab", 2));
+
+    const void *value = NULL;
+    size_t value_len = 0;
+    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
+    TEST_CHECK(value_len == 2);
+    TEST_CHECK(memcmp(value, "ab", 2) == 0);
+
+    TEST_CHECK(store_set(s, "name", 4, "longer value", 12));
+    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
+    TEST_CHECK(value_len == 12);
+    TEST_CHECK(memcmp(value, "longer value", 12) == 0);
+
+    store_destroy(s);
+}
+
+/* 덮어쓰면 밀려난 옛 entry를 store가 해제해야 합니다. 해제하지 않으면 테이블에서
+   빠진 옛 entry를 가리키는 곳이 없어 store_destroy도 해제하지 못하고,
+   LeakSanitizer가 자식 프로세스 종료 때 누수로 보고합니다. */
+static void overwrite_leaves_no_leak_of_old_entry(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(s, "name", 4, "krafton", 7));
+    TEST_CHECK(store_set(s, "name", 4, "x", 1));
+    store_destroy(s);
+}
+
 TEST_LIST = {
     {"[T1] 저장한 key를 조회하면 저장한 value와 길이를 돌려준다", set_then_get_returns_value_and_length},
     {"[T2] 없는 key를 조회하면 찾지 못했다고 알린다", get_missing_key_reports_not_found},
@@ -182,5 +231,8 @@ TEST_LIST = {
     {"앞부분이 같고 길이가 다른 key를 서로 다른 key로 다룬다", keys_sharing_prefix_with_different_length_are_distinct},
     {"key를 수천 개 저장한 뒤에도 모든 key를 조회할 수 있다", all_keys_found_after_storing_thousands},
     {"store_destroy 뒤에 AddressSanitizer가 누수를 보고하지 않는다", destroy_leaves_no_leak},
+    {"[T3] 같은 key에 두 번 저장하면 나중 value를 돌려준다", set_twice_returns_later_value},
+    {"길이가 다른 value로 덮어써도 새 길이를 돌려준다", overwrite_with_different_length_returns_new_length},
+    {"덮어쓴 뒤 AddressSanitizer가 옛 entry의 누수를 보고하지 않는다", overwrite_leaves_no_leak_of_old_entry},
     {NULL, NULL},
 };
