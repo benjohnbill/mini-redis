@@ -34,7 +34,7 @@ struct api_response api_handle(struct store *store, const char *method,
 {
     if (path_len < KEYS_PREFIX_LEN ||
         memcmp(path, KEYS_PREFIX, KEYS_PREFIX_LEN) != 0) {
-        return response_unhandled();
+        return response_error(404, ERROR_BODY("route_not_found"));
     }
     const char *encoded_key = path + KEYS_PREFIX_LEN;
     size_t encoded_key_len = path_len - KEYS_PREFIX_LEN;

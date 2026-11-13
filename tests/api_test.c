@@ -228,6 +228,28 @@ static void broken_encoding_returns_400_bad_key_encoding(void)
     store_destroy(store);
 }
 
+static void path_outside_keys_returns_404_route_not_found(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response = request(store, "GET", "/nope", NULL, 0);
+
+    expect_error(response, 404, "{\"error\":\"route_not_found\"}");
+    store_destroy(store);
+}
+
+static void keys_without_trailing_slash_returns_404_route_not_found(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response = request(store, "GET", "/keys", NULL, 0);
+
+    expect_error(response, 404, "{\"error\":\"route_not_found\"}");
+    store_destroy(store);
+}
+
 TEST_LIST = {
     {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
@@ -257,5 +279,10 @@ TEST_LIST = {
      empty_key_returns_400_empty_key},
     {"%G1이나 끝이 잘린 %2는 400과 {\"error\":\"bad_key_encoding\"}을 돌려준다",
      broken_encoding_returns_400_bad_key_encoding},
+    {"/keys/로 시작하지 않는 경로는 404와 {\"error\":\"route_not_found\"}를 "
+     "돌려준다",
+     path_outside_keys_returns_404_route_not_found},
+    {"끝에 /가 없는 /keys는 404와 route_not_found를 돌려준다",
+     keys_without_trailing_slash_returns_404_route_not_found},
     {NULL, NULL},
 };
