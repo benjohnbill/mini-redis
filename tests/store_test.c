@@ -287,6 +287,21 @@ static void empty_key_can_be_deleted(void) {
     store_destroy(s);
 }
 
+/* 길이의 합이 size_t를 넘으면 malloc 크기가 작은 값으로 감겨, 복사가 할당한
+   영역 밖을 씁니다. store는 바이트를 읽기 전에 실패해야 하므로 value 버퍼는
+   1바이트로 충분합니다. */
+static void set_with_overflowing_length_fails_and_keeps_store(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+
+    TEST_CHECK(!store_set(s, "name", 4, "x", SIZE_MAX));
+
+    check_get(s, "name", 4, "jungle", 6);
+
+    store_destroy(s);
+}
+
 TEST_LIST = {
     {"[T1] 저장한 key를 조회하면 저장한 value와 길이를 돌려준다", set_then_get_returns_value_and_length},
     {"[T2] 없는 key를 조회하면 찾지 못했다고 알린다", get_missing_key_reports_not_found},
@@ -306,5 +321,6 @@ TEST_LIST = {
     {"한 key를 삭제해도 다른 key는 그대로 조회된다", delete_one_key_keeps_other_keys},
     {"같은 key에 두 번 저장한 뒤 한 번 삭제하면 조회되지 않는다", delete_once_after_setting_twice_makes_key_not_found},
     {"0바이트 key도 삭제할 수 있다", empty_key_can_be_deleted},
+    {"key와 value 길이의 합이 너무 크면 저장에 실패하고 store는 그대로다", set_with_overflowing_length_fails_and_keeps_store},
     {NULL, NULL},
 };

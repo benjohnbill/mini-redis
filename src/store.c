@@ -1,6 +1,7 @@
 #include "store.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -80,6 +81,10 @@ bool store_set(struct store *s, const void *key, size_t key_len,
 
     /* 새 entry를 먼저 다 만든 뒤에 테이블에 넣습니다. 할당이 실패하면 테이블은
        그대로입니다. */
+    /* 길이의 합이 size_t를 넘으면 malloc 크기가 작게 감기므로 할당 실패로 봅니다. */
+    if (key_len > SIZE_MAX - sizeof(struct entry) ||
+        value_len > SIZE_MAX - sizeof(struct entry) - key_len)
+        return false;
     struct entry *en = malloc(sizeof *en + key_len + value_len);
     if (en == NULL) return false;
     memcpy(en->bytes, k, key_len);
