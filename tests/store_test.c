@@ -9,7 +9,8 @@
    NULL일 수 있으므로 memcmp 전에 멈춥니다. 그러지 않으면 UBSan이 자식 프로세스를
    멈춰 acutest가 실패 메시지를 잃습니다. */
 static void check_get(struct store *s, const void *key, size_t key_len,
-                      const void *want, size_t want_len) {
+                      const void *want, size_t want_len)
+{
     const void *value = NULL;
     size_t value_len = SIZE_MAX;
     if (!TEST_CHECK(store_get(s, key, key_len, &value, &value_len))) {
@@ -24,7 +25,8 @@ static void check_get(struct store *s, const void *key, size_t key_len,
     TEST_CHECK(memcmp(value, want, want_len) == 0);
 }
 
-static void set_then_get_returns_value_and_length(void) {
+static void set_then_get_returns_value_and_length(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
 
@@ -35,7 +37,8 @@ static void set_then_get_returns_value_and_length(void) {
     store_destroy(s);
 }
 
-static void get_missing_key_reports_not_found(void) {
+static void get_missing_key_reports_not_found(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
@@ -47,7 +50,8 @@ static void get_missing_key_reports_not_found(void) {
     store_destroy(s);
 }
 
-static void empty_value_is_found_with_length_zero(void) {
+static void empty_value_is_found_with_length_zero(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "empty", 5, NULL, 0));
@@ -57,7 +61,8 @@ static void empty_value_is_found_with_length_zero(void) {
     store_destroy(s);
 }
 
-static void empty_key_can_be_set_and_get(void) {
+static void empty_key_can_be_set_and_get(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, NULL, 0, "v", 1));
@@ -67,7 +72,8 @@ static void empty_key_can_be_set_and_get(void) {
     store_destroy(s);
 }
 
-static void value_with_inner_nul_is_not_truncated(void) {
+static void value_with_inner_nul_is_not_truncated(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     const char bin[5] = {'a', '\0', 'b', '\0', 'c'};
@@ -78,7 +84,8 @@ static void value_with_inner_nul_is_not_truncated(void) {
     store_destroy(s);
 }
 
-static void changing_caller_buffer_after_set_keeps_stored_value(void) {
+static void changing_caller_buffer_after_set_keeps_stored_value(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     char key[] = "name";
@@ -95,7 +102,8 @@ static void changing_caller_buffer_after_set_keeps_stored_value(void) {
     store_destroy(s);
 }
 
-static void keys_sharing_prefix_with_different_length_are_distinct(void) {
+static void keys_sharing_prefix_with_different_length_are_distinct(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "abc", 3, "short", 5));
@@ -130,7 +138,8 @@ static void keys_sharing_prefix_with_different_length_are_distinct(void) {
 /* 수천 개면 hash.c의 rehash가 여러 번 일어납니다. */
 #define MANY_KEYS 5000
 
-static void all_keys_found_after_storing_thousands(void) {
+static void all_keys_found_after_storing_thousands(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     char key[16];
@@ -160,7 +169,8 @@ static void all_keys_found_after_storing_thousands(void) {
 /* entry가 남은 채로 없애도 AddressSanitizer(LeakSanitizer)가 누수를 보고하지
    않아야 합니다. acutest는 테스트마다 자식 프로세스를 exit()로 끝내므로, 누수가
    있으면 이 테스트가 실패합니다. */
-static void destroy_leaves_no_leak(void) {
+static void destroy_leaves_no_leak(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "a", 1, "1", 1));
@@ -169,7 +179,8 @@ static void destroy_leaves_no_leak(void) {
     store_destroy(s);
 }
 
-static void set_twice_returns_later_value(void) {
+static void set_twice_returns_later_value(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
 
@@ -181,7 +192,8 @@ static void set_twice_returns_later_value(void) {
     store_destroy(s);
 }
 
-static void overwrite_with_different_length_returns_new_length(void) {
+static void overwrite_with_different_length_returns_new_length(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
 
@@ -199,7 +211,8 @@ static void overwrite_with_different_length_returns_new_length(void) {
 /* 덮어쓰면 밀려난 옛 entry를 store가 해제해야 합니다. 해제하지 않으면 테이블에서
    빠진 옛 entry를 가리키는 곳이 없어 store_destroy도 해제하지 못하고,
    LeakSanitizer가 자식 프로세스 종료 때 누수로 보고합니다. */
-static void overwrite_leaves_no_leak_of_old_entry(void) {
+static void overwrite_leaves_no_leak_of_old_entry(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
@@ -208,7 +221,8 @@ static void overwrite_leaves_no_leak_of_old_entry(void) {
     store_destroy(s);
 }
 
-static void delete_existing_key_reports_removed_and_get_fails(void) {
+static void delete_existing_key_reports_removed_and_get_fails(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
@@ -222,7 +236,8 @@ static void delete_existing_key_reports_removed_and_get_fails(void) {
     store_destroy(s);
 }
 
-static void delete_missing_key_reports_nothing_removed(void) {
+static void delete_missing_key_reports_nothing_removed(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
@@ -232,7 +247,8 @@ static void delete_missing_key_reports_nothing_removed(void) {
     store_destroy(s);
 }
 
-static void delete_same_key_twice_reports_nothing_removed_second_time(void) {
+static void delete_same_key_twice_reports_nothing_removed_second_time(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
@@ -243,7 +259,8 @@ static void delete_same_key_twice_reports_nothing_removed_second_time(void) {
     store_destroy(s);
 }
 
-static void delete_one_key_keeps_other_keys(void) {
+static void delete_one_key_keeps_other_keys(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
@@ -258,7 +275,8 @@ static void delete_one_key_keeps_other_keys(void) {
 
 /* 덮어쓰기가 옛 entry를 테이블에 남기면, 삭제 한 번 뒤에도 옛 value가 조회되거나
    옛 entry가 누수로 보고됩니다. */
-static void delete_once_after_setting_twice_makes_key_not_found(void) {
+static void delete_once_after_setting_twice_makes_key_not_found(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
@@ -273,7 +291,8 @@ static void delete_once_after_setting_twice_makes_key_not_found(void) {
     store_destroy(s);
 }
 
-static void empty_key_can_be_deleted(void) {
+static void empty_key_can_be_deleted(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, NULL, 0, "v", 1));
@@ -290,7 +309,8 @@ static void empty_key_can_be_deleted(void) {
 /* 길이의 합이 size_t를 넘으면 malloc 크기가 작은 값으로 감겨, 복사가 할당한
    영역 밖을 씁니다. store는 바이트를 읽기 전에 실패해야 하므로 value 버퍼는
    1바이트로 충분합니다. */
-static void set_with_overflowing_length_fails_and_keeps_store(void) {
+static void set_with_overflowing_length_fails_and_keeps_store(void)
+{
     struct store *s = store_create();
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
@@ -303,24 +323,41 @@ static void set_with_overflowing_length_fails_and_keeps_store(void) {
 }
 
 TEST_LIST = {
-    {"[T1] 저장한 key를 조회하면 저장한 value와 길이를 돌려준다", set_then_get_returns_value_and_length},
-    {"[T2] 없는 key를 조회하면 찾지 못했다고 알린다", get_missing_key_reports_not_found},
-    {"0바이트 value를 저장하면 찾았고 길이가 0이라고 알린다", empty_value_is_found_with_length_zero},
+    {"[T1] 저장한 key를 조회하면 저장한 value와 길이를 돌려준다",
+     set_then_get_returns_value_and_length},
+    {"[T2] 없는 key를 조회하면 찾지 못했다고 알린다",
+     get_missing_key_reports_not_found},
+    {"0바이트 value를 저장하면 찾았고 길이가 0이라고 알린다",
+     empty_value_is_found_with_length_zero},
     {"0바이트 key도 저장하고 조회할 수 있다", empty_key_can_be_set_and_get},
-    {"중간에 '\\0'이 있는 value를 잘리지 않고 돌려준다", value_with_inner_nul_is_not_truncated},
-    {"저장한 뒤 호출한 쪽 버퍼를 바꿔도 저장된 value는 그대로다", changing_caller_buffer_after_set_keeps_stored_value},
-    {"앞부분이 같고 길이가 다른 key를 서로 다른 key로 다룬다", keys_sharing_prefix_with_different_length_are_distinct},
-    {"key를 수천 개 저장한 뒤에도 모든 key를 조회할 수 있다", all_keys_found_after_storing_thousands},
-    {"store_destroy 뒤에 AddressSanitizer가 누수를 보고하지 않는다", destroy_leaves_no_leak},
-    {"[T3] 같은 key에 두 번 저장하면 나중 value를 돌려준다", set_twice_returns_later_value},
-    {"길이가 다른 value로 덮어써도 새 길이를 돌려준다", overwrite_with_different_length_returns_new_length},
-    {"덮어쓴 뒤 AddressSanitizer가 옛 entry의 누수를 보고하지 않는다", overwrite_leaves_no_leak_of_old_entry},
-    {"[T4] 있는 key를 삭제하면 지웠다고 알리고, 그 뒤 조회되지 않는다", delete_existing_key_reports_removed_and_get_fails},
-    {"없는 key를 삭제하면 지운 것이 없다고 알린다", delete_missing_key_reports_nothing_removed},
-    {"같은 key를 두 번 삭제하면 두 번째는 지운 것이 없다고 알린다", delete_same_key_twice_reports_nothing_removed_second_time},
-    {"한 key를 삭제해도 다른 key는 그대로 조회된다", delete_one_key_keeps_other_keys},
-    {"같은 key에 두 번 저장한 뒤 한 번 삭제하면 조회되지 않는다", delete_once_after_setting_twice_makes_key_not_found},
+    {"중간에 '\\0'이 있는 value를 잘리지 않고 돌려준다",
+     value_with_inner_nul_is_not_truncated},
+    {"저장한 뒤 호출한 쪽 버퍼를 바꿔도 저장된 value는 그대로다",
+     changing_caller_buffer_after_set_keeps_stored_value},
+    {"앞부분이 같고 길이가 다른 key를 서로 다른 key로 다룬다",
+     keys_sharing_prefix_with_different_length_are_distinct},
+    {"key를 수천 개 저장한 뒤에도 모든 key를 조회할 수 있다",
+     all_keys_found_after_storing_thousands},
+    {"store_destroy 뒤에 AddressSanitizer가 누수를 보고하지 않는다",
+     destroy_leaves_no_leak},
+    {"[T3] 같은 key에 두 번 저장하면 나중 value를 돌려준다",
+     set_twice_returns_later_value},
+    {"길이가 다른 value로 덮어써도 새 길이를 돌려준다",
+     overwrite_with_different_length_returns_new_length},
+    {"덮어쓴 뒤 AddressSanitizer가 옛 entry의 누수를 보고하지 않는다",
+     overwrite_leaves_no_leak_of_old_entry},
+    {"[T4] 있는 key를 삭제하면 지웠다고 알리고, 그 뒤 조회되지 않는다",
+     delete_existing_key_reports_removed_and_get_fails},
+    {"없는 key를 삭제하면 지운 것이 없다고 알린다",
+     delete_missing_key_reports_nothing_removed},
+    {"같은 key를 두 번 삭제하면 두 번째는 지운 것이 없다고 알린다",
+     delete_same_key_twice_reports_nothing_removed_second_time},
+    {"한 key를 삭제해도 다른 key는 그대로 조회된다",
+     delete_one_key_keeps_other_keys},
+    {"같은 key에 두 번 저장한 뒤 한 번 삭제하면 조회되지 않는다",
+     delete_once_after_setting_twice_makes_key_not_found},
     {"0바이트 key도 삭제할 수 있다", empty_key_can_be_deleted},
-    {"key와 value 길이의 합이 너무 크면 저장에 실패하고 store는 그대로다", set_with_overflowing_length_fails_and_keeps_store},
+    {"key와 value 길이의 합이 너무 크면 저장에 실패하고 store는 그대로다",
+     set_with_overflowing_length_fails_and_keeps_store},
     {NULL, NULL},
 };
