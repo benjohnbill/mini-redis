@@ -8,12 +8,12 @@
 /* key를 조회해 찾았는지, 길이, 바이트를 차례로 확인합니다. 찾지 못하면 value가
    NULL일 수 있으므로 memcmp 전에 멈춥니다. 그러지 않으면 UBSan이 자식 프로세스를
    멈춰 acutest가 실패 메시지를 잃습니다. */
-static void check_get(struct store *s, const void *key, size_t key_len,
+static void check_get(struct store *store, const void *key, size_t key_len,
                       const void *want, size_t want_len)
 {
     const void *value = NULL;
     size_t value_len = SIZE_MAX;
-    if (!TEST_CHECK(store_get(s, key, key_len, &value, &value_len))) {
+    if (!TEST_CHECK(store_get(store, key, key_len, &value, &value_len))) {
         TEST_MSG("못 찾은 key: \"%.*s\" (길이 %zu)", (int)key_len,
                  key_len > 0 ? (const char *)key : "", key_len);
         return;
@@ -27,90 +27,90 @@ static void check_get(struct store *s, const void *key, size_t key_len,
 
 static void set_then_get_returns_value_and_length(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
 
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
 
-    check_get(s, "name", 4, "jungle", 6);
+    check_get(store, "name", 4, "jungle", 6);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void get_missing_key_reports_not_found(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_CHECK(!store_get(s, "age", 3, &value, &value_len));
+    TEST_CHECK(!store_get(store, "age", 3, &value, &value_len));
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void empty_value_is_found_with_length_zero(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "empty", 5, NULL, 0));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "empty", 5, NULL, 0));
 
-    check_get(s, "empty", 5, "", 0);
+    check_get(store, "empty", 5, "", 0);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void empty_key_can_be_set_and_get(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, NULL, 0, "v", 1));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, NULL, 0, "v", 1));
 
-    check_get(s, NULL, 0, "v", 1);
+    check_get(store, NULL, 0, "v", 1);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void value_with_inner_nul_is_not_truncated(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
     const char bin[5] = {'a', '\0', 'b', '\0', 'c'};
-    TEST_CHECK(store_set(s, "bin", 3, bin, 5));
+    TEST_CHECK(store_set(store, "bin", 3, bin, 5));
 
-    check_get(s, "bin", 3, "a\0b\0c", 5);
+    check_get(store, "bin", 3, "a\0b\0c", 5);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void changing_caller_buffer_after_set_keeps_stored_value(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
     char key[] = "name";
-    char val[] = "jungle";
-    TEST_CHECK(store_set(s, key, 4, val, 6));
-    memcpy(val, "XXXXXX", 6);
+    char value_text[] = "jungle";
+    TEST_CHECK(store_set(store, key, 4, value_text, 6));
+    memcpy(value_text, "XXXXXX", 6);
 
-    check_get(s, "name", 4, "jungle", 6);
+    check_get(store, "name", 4, "jungle", 6);
 
     /* 호출한 쪽 key 버퍼를 바꿔도 저장된 key로 찾을 수 있어야 합니다. */
     memcpy(key, "XXXX", 4);
-    check_get(s, "name", 4, "jungle", 6);
+    check_get(store, "name", 4, "jungle", 6);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void keys_sharing_prefix_with_different_length_are_distinct(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "abc", 3, "short", 5));
-    TEST_CHECK(store_set(s, "abcd", 4, "long", 4));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "abc", 3, "short", 5));
+    TEST_CHECK(store_set(store, "abcd", 4, "long", 4));
 
-    check_get(s, "abc", 3, "short", 5);
-    check_get(s, "abcd", 4, "long", 4);
+    check_get(store, "abc", 3, "short", 5);
+    check_get(store, "abcd", 4, "long", 4);
 
     /* 두 key가 다른 버킷에 가면 비교가 일어나지 않습니다. "a", "aa", ... 64개는
        서로 앞부분이 같고, 버킷 수보다 많아서 같은 버킷에서 비교되는 쌍이 생깁니다.
@@ -120,11 +120,11 @@ static void keys_sharing_prefix_with_different_length_are_distinct(void)
     char key[64];
     memset(key, 'a', sizeof key);
     for (size_t len = 1; len <= sizeof key; len++) {
-        unsigned char v = (unsigned char)len;
-        TEST_ASSERT(store_set(s, key, len, &v, 1));
+        unsigned char len_as_byte = (unsigned char)len;
+        TEST_ASSERT(store_set(store, key, len, &len_as_byte, 1));
     }
     for (size_t len = 1; len <= sizeof key; len++) {
-        if (!TEST_CHECK(store_get(s, key, len, &value, &value_len))) {
+        if (!TEST_CHECK(store_get(store, key, len, &value, &value_len))) {
             TEST_MSG("못 찾은 key 길이: %zu", len);
             break;
         }
@@ -132,7 +132,7 @@ static void keys_sharing_prefix_with_different_length_are_distinct(void)
         TEST_CHECK(*(const unsigned char *)value == len);
     }
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 /* 수천 개면 hash.c의 rehash가 여러 번 일어납니다. */
@@ -140,30 +140,32 @@ static void keys_sharing_prefix_with_different_length_are_distinct(void)
 
 static void all_keys_found_after_storing_thousands(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
     char key[16];
-    char val[16];
+    char value_text[16];
     for (int i = 0; i < MANY_KEYS; i++) {
-        int klen = snprintf(key, sizeof key, "k%d", i);
-        int vlen = snprintf(val, sizeof val, "v%d", i);
-        TEST_ASSERT(store_set(s, key, (size_t)klen, val, (size_t)vlen));
+        int key_text_len = snprintf(key, sizeof key, "k%d", i);
+        int value_text_len = snprintf(value_text, sizeof value_text, "v%d", i);
+        TEST_ASSERT(store_set(store, key, (size_t)key_text_len, value_text,
+                              (size_t)value_text_len));
     }
 
     for (int i = 0; i < MANY_KEYS; i++) {
-        int klen = snprintf(key, sizeof key, "k%d", i);
-        int vlen = snprintf(val, sizeof val, "v%d", i);
+        int key_text_len = snprintf(key, sizeof key, "k%d", i);
+        int value_text_len = snprintf(value_text, sizeof value_text, "v%d", i);
         const void *value = NULL;
         size_t value_len = 0;
-        if (!TEST_CHECK(store_get(s, key, (size_t)klen, &value, &value_len))) {
+        if (!TEST_CHECK(store_get(store, key, (size_t)key_text_len, &value,
+                                  &value_len))) {
             TEST_MSG("못 찾은 key: %s", key);
             break;
         }
-        TEST_CHECK(value_len == (size_t)vlen);
-        TEST_CHECK(memcmp(value, val, (size_t)vlen) == 0);
+        TEST_CHECK(value_len == (size_t)value_text_len);
+        TEST_CHECK(memcmp(value, value_text, (size_t)value_text_len) == 0);
     }
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 /* entry가 남은 채로 없애도 AddressSanitizer(LeakSanitizer)가 누수를 보고하지
@@ -171,41 +173,41 @@ static void all_keys_found_after_storing_thousands(void)
    있으면 이 테스트가 실패합니다. */
 static void destroy_leaves_no_leak(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "a", 1, "1", 1));
-    TEST_CHECK(store_set(s, NULL, 0, NULL, 0));
-    TEST_CHECK(store_set(s, "b", 1, "22", 2));
-    store_destroy(s);
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "a", 1, "1", 1));
+    TEST_CHECK(store_set(store, NULL, 0, NULL, 0));
+    TEST_CHECK(store_set(store, "b", 1, "22", 2));
+    store_destroy(store);
 }
 
 static void set_twice_returns_later_value(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
 
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(s, "name", 4, "krafto", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "krafto", 6));
 
-    check_get(s, "name", 4, "krafto", 6);
+    check_get(store, "name", 4, "krafto", 6);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void overwrite_with_different_length_returns_new_length(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
 
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(s, "name", 4, "ab", 2));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "ab", 2));
 
-    check_get(s, "name", 4, "ab", 2);
+    check_get(store, "name", 4, "ab", 2);
 
-    TEST_CHECK(store_set(s, "name", 4, "longer value", 12));
-    check_get(s, "name", 4, "longer value", 12);
+    TEST_CHECK(store_set(store, "name", 4, "longer value", 12));
+    check_get(store, "name", 4, "longer value", 12);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 /* 덮어쓰면 밀려난 옛 entry를 store가 해제해야 합니다. 해제하지 않으면 테이블에서
@@ -213,97 +215,97 @@ static void overwrite_with_different_length_returns_new_length(void)
    LeakSanitizer가 자식 프로세스 종료 때 누수로 보고합니다. */
 static void overwrite_leaves_no_leak_of_old_entry(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(s, "name", 4, "krafton", 7));
-    TEST_CHECK(store_set(s, "name", 4, "x", 1));
-    store_destroy(s);
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "krafton", 7));
+    TEST_CHECK(store_set(store, "name", 4, "x", 1));
+    store_destroy(store);
 }
 
 static void delete_existing_key_reports_removed_and_get_fails(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
 
-    TEST_CHECK(store_delete(s, "name", 4));
+    TEST_CHECK(store_delete(store, "name", 4));
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_CHECK(!store_get(s, "name", 4, &value, &value_len));
+    TEST_CHECK(!store_get(store, "name", 4, &value, &value_len));
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void delete_missing_key_reports_nothing_removed(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
 
-    TEST_CHECK(!store_delete(s, "age", 3));
+    TEST_CHECK(!store_delete(store, "age", 3));
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void delete_same_key_twice_reports_nothing_removed_second_time(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
 
-    TEST_CHECK(store_delete(s, "name", 4));
-    TEST_CHECK(!store_delete(s, "name", 4));
+    TEST_CHECK(store_delete(store, "name", 4));
+    TEST_CHECK(!store_delete(store, "name", 4));
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void delete_one_key_keeps_other_keys(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(s, "age", 3, "7", 1));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "age", 3, "7", 1));
 
-    TEST_CHECK(store_delete(s, "name", 4));
+    TEST_CHECK(store_delete(store, "name", 4));
 
-    check_get(s, "age", 3, "7", 1);
+    check_get(store, "age", 3, "7", 1);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 /* 덮어쓰기가 옛 entry를 테이블에 남기면, 삭제 한 번 뒤에도 옛 value가 조회되거나
    옛 entry가 누수로 보고됩니다. */
 static void delete_once_after_setting_twice_makes_key_not_found(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(s, "name", 4, "krafto", 6));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "krafto", 6));
 
-    TEST_CHECK(store_delete(s, "name", 4));
+    TEST_CHECK(store_delete(store, "name", 4));
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_CHECK(!store_get(s, "name", 4, &value, &value_len));
+    TEST_CHECK(!store_get(store, "name", 4, &value, &value_len));
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 static void empty_key_can_be_deleted(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, NULL, 0, "v", 1));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, NULL, 0, "v", 1));
 
-    TEST_CHECK(store_delete(s, NULL, 0));
+    TEST_CHECK(store_delete(store, NULL, 0));
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_CHECK(!store_get(s, NULL, 0, &value, &value_len));
+    TEST_CHECK(!store_get(store, NULL, 0, &value, &value_len));
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 /* 길이의 합이 size_t를 넘으면 malloc 크기가 작은 값으로 감겨, 복사가 할당한
@@ -311,15 +313,15 @@ static void empty_key_can_be_deleted(void)
    1바이트로 충분합니다. */
 static void set_with_overflowing_length_fails_and_keeps_store(void)
 {
-    struct store *s = store_create();
-    TEST_ASSERT(s != NULL);
-    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
 
-    TEST_CHECK(!store_set(s, "name", 4, "x", SIZE_MAX));
+    TEST_CHECK(!store_set(store, "name", 4, "x", SIZE_MAX));
 
-    check_get(s, "name", 4, "jungle", 6);
+    check_get(store, "name", 4, "jungle", 6);
 
-    store_destroy(s);
+    store_destroy(store);
 }
 
 TEST_LIST = {
