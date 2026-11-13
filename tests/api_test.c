@@ -71,6 +71,24 @@ static void get_missing_key_returns_404_key_not_found(void)
     store_destroy(store);
 }
 
+static void delete_returns_204_or_404_key_not_found(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    request(store, "PUT", "/keys/name", "jungle", 6);
+
+    struct api_response deleted =
+        request(store, "DELETE", "/keys/name", NULL, 0);
+    struct api_response missing =
+        request(store, "DELETE", "/keys/name", NULL, 0);
+
+    TEST_CHECK(deleted.status == 204);
+    TEST_MSG("있는 key 삭제의 상태 코드: %d", deleted.status);
+    TEST_CHECK(deleted.body_len == 0);
+    expect_error(missing, 404, "{\"error\":\"key_not_found\"}");
+    store_destroy(store);
+}
+
 TEST_LIST = {
     {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
@@ -78,5 +96,8 @@ TEST_LIST = {
      put_returns_204_for_new_and_overwrite},
     {"없는 key를 조회하면 404와 {\"error\":\"key_not_found\"}를 돌려준다",
      get_missing_key_returns_404_key_not_found},
+    {"있는 key를 지우면 204를, 없는 key를 지우면 404와 "
+     "{\"error\":\"key_not_found\"}를 돌려준다",
+     delete_returns_204_or_404_key_not_found},
     {NULL, NULL},
 };

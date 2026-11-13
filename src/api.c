@@ -14,6 +14,8 @@ static struct api_response key_get(struct store *store, const char *key,
 static struct api_response key_set(struct store *store, const char *key,
                                    size_t key_len, const void *value,
                                    size_t value_len);
+static struct api_response key_delete(struct store *store, const char *key,
+                                      size_t key_len);
 static struct api_response response_error(int status, const char *body);
 static struct api_response response_unhandled(void);
 
@@ -35,6 +37,9 @@ struct api_response api_handle(struct store *store, const char *method,
     }
     if (method_is(method, method_len, "PUT")) {
         return key_set(store, key, key_len, body, body_len);
+    }
+    if (method_is(method, method_len, "DELETE")) {
+        return key_delete(store, key, key_len);
     }
 
     return response_unhandled();
@@ -68,6 +73,17 @@ static struct api_response key_set(struct store *store, const char *key,
     if (store_set(store, key, key_len, value, value_len)) {
         response.status = 204;
     }
+
+    return response;
+}
+
+static struct api_response key_delete(struct store *store, const char *key,
+                                      size_t key_len)
+{
+    if (!store_delete(store, key, key_len)) {
+        return response_error(404, ERROR_BODY("key_not_found"));
+    }
+    struct api_response response = {204, NULL, NULL, 0};
 
     return response;
 }
