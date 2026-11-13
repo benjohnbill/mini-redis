@@ -93,5 +93,5 @@ Redis 7.2 소스(`dict.c`, `db.c`, `server.c`, `sds.h`)로 확인했습니다. *
 
 ## Further Notes
 
-- ADR 후보: Q1(주소와 길이), Q5(복사 소유), Q7(빌려주는 조회). 3단계에서 CONVENTION의 ADR 기준으로 거르고, 이유 칸에는 2단계에서 팀원이 말한 문장만 씁니다. Q5는 팀원이 말한 이유 문장이 아직 없습니다.
+- ADR: Q1은 `key-value-as-bytes-with-length`, Q7은 `get-lends-value-until-next-change`입니다. Q5(복사 소유)도 ADR 기준을 통과하지만, 팀원이 말한 이유 문장이 아직 없어서 ADR로 쓰지 않았습니다.
 - M3 overview에 넘길 문제: 조회한 주소의 수명, rehash 동안 멈추는 시간.
