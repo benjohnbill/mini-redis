@@ -18,14 +18,26 @@ LIB_OBJS := $(LIB_SRCS:src/%.c=$(BUILD)/%.o)
 TEST_SRCS := $(wildcard tests/*_test.c)
 TEST_BINS := $(TEST_SRCS:tests/%.c=$(BUILD)/%)
 
+# vendor/mongoose: https://github.com/cesanta/mongoose (GPLv2, 레포 루트 LICENSE),
+# tag 7.23 = commit 02bdbb9ed6f0a8f7c42228c6e7cb35d748b60551 의 mongoose.c, mongoose.h 그대로입니다.
+# 서버에만 링크하고 테스트에는 링크하지 않습니다. mongoose.c는 _POSIX_C_SOURCE만으로는
+# alloca와 ip_mreq 선언이 숨어서 빌드되지 않으므로, 이 파일에만 _DEFAULT_SOURCE를 줍니다.
+MONGOOSE_DIR   := vendor/mongoose
+MONGOOSE_OBJ   := $(BUILD)/mongoose.o
+MONGOOSE_FLAGS := -D_DEFAULT_SOURCE
+
 .PHONY: all test verify lint format clean
 
 SERVER   := $(BUILD)/mini-redis
 
 all: $(SERVER) $(TEST_BINS)
 
-$(SERVER): src/server.c $(LIB_OBJS) | $(BUILD)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(LIB_OBJS) $(LDFLAGS) -o $@
+$(SERVER): src/server.c $(LIB_OBJS) $(MONGOOSE_OBJ) | $(BUILD)
+	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) $< $(LIB_OBJS) $(MONGOOSE_OBJ) \
+	    $(LDFLAGS) -o $@
+
+$(MONGOOSE_OBJ): $(MONGOOSE_DIR)/mongoose.c $(MONGOOSE_DIR)/mongoose.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(MONGOOSE_FLAGS) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/%.o: src/%.c | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@

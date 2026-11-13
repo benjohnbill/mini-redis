@@ -1,5 +1,6 @@
 -std=c11
 -Isrc
+-Ivendor/mongoose
 -D_POSIX_C_SOURCE=200809L
 -Wall
 -Wextra
