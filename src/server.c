@@ -32,6 +32,7 @@ static bool listener_open(struct mg_mgr *manager, struct store *store,
                           int port);
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
+static void receive_buffer_grow(struct mg_connection *connection);
 static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message);
 static void request_handle(struct mg_connection *connection,
@@ -120,10 +121,37 @@ static bool listener_open(struct mg_mgr *manager, struct store *store, int port)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
-    if (event == MG_EV_HTTP_HDRS) {
+    if (event == MG_EV_READ) {
+        receive_buffer_grow(connection);
+    } else if (event == MG_EV_HTTP_HDRS) {
         headers_check(connection, event_data);
     } else if (event == MG_EV_HTTP_MSG) {
         request_handle(connection, event_data);
+    }
+}
+
+/* mongoose는 수신 버퍼가 차면 MG_IO_SIZE(16 KiB)만큼만 늘리고, 늘릴 때마다 새
+   버퍼를 할당해 복사합니다. 16 MiB body면 약 1,000번 복사해 ASan 빌드에서 PUT
+   하나에 30초가 걸렸습니다. 그래서 버퍼가 차면 두 배로 늘리되, 헤더가 알린 요청
+   길이보다 크게는 늘리지 않습니다. 메모리는 실제로 받은 바이트의 두 배를 넘지
+   않습니다. MG_EV_READ는 mongoose의 HTTP 처리가 끝난 뒤에 오므로, 버퍼를 옮겨도
+   mongoose가 들고 있는 옛 주소가 없습니다. 상한을 넘는 요청은 headers_check가
+   이미 닫는 중으로 바꿨으므로 늘리지 않습니다. */
+static void receive_buffer_grow(struct mg_connection *connection)
+{
+    struct mg_iobuf *received = &connection->recv;
+    struct mg_http_message message;
+    if (connection->is_draining || received->len < received->size ||
+        mg_http_parse((const char *)received->buf, received->len, &message) <=
+            0) {
+        return;
+    }
+    size_t doubled = received->size * 2;
+    size_t request_len = message.message.len;
+    /* chunked 요청은 요청 길이가 헤더 길이뿐이므로, 줄이지 않게 거릅니다. */
+    if (request_len > received->size) {
+        mg_iobuf_resize(received,
+                        doubled < request_len ? doubled : request_len);
     }
 }
 

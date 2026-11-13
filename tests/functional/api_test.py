@@ -22,7 +22,7 @@ START_TIMEOUT = 10.0
 STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
 BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), spec Q10
-LARGE_REQUEST_TIMEOUT = 30.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
+LARGE_REQUEST_TIMEOUT = 15.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
 SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime error:")
 
 
