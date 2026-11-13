@@ -15,41 +15,8 @@
 #define DEFAULT_PORT 8080
 #define REQUEST_MAX 8192
 
-/* 헤더 끝(빈 줄)까지 읽습니다. 본문은 아직 다루지 않습니다. */
-static int read_request(int fd, char *request, size_t capacity)
-{
-    size_t len = 0;
-    while (len < capacity - 1) {
-        ssize_t read_len = read(fd, request + len, capacity - 1 - len);
-        if (read_len < 0 && errno == EINTR) {
-            continue;
-        }
-        if (read_len <= 0) {
-            return -1;
-        }
-        len += (size_t)read_len;
-        request[len] = '\0';
-        if (strstr(request, "\r\n\r\n") != NULL) {
-            return 0;
-        }
-    }
-    return -1;
-}
-
-static void write_all(int fd, const char *bytes, size_t len)
-{
-    while (len > 0) {
-        ssize_t written_len = write(fd, bytes, len);
-        if (written_len < 0 && errno == EINTR) {
-            continue;
-        }
-        if (written_len <= 0) {
-            return;
-        }
-        bytes += written_len;
-        len -= (size_t)written_len;
-    }
-}
+static int read_request(int fd, char *request, size_t capacity);
+static void write_all(int fd, const char *bytes, size_t len);
 
 int main(int argc, char **argv)
 {
@@ -104,5 +71,42 @@ int main(int argc, char **argv)
             write_all(client_fd, response, sizeof response - 1);
         }
         close(client_fd);
+    }
+}
+
+/* 헤더 끝(빈 줄)까지 읽습니다. 본문은 아직 다루지 않습니다. */
+static int read_request(int fd, char *request, size_t capacity)
+{
+    size_t len = 0;
+    while (len < capacity - 1) {
+        ssize_t read_len = read(fd, request + len, capacity - 1 - len);
+        if (read_len < 0 && errno == EINTR) {
+            continue;
+        }
+        if (read_len <= 0) {
+            return -1;
+        }
+        len += (size_t)read_len;
+        request[len] = '\0';
+        if (strstr(request, "\r\n\r\n") != NULL) {
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static void write_all(int fd, const char *bytes, size_t len)
+{
+    while (len > 0) {
+        ssize_t written_len = write(fd, bytes, len);
+        if (written_len < 0 && errno == EINTR) {
+            continue;
+        }
+        if (written_len <= 0) {
+            return;
+        }
+        bytes += written_len;
+        len -= (size_t)written_len;
     }
 }
