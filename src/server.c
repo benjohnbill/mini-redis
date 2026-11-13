@@ -26,7 +26,7 @@ static volatile sig_atomic_t stop_requested = 0;
 
 static int port_parse(const char *text);
 static void stop_signals_install(void);
-static void stop_request(int signum);
+static void stop_signal_handle(int signum);
 static int server_run(struct store *store, int port);
 static bool listener_open(struct mg_mgr *manager, struct store *store,
                           int port);
@@ -76,14 +76,14 @@ static int port_parse(const char *text)
 static void stop_signals_install(void)
 {
     struct sigaction action = {0};
-    action.sa_handler = stop_request;
+    action.sa_handler = stop_signal_handle;
     sigemptyset(&action.sa_mask);
     sigaction(SIGTERM, &action, NULL);
     sigaction(SIGINT, &action, NULL);
 }
 
 /* 신호 처리기에서는 플래그만 세웁니다. 루프는 늦어도 POLL_INTERVAL_MS 뒤에 봅니다. */
-static void stop_request(int signum)
+static void stop_signal_handle(int signum)
 {
     (void)signum;
     stop_requested = 1;
