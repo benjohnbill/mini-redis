@@ -22,6 +22,7 @@ START_TIMEOUT = 10.0
 STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
 BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), spec Q10
+LARGE_REQUEST_TIMEOUT = 30.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
 SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime error:")
 
 
@@ -44,8 +45,8 @@ class Server:
                 time.sleep(0.02)
         raise AssertionError(f"서버가 {START_TIMEOUT}초 안에 연결을 받지 않습니다")
 
-    def request(self, method, path, body=None):
-        connection = http.client.HTTPConnection(HOST, self.port, timeout=REQUEST_TIMEOUT)
+    def request(self, method, path, body=None, timeout=REQUEST_TIMEOUT):
+        connection = http.client.HTTPConnection(HOST, self.port, timeout=timeout)
         try:
             connection.request(method, path, body=body)
             response = connection.getresponse()
@@ -138,6 +139,21 @@ def headers_only_over_limit_returns_413(server):
     expect(body, b'{"error":"body_too_large"}', "body")
 
 
+def body_at_limit_round_trips(server):
+    # 바이트마다 값이 바뀌어, 잘리거나 밀린 곳이 있으면 비교가 실패합니다.
+    value = bytes(range(256)) * (BODY_MAX // 256)
+    expect(len(value), BODY_MAX, "보낼 body의 길이")
+    status, _, _ = server.request("PUT", "/keys/limit", body=value, timeout=LARGE_REQUEST_TIMEOUT)
+    expect(status, 204, "저장의 상태 코드")
+
+    status, _, body = server.request("GET", "/keys/limit", timeout=LARGE_REQUEST_TIMEOUT)
+
+    expect(status, 200, "조회의 상태 코드")
+    expect(len(body), BODY_MAX, "조회한 body의 길이")
+    if body != value:
+        raise AssertionError("조회한 body가 저장한 body와 다릅니다")
+
+
 def stop_exits_zero_without_sanitizer_errors(server):
     code = server.stop()
 
@@ -154,6 +170,7 @@ TESTS = [
     ("(기능) '\\0'과 UTF-8이 아닌 바이트가 든 value를 그대로 돌려받는다", binary_value_round_trips),
     ("(기능) %00이 든 key가 실제 서버를 지나도 잘리지 않는다", encoded_nul_key_is_not_truncated),
     ("(기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다", headers_only_over_limit_returns_413),
+    ("(기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다", body_at_limit_round_trips),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
 ]
 

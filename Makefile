@@ -24,7 +24,13 @@ TEST_BINS := $(TEST_SRCS:tests/%.c=$(BUILD)/%)
 # alloca와 ip_mreq 선언이 숨어서 빌드되지 않으므로, 이 파일에만 _DEFAULT_SOURCE를 줍니다.
 MONGOOSE_DIR   := vendor/mongoose
 MONGOOSE_OBJ   := $(BUILD)/mongoose.o
-MONGOOSE_FLAGS := -D_DEFAULT_SOURCE
+# MG_MAX_RECV_SIZE는 수신 버퍼의 상한입니다. 기본 3 MiB이고 넘으면 응답 없이 연결을
+# 끊으므로, body 상한 16,777,216바이트(API_BODY_MAX)에 여유분 65,536바이트를 더한
+# 16,842,752바이트로 올립니다. 헤더도 같은 버퍼에 들어가기 때문입니다. 여유분은 헤더
+# 49,152바이트와 mongoose가 수신 버퍼를 늘리는 단위 MG_IO_SIZE 16,384바이트를 덮습니다.
+# 헤더가 이보다 길면(아주 긴 key) 상한 크기의 body에서 연결이 끊길 수 있고, spec Q10은
+# 이를 받아들입니다.
+MONGOOSE_FLAGS := -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752
 
 .PHONY: all test functional verify lint format clean
 
@@ -36,7 +42,8 @@ $(SERVER): src/server.c $(LIB_OBJS) $(MONGOOSE_OBJ) | $(BUILD)
 	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) $< $(LIB_OBJS) $(MONGOOSE_OBJ) \
 	    $(LDFLAGS) -o $@
 
-$(MONGOOSE_OBJ): $(MONGOOSE_DIR)/mongoose.c $(MONGOOSE_DIR)/mongoose.h | $(BUILD)
+# Makefile도 의존합니다. MONGOOSE_FLAGS를 바꾸면 이전 빌드의 mongoose.o를 다시 만듭니다.
+$(MONGOOSE_OBJ): $(MONGOOSE_DIR)/mongoose.c $(MONGOOSE_DIR)/mongoose.h Makefile | $(BUILD)
 	$(CC) $(CPPFLAGS) $(MONGOOSE_FLAGS) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/%.o: src/%.c | $(BUILD)
