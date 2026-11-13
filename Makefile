@@ -1,4 +1,4 @@
-# make verify: CI와 같은 명령입니다. 빌드, 테스트, ID 검사를 차례로 실행합니다.
+# make verify: CI와 같은 명령입니다. 빌드, 테스트, ID 검사, 코드 규칙 검사를 차례로 실행합니다.
 
 CC       ?= cc
 CPPFLAGS := -Isrc -D_POSIX_C_SOURCE=200809L
@@ -18,7 +18,7 @@ LIB_OBJS := $(LIB_SRCS:src/%.c=$(BUILD)/%.o)
 TEST_SRCS := $(wildcard tests/*_test.c)
 TEST_BINS := $(TEST_SRCS:tests/%.c=$(BUILD)/%)
 
-.PHONY: all test verify clean
+.PHONY: all test verify lint format clean
 
 SERVER   := $(BUILD)/mini-redis
 
@@ -41,6 +41,15 @@ test: $(TEST_BINS)
 
 verify: $(SERVER) test
 	python3 scripts/check-ids.py
+	python3 scripts/convention.py lint
+
+# 코드 규칙(CONVENTION.md의 코드 절)입니다. lint는 위반을 출력하고 실패로 끝나며,
+# format은 모양 위반을 고치고 바꾼 줄을 보여 줍니다.
+lint:
+	@python3 scripts/convention.py lint
+
+format:
+	@python3 scripts/convention.py format
 
 clean:
 	rm -rf $(BUILD)

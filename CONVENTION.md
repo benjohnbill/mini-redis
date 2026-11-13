@@ -22,7 +22,61 @@
    - **Status:** `Todo`는 `overview.md`가 쓰였고 1단계 전입니다. `In Progress`는 1단계부터 6단계까지 진행 중입니다. `Done`은 6단계가 끝났습니다. 6단계 중 어디인지는 마일스톤 폴더의 문서가 말하므로 따로 적지 않습니다.
    - **`레포` 필드:** 보드는 세 팀 레포가 함께 씁니다. 라벨은 보드 전용 카드에 붙일 수 없으므로, 단일 선택 필드 `레포`로 카드를 나누고 보드 화면을 이 필드로 묶습니다.
 8. **규칙 변경:** 이 파일도 PR과 승인 1건으로 변경합니다. GitHub 설정은 PR로 바꿀 수 없으므로, PR에 적어 승인받은 뒤에 오너가 반영합니다.
-9. **판정:** 빌드와 테스트 결과는 PR 하단의 CI에서 확인합니다. 검증 명령은 `make verify`입니다. 경고를 오류로 보는 빌드, AddressSanitizer와 UBSan을 켠 테스트, ID 검사(`scripts/check-ids.py`)를 실행합니다. CI도 같은 명령을 실행하므로, PR 전에 로컬에서 먼저 실행합니다.
+9. **판정:** 빌드와 테스트 결과는 PR 하단의 CI에서 확인합니다. 검증 명령은 `make verify`입니다. 경고를 오류로 보는 빌드, AddressSanitizer와 UBSan을 켠 테스트, ID 검사(`scripts/check-ids.py`), 코드 규칙 검사(`make lint`)를 실행합니다. CI도 같은 명령을 실행하므로, PR 전에 로컬에서 먼저 실행합니다.
+
+## 코드
+
+모양은 Pintos 팀 레포와 같은 `.clang-format`이 정합니다. Linux 스타일에 스페이스 4칸 들여쓰기, 항상 쓰는 중괄호, 80열을 더했습니다. 이름의 형식(snake_case, 상수는 대문자)과 길이는 `.clang-tidy`가 검사합니다. 아래 `이름` 규칙은 도구가 잡지 못하므로 리뷰에서 봅니다.
+
+```bash
+make lint     # 위반을 출력하고, 위반이 있으면 실패로 끝납니다. make verify도 실행합니다
+make format   # 모양 위반을 고치고, 바꾼 줄을 보여 줍니다
+```
+
+- **설치:** `pip install clang-format==21.1.8 clang-tidy==21.1.6`. 버전이 다르면 서로의 줄을 계속 다시 포맷하게 되므로 CI와 같은 버전을 씁니다. 에디터의 clangd는 `compile_flags.txt`를 읽고 같은 경고를 보여 줍니다.
+- **가져온 코드:** `.clang-format-ignore`에 적은 파일(Pintos의 `hash`와 `list`, `acutest.h`)은 포맷과 이름 검사에서 뺍니다. 원본과 대조할 수 있게 원래 모양을 지킵니다.
+- **blame:** 처음 전체를 포맷한 커밋은 `.git-blame-ignore-revs`에 있습니다. `git config blame.ignoreRevsFile .git-blame-ignore-revs`를 한 번 실행하면 blame이 그 커밋을 건너뜁니다.
+
+### 이름
+
+1. **변수 이름은 담는 것의 역할을 단어로 적습니다.** 줄인 이름은 읽는 사람이 선언까지 거슬러 올라가 뜻을 찾게 만들기 때문입니다. 도구는 3글자 미만만 막으므로 `ent`, `tmp`처럼 3글자 이상인 줄임말은 리뷰에서 봅니다. 예외는 반복 변수 `i`, `j`, `k`, 매개변수 `n`, 파일 디스크립터 `fd`입니다.
+
+   ```c
+   /* 오답 */
+   struct entry *en = malloc(sizeof *en + key_len + value_len);
+   size_t n = ea->key_len < eb->key_len ? ea->key_len : eb->key_len;
+
+   /* 정답 */
+   struct entry *entry = malloc(sizeof *entry + key_len + value_len);
+   size_t shorter_len = left_entry->key_len < right_entry->key_len
+                            ? left_entry->key_len
+                            : right_entry->key_len;
+   ```
+
+2. **다른 파일에서 부르는 함수는 `모듈_동사`로 짓습니다.** 이름만 보고 어느 파일에 있는지 알 수 있습니다(`store_set`, `hash_find`). 파일 안의 `static` 함수는 다루는 대상을 앞에 둡니다(`entry_create`, `entry_free`).
+3. **동사의 뜻은 하나로 고정합니다.**
+
+   | 동사 | 뜻 | 예 |
+   |---|---|---|
+   | `create` / `destroy` | 할당해서 만듭니다 / 해제합니다. 짝으로 씁니다 | `store_create`, `store_destroy` |
+   | `init` | 이미 있는 메모리를 초기화합니다. 할당하지 않습니다 | `hash_init` |
+   | `set` / `get` | 값을 씁니다 / 읽습니다. `get`은 바꾸지 않습니다 | `store_set`, `store_get` |
+   | `find` | 찾습니다. 없으면 `NULL`이나 `false`를 돌려줍니다 | `hash_find` |
+   | `delete` | 모음에서 뺍니다 | `store_delete`, `hash_delete` |
+   | `is_` / `has_` | 참과 거짓을 묻고 `bool`을 돌려줍니다 | |
+
+4. **같은 개념은 모든 파일에서 같은 이름을 씁니다.** 새 개념이 생기면 이 표에 한 줄 더합니다.
+
+   | 개념 | 이름 | 쓰지 않는 이름 |
+   |---|---|---|
+   | store 하나 | `struct store *store` | `s`, `st` |
+   | entry 하나 | `struct entry *entry` | `e`, `en` |
+   | key와 그 바이트 길이 | `key`, `key_len` | `k`, `klen` |
+   | value와 그 바이트 길이 | `value`, `value_len` | `v`, `val`, `vlen` |
+   | 파일 디스크립터 | `fd` | `file_descriptor` |
+
+5. **공개 함수는 단계의 나열로 읽히게 씁니다.** 목적이 하나인 덩어리가 3줄을 넘으면 동사 이름의 `static` 함수로 뺍니다. `store_set`은 `entry_create`로 만들고 `hash_replace`로 넣는 두 단계로 읽힙니다.
+6. **구조체에는 `typedef`를 붙이지 않고, 숫자 상수에는 이름을 붙입니다**(`REQUEST_MAX`). `struct`가 보여야 값인지 구조체인지 바로 알 수 있기 때문입니다.
 
 ## 마일스톤
 

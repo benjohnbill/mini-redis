@@ -1,0 +1,4 @@
+# make format을 처음 전체에 적용한 커밋입니다. 동작은 바뀌지 않았습니다.
+# 한 번 실행하면 git blame이 이 커밋을 건너뜁니다:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+b2bb1200d36bf632229bb44dc896c35815bf5074
