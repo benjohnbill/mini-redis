@@ -17,10 +17,16 @@
 
 테스트 시나리오(팀 확인 2026-11-13). 테스트 이름은 아래 문장을 그대로 씁니다. "(기능)"은 실제 서버에 요청을 보내는 기능 테스트입니다.
 
-- [ ] 저장한 key를 조회하면 200과 저장한 value를 돌려준다
-- [ ] 저장에 성공하면 새로 만들었든 덮어썼든 204를 돌려준다
-- [ ] (기능) 실제 서버에 저장한 value를 조회로 돌려받는다
-- [ ] (기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다
-- [ ] `make verify`가 통과한다
+- [x] 저장한 key를 조회하면 200과 저장한 value를 돌려준다
+- [x] 저장에 성공하면 새로 만들었든 덮어썼든 204를 돌려준다
+- [x] (기능) 실제 서버에 저장한 value를 조회로 돌려받는다
+- [x] (기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다
+- [x] `make verify`가 통과한다
 
 ## Comments
+
+- api 층의 공개 함수는 `src/api.h`의 `api_handle(store, method, method_len, path, path_len, body, body_len)`이고 `struct api_response {status, content_type, body, body_len}`를 돌려줍니다. 413 검사(04)는 이 함수와 따로 헤더 단계용 공개 함수를 더하면 됩니다.
+- 아직 다루지 않는 요청(없는 key, 다른 경로, 다른 메서드)은 임시로 `501` body 없음(`response_unhandled`)이고, 메모리 부족은 `500` body 없음입니다. 02, 03이 오류 이유 body로 바꿉니다. 서버의 `status_reason`에도 새 상태 코드의 문구를 더해야 합니다.
+- key는 아직 퍼센트 인코딩을 풀지 않고 `/keys/` 뒤의 나머지 전부입니다(03).
+- `MG_MAX_RECV_SIZE`는 아직 주지 않았습니다. Makefile의 `MONGOOSE_FLAGS`에 더하면 `mongoose.c`에만 들어갑니다(04).
+- 기능 테스트는 `tests/functional/api_test.py`의 `TESTS` 목록에 `(이름, 함수)`로 더합니다. 서버를 끄는 테스트는 마지막에 둡니다. `make functional`로 따로 돌릴 수 있습니다.

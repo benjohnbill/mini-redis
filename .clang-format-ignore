@@ -2,8 +2,11 @@
 # names too (scripts/convention.py reads this file).
 # hash.c, hash.h, list.c, list.h: ported from Pintos in M0.
 # acutest.h: https://github.com/mity/acutest, vendored as is.
+# vendor/mongoose: https://github.com/cesanta/mongoose 7.23, vendored as is.
 src/hash.c
 src/hash.h
 src/list.c
 src/list.h
 tests/acutest.h
+vendor/mongoose/mongoose.c
+vendor/mongoose/mongoose.h

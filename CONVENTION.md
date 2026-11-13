@@ -73,6 +73,10 @@ make format   # 모양 위반을 고치고, 바꾼 줄을 보여 줍니다
    | entry 하나 | `struct entry *entry` | `e`, `en` |
    | key와 그 바이트 길이 | `key`, `key_len` | `k`, `klen` |
    | value와 그 바이트 길이 | `value`, `value_len` | `v`, `val`, `vlen` |
+   | api 층의 응답 하나 | `struct api_response *response` | `resp`, `res` |
+   | mongoose의 연결 하나 | `struct mg_connection *connection` | `c`, `conn` |
+   | 메서드와 그 바이트 길이 | `method`, `method_len` | `m`, `mlen` |
+   | 경로와 그 바이트 길이 | `path`, `path_len` | `p`, `plen` |
    | 파일 디스크립터 | `fd` | `file_descriptor` |
 
 5. **구조체에는 `typedef`를 붙이지 않고, 숫자 상수에는 이름을 붙입니다**(`REQUEST_MAX`). `struct`가 보여야 값인지 구조체인지 바로 알 수 있기 때문입니다.
