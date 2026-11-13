@@ -24,77 +24,15 @@ struct entry {
     unsigned char bytes[];
 };
 
-/* hash_bytes는 NULL 주소에서 assert로 멈추고, memcmp에 NULL을 넘기면 길이가
-   0이어도 정의되지 않은 동작입니다. 0바이트 key를 NULL로 받으면 이 주소로 바꿉니다. */
-static const unsigned char empty_bytes[1];
-
-static const unsigned char *bytes_or_empty(const void *bytes, size_t len)
-{
-    assert(bytes != NULL || len == 0);
-    return bytes != NULL ? bytes : empty_bytes;
-}
-
-/* value는 해시하지 않습니다. 같은 key는 value와 상관없이 같은 버킷에 가야 합니다. */
-static uint64_t entry_hash(const struct hash_elem *element, void *aux)
-{
-    (void)aux;
-    const struct entry *entry = hash_entry(element, struct entry, elem);
-    return hash_bytes(entry->key, entry->key_len);
-}
-
-/* hash.c는 less(a, b)와 less(b, a)가 모두 거짓이면 같은 key로 봅니다.
-   길이 비교가 없으면 "abc"와 "abcd"를 같은 key로 보게 됩니다. */
+static uint64_t entry_hash(const struct hash_elem *element, void *aux);
 static bool entry_less(const struct hash_elem *left,
-                       const struct hash_elem *right, void *aux)
-{
-    (void)aux;
-    const struct entry *left_entry = hash_entry(left, struct entry, elem);
-    const struct entry *right_entry = hash_entry(right, struct entry, elem);
-    size_t shorter_len = left_entry->key_len < right_entry->key_len
-                             ? left_entry->key_len
-                             : right_entry->key_len;
-    int byte_order = memcmp(left_entry->key, right_entry->key, shorter_len);
-    if (byte_order != 0) {
-        return byte_order < 0;
-    }
-    return left_entry->key_len < right_entry->key_len;
-}
-
-static void entry_free(struct hash_elem *element, void *aux)
-{
-    (void)aux;
-    free(hash_entry(element, struct entry, elem));
-}
-
-/* key와 value의 바이트를 복사한 새 entry를 만듭니다. 길이의 합이 size_t를
-   넘거나 메모리가 부족하면 NULL을 돌려줍니다. */
+                       const struct hash_elem *right, void *aux);
+static void entry_free(struct hash_elem *element, void *aux);
 static struct entry *entry_create(const void *key, size_t key_len,
-                                  const void *value, size_t value_len)
-{
-    /* 길이의 합이 size_t를 넘으면 malloc 크기가 작게 감기므로 할당 실패로 봅니다. */
-    if (key_len > SIZE_MAX - sizeof(struct entry) ||
-        value_len > SIZE_MAX - sizeof(struct entry) - key_len) {
-        return NULL;
-    }
-    struct entry *entry = malloc(sizeof *entry + key_len + value_len);
-    if (entry == NULL) {
-        return NULL;
-    }
-    memcpy(entry->bytes, bytes_or_empty(key, key_len), key_len);
-    memcpy(entry->bytes + key_len, bytes_or_empty(value, value_len), value_len);
-    entry->key = entry->bytes;
-    entry->key_len = key_len;
-    entry->value = entry->bytes + key_len;
-    entry->value_len = value_len;
-    return entry;
-}
-
-/* 조회용 임시 entry입니다. key만 채우면 hash와 less가 동작합니다. */
-static struct entry probe_for(const void *key, size_t key_len)
-{
-    return (struct entry){.key = bytes_or_empty(key, key_len),
-                          .key_len = key_len};
-}
+                                  const void *value, size_t value_len);
+static const unsigned char *bytes_or_empty(const void *bytes, size_t len);
+static void entry_init(struct entry *entry, size_t key_len, size_t value_len);
+static struct entry probe_for(const void *key, size_t key_len);
 
 struct store *store_create(void)
 {
@@ -106,6 +44,7 @@ struct store *store_create(void)
         free(store);
         return NULL;
     }
+
     return store;
 }
 
@@ -133,6 +72,7 @@ bool store_set(struct store *store, const void *key, size_t key_len,
     if (replaced != NULL) {
         entry_free(replaced, NULL);
     }
+
     return true;
 }
 
@@ -150,6 +90,7 @@ bool store_get(struct store *store, const void *key, size_t key_len,
     const struct entry *entry = hash_entry(found, struct entry, elem);
     *value = entry->value;
     *value_len = entry->value_len;
+
     return true;
 }
 
@@ -165,5 +106,86 @@ bool store_delete(struct store *store, const void *key, size_t key_len)
         return false;
     }
     entry_free(removed, NULL);
+
     return true;
+}
+
+/* value는 해시하지 않습니다. 같은 key는 value와 상관없이 같은 버킷에 가야 합니다. */
+static uint64_t entry_hash(const struct hash_elem *element, void *aux)
+{
+    (void)aux;
+    const struct entry *entry = hash_entry(element, struct entry, elem);
+    return hash_bytes(entry->key, entry->key_len);
+}
+
+/* hash.c는 less(a, b)와 less(b, a)가 모두 거짓이면 같은 key로 봅니다.
+   길이 비교가 없으면 "abc"와 "abcd"를 같은 key로 보게 됩니다. */
+static bool entry_less(const struct hash_elem *left,
+                       const struct hash_elem *right, void *aux)
+{
+    (void)aux;
+    const struct entry *left_entry = hash_entry(left, struct entry, elem);
+    const struct entry *right_entry = hash_entry(right, struct entry, elem);
+    size_t shorter_len = left_entry->key_len < right_entry->key_len
+                             ? left_entry->key_len
+                             : right_entry->key_len;
+    int byte_order = memcmp(left_entry->key, right_entry->key, shorter_len);
+    if (byte_order != 0) {
+        return byte_order < 0;
+    }
+
+    return left_entry->key_len < right_entry->key_len;
+}
+
+static void entry_free(struct hash_elem *element, void *aux)
+{
+    (void)aux;
+    free(hash_entry(element, struct entry, elem));
+}
+
+/* key와 value의 바이트를 복사한 새 entry를 만듭니다. 길이의 합이 size_t를
+   넘거나 메모리가 부족하면 NULL을 돌려줍니다. */
+static struct entry *entry_create(const void *key, size_t key_len,
+                                  const void *value, size_t value_len)
+{
+    /* 길이의 합이 size_t를 넘으면 malloc 크기가 작게 감기므로 할당 실패로 봅니다. */
+    if (key_len > SIZE_MAX - sizeof(struct entry) ||
+        value_len > SIZE_MAX - sizeof(struct entry) - key_len) {
+        return NULL;
+    }
+    struct entry *entry = malloc(sizeof *entry + key_len + value_len);
+    if (entry == NULL) {
+        return NULL;
+    }
+    memcpy(entry->bytes, bytes_or_empty(key, key_len), key_len);
+    memcpy(entry->bytes + key_len, bytes_or_empty(value, value_len), value_len);
+    entry_init(entry, key_len, value_len);
+
+    return entry;
+}
+
+/* hash_bytes는 NULL 주소에서 assert로 멈추고, memcmp에 NULL을 넘기면 길이가
+   0이어도 정의되지 않은 동작입니다. 0바이트 key를 NULL로 받으면 이 주소로 바꿉니다. */
+static const unsigned char empty_bytes[1];
+
+static const unsigned char *bytes_or_empty(const void *bytes, size_t len)
+{
+    assert(bytes != NULL || len == 0);
+    return bytes != NULL ? bytes : empty_bytes;
+}
+
+/* key와 value의 바이트가 이미 bytes에 있을 때, 주소와 길이 필드를 채웁니다. */
+static void entry_init(struct entry *entry, size_t key_len, size_t value_len)
+{
+    entry->key = entry->bytes;
+    entry->key_len = key_len;
+    entry->value = entry->bytes + key_len;
+    entry->value_len = value_len;
+}
+
+/* 조회용 임시 entry입니다. key만 채우면 hash와 less가 동작합니다. */
+static struct entry probe_for(const void *key, size_t key_len)
+{
+    return (struct entry){.key = bytes_or_empty(key, key_len),
+                          .key_len = key_len};
 }
