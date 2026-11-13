@@ -235,6 +235,61 @@ static void delete_existing_key_reports_removed_and_get_fails(void) {
     store_destroy(s);
 }
 
+static void delete_missing_key_reports_nothing_removed(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+
+    TEST_CHECK(!store_delete(s, "age", 3));
+
+    store_destroy(s);
+}
+
+static void delete_same_key_twice_reports_nothing_removed_second_time(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+
+    TEST_CHECK(store_delete(s, "name", 4));
+    TEST_CHECK(!store_delete(s, "name", 4));
+
+    store_destroy(s);
+}
+
+static void delete_one_key_keeps_other_keys(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(s, "age", 3, "7", 1));
+
+    TEST_CHECK(store_delete(s, "name", 4));
+
+    const void *value = NULL;
+    size_t value_len = 0;
+    TEST_CHECK(store_get(s, "age", 3, &value, &value_len));
+    TEST_CHECK(value_len == 1);
+    TEST_CHECK(memcmp(value, "7", 1) == 0);
+
+    store_destroy(s);
+}
+
+/* 덮어쓰기가 옛 entry를 테이블에 남기면, 삭제 한 번 뒤에도 옛 value가 조회되거나
+   옛 entry가 누수로 보고됩니다. */
+static void delete_once_after_setting_twice_makes_key_not_found(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(s, "name", 4, "krafto", 6));
+
+    TEST_CHECK(store_delete(s, "name", 4));
+
+    const void *value = NULL;
+    size_t value_len = 0;
+    TEST_CHECK(!store_get(s, "name", 4, &value, &value_len));
+
+    store_destroy(s);
+}
+
 TEST_LIST = {
     {"[T1] 저장한 key를 조회하면 저장한 value와 길이를 돌려준다", set_then_get_returns_value_and_length},
     {"[T2] 없는 key를 조회하면 찾지 못했다고 알린다", get_missing_key_reports_not_found},
@@ -249,5 +304,9 @@ TEST_LIST = {
     {"길이가 다른 value로 덮어써도 새 길이를 돌려준다", overwrite_with_different_length_returns_new_length},
     {"덮어쓴 뒤 AddressSanitizer가 옛 entry의 누수를 보고하지 않는다", overwrite_leaves_no_leak_of_old_entry},
     {"[T4] 있는 key를 삭제하면 지웠다고 알리고, 그 뒤 조회되지 않는다", delete_existing_key_reports_removed_and_get_fails},
+    {"없는 key를 삭제하면 지운 것이 없다고 알린다", delete_missing_key_reports_nothing_removed},
+    {"같은 key를 두 번 삭제하면 두 번째는 지운 것이 없다고 알린다", delete_same_key_twice_reports_nothing_removed_second_time},
+    {"한 key를 삭제해도 다른 key는 그대로 조회된다", delete_one_key_keeps_other_keys},
+    {"같은 key에 두 번 저장한 뒤 한 번 삭제하면 조회되지 않는다", delete_once_after_setting_twice_makes_key_not_found},
     {NULL, NULL},
 };
