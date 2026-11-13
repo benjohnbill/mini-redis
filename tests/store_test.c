@@ -1,8 +1,28 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "acutest.h"
 #include "store.h"
+
+/* key를 조회해 찾았는지, 길이, 바이트를 차례로 확인합니다. 찾지 못하면 value가
+   NULL일 수 있으므로 memcmp 전에 멈춥니다. 그러지 않으면 UBSan이 자식 프로세스를
+   멈춰 acutest가 실패 메시지를 잃습니다. */
+static void check_get(struct store *s, const void *key, size_t key_len,
+                      const void *want, size_t want_len) {
+    const void *value = NULL;
+    size_t value_len = SIZE_MAX;
+    if (!TEST_CHECK(store_get(s, key, key_len, &value, &value_len))) {
+        TEST_MSG("못 찾은 key: \"%.*s\" (길이 %zu)", (int)key_len,
+                 key_len > 0 ? (const char *)key : "", key_len);
+        return;
+    }
+    if (!TEST_CHECK(value_len == want_len)) {
+        TEST_MSG("value 길이: 기대 %zu, 실제 %zu", want_len, value_len);
+        return;
+    }
+    TEST_CHECK(memcmp(value, want, want_len) == 0);
+}
 
 static void set_then_get_returns_value_and_length(void) {
     struct store *s = store_create();
@@ -10,11 +30,7 @@ static void set_then_get_returns_value_and_length(void) {
 
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
 
-    const void *value = NULL;
-    size_t value_len = 0;
-    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
-    TEST_CHECK(value_len == 6);
-    TEST_CHECK(memcmp(value, "jungle", 6) == 0);
+    check_get(s, "name", 4, "jungle", 6);
 
     store_destroy(s);
 }
@@ -36,10 +52,7 @@ static void empty_value_is_found_with_length_zero(void) {
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, "empty", 5, NULL, 0));
 
-    const void *value = NULL;
-    size_t value_len = 99;
-    TEST_CHECK(store_get(s, "empty", 5, &value, &value_len));
-    TEST_CHECK(value_len == 0);
+    check_get(s, "empty", 5, "", 0);
 
     store_destroy(s);
 }
@@ -49,11 +62,7 @@ static void empty_key_can_be_set_and_get(void) {
     TEST_ASSERT(s != NULL);
     TEST_CHECK(store_set(s, NULL, 0, "v", 1));
 
-    const void *value = NULL;
-    size_t value_len = 0;
-    TEST_CHECK(store_get(s, NULL, 0, &value, &value_len));
-    TEST_CHECK(value_len == 1);
-    TEST_CHECK(memcmp(value, "v", 1) == 0);
+    check_get(s, NULL, 0, "v", 1);
 
     store_destroy(s);
 }
@@ -64,11 +73,7 @@ static void value_with_inner_nul_is_not_truncated(void) {
     const char bin[5] = {'a', '\0', 'b', '\0', 'c'};
     TEST_CHECK(store_set(s, "bin", 3, bin, 5));
 
-    const void *value = NULL;
-    size_t value_len = 0;
-    TEST_CHECK(store_get(s, "bin", 3, &value, &value_len));
-    TEST_CHECK(value_len == 5);
-    TEST_CHECK(memcmp(value, "a\0b\0c", 5) == 0);
+    check_get(s, "bin", 3, "a\0b\0c", 5);
 
     store_destroy(s);
 }
@@ -81,15 +86,11 @@ static void changing_caller_buffer_after_set_keeps_stored_value(void) {
     TEST_CHECK(store_set(s, key, 4, val, 6));
     memcpy(val, "XXXXXX", 6);
 
-    const void *value = NULL;
-    size_t value_len = 0;
-    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
-    TEST_CHECK(value_len == 6);
-    TEST_CHECK(memcmp(value, "jungle", 6) == 0);
+    check_get(s, "name", 4, "jungle", 6);
 
     /* 호출한 쪽 key 버퍼를 바꿔도 저장된 key로 찾을 수 있어야 합니다. */
     memcpy(key, "XXXX", 4);
-    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
+    check_get(s, "name", 4, "jungle", 6);
 
     store_destroy(s);
 }
@@ -100,18 +101,14 @@ static void keys_sharing_prefix_with_different_length_are_distinct(void) {
     TEST_CHECK(store_set(s, "abc", 3, "short", 5));
     TEST_CHECK(store_set(s, "abcd", 4, "long", 4));
 
-    const void *value = NULL;
-    size_t value_len = 0;
-    TEST_CHECK(store_get(s, "abc", 3, &value, &value_len));
-    TEST_CHECK(value_len == 5);
-    TEST_CHECK(memcmp(value, "short", 5) == 0);
-    TEST_CHECK(store_get(s, "abcd", 4, &value, &value_len));
-    TEST_CHECK(value_len == 4);
-    TEST_CHECK(memcmp(value, "long", 4) == 0);
+    check_get(s, "abc", 3, "short", 5);
+    check_get(s, "abcd", 4, "long", 4);
 
     /* 두 key가 다른 버킷에 가면 비교가 일어나지 않습니다. "a", "aa", ... 64개는
        서로 앞부분이 같고, 버킷 수보다 많아서 같은 버킷에서 비교되는 쌍이 생깁니다.
        value에는 key의 길이를 1바이트로 적습니다. */
+    const void *value = NULL;
+    size_t value_len = 0;
     char key[64];
     memset(key, 'a', sizeof key);
     for (size_t len = 1; len <= sizeof key; len++) {
@@ -179,11 +176,7 @@ static void set_twice_returns_later_value(void) {
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
     TEST_CHECK(store_set(s, "name", 4, "krafto", 6));
 
-    const void *value = NULL;
-    size_t value_len = 0;
-    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
-    TEST_CHECK(value_len == 6);
-    TEST_CHECK(memcmp(value, "krafto", 6) == 0);
+    check_get(s, "name", 4, "krafto", 6);
 
     store_destroy(s);
 }
@@ -195,16 +188,10 @@ static void overwrite_with_different_length_returns_new_length(void) {
     TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
     TEST_CHECK(store_set(s, "name", 4, "ab", 2));
 
-    const void *value = NULL;
-    size_t value_len = 0;
-    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
-    TEST_CHECK(value_len == 2);
-    TEST_CHECK(memcmp(value, "ab", 2) == 0);
+    check_get(s, "name", 4, "ab", 2);
 
     TEST_CHECK(store_set(s, "name", 4, "longer value", 12));
-    TEST_CHECK(store_get(s, "name", 4, &value, &value_len));
-    TEST_CHECK(value_len == 12);
-    TEST_CHECK(memcmp(value, "longer value", 12) == 0);
+    check_get(s, "name", 4, "longer value", 12);
 
     store_destroy(s);
 }
@@ -264,11 +251,7 @@ static void delete_one_key_keeps_other_keys(void) {
 
     TEST_CHECK(store_delete(s, "name", 4));
 
-    const void *value = NULL;
-    size_t value_len = 0;
-    TEST_CHECK(store_get(s, "age", 3, &value, &value_len));
-    TEST_CHECK(value_len == 1);
-    TEST_CHECK(memcmp(value, "7", 1) == 0);
+    check_get(s, "age", 3, "7", 1);
 
     store_destroy(s);
 }
