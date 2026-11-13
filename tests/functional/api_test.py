@@ -21,6 +21,7 @@ HOST = "127.0.0.1"
 START_TIMEOUT = 10.0
 STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
+BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), spec Q10
 SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime error:")
 
 
@@ -119,6 +120,24 @@ def encoded_nul_key_is_not_truncated(server):
     expect(truncated_body, b'{"error":"key_not_found"}', "nul 조회의 body")
 
 
+def headers_only_over_limit_returns_413(server):
+    # body는 보내지 않습니다. 보내면 서버가 읽지 않은 데이터를 남긴 채 연결을
+    # 닫을 때 커널이 연결을 리셋해서, 클라이언트가 413을 받지 못할 수 있습니다.
+    connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+    try:
+        connection.putrequest("PUT", "/keys/too-large")
+        connection.putheader("Content-Length", str(BODY_MAX + 1))
+        connection.endheaders()
+        response = connection.getresponse()
+        status, content_type, body = response.status, response.getheader("Content-Type"), response.read()
+    finally:
+        connection.close()
+
+    expect(status, 413, "상태 코드")
+    expect(content_type, "application/json", "Content-Type")
+    expect(body, b'{"error":"body_too_large"}', "body")
+
+
 def stop_exits_zero_without_sanitizer_errors(server):
     code = server.stop()
 
@@ -134,6 +153,7 @@ TESTS = [
     ("(기능) 실제 서버에 저장한 value를 조회로 돌려받는다", put_then_get_returns_value),
     ("(기능) '\\0'과 UTF-8이 아닌 바이트가 든 value를 그대로 돌려받는다", binary_value_round_trips),
     ("(기능) %00이 든 key가 실제 서버를 지나도 잘리지 않는다", encoded_nul_key_is_not_truncated),
+    ("(기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다", headers_only_over_limit_returns_413),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
 ]
 

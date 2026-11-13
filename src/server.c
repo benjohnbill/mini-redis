@@ -32,6 +32,10 @@ static bool listener_open(struct mg_mgr *manager, struct store *store,
                           int port);
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
+static void headers_check(struct mg_connection *connection,
+                          struct mg_http_message *message);
+static void request_handle(struct mg_connection *connection,
+                           struct mg_http_message *message);
 static void response_send(struct mg_connection *connection,
                           const struct api_response *response);
 static const char *status_reason(int status);
@@ -116,10 +120,32 @@ static bool listener_open(struct mg_mgr *manager, struct store *store, int port)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
-    if (event != MG_EV_HTTP_MSG) {
+    if (event == MG_EV_HTTP_HDRS) {
+        headers_check(connection, event_data);
+    } else if (event == MG_EV_HTTP_MSG) {
+        request_handle(connection, event_data);
+    }
+}
+
+/* body가 오기 전에 Content-Length가 상한을 넘는지 봅니다(spec Q10). 넘으면
+   413을 보내고, 송신 버퍼가 빈 뒤 mongoose가 연결을 닫게 합니다(is_draining).
+   mongoose는 body를 기다리는 동안 데이터가 올 때마다 이 이벤트를 다시 부르므로,
+   이미 닫는 중인 연결에는 413을 다시 보내지 않습니다. */
+static void headers_check(struct mg_connection *connection,
+                          struct mg_http_message *message)
+{
+    struct api_response response;
+    if (connection->is_draining ||
+        !api_reject_large_body(message->body.len, &response)) {
         return;
     }
-    struct mg_http_message *message = event_data;
+    response_send(connection, &response);
+    connection->is_draining = 1;
+}
+
+static void request_handle(struct mg_connection *connection,
+                           struct mg_http_message *message)
+{
     struct store *store = connection->fn_data;
     struct api_response response = api_handle(
         store, message->method.buf, message->method.len, message->uri.buf,
@@ -160,6 +186,8 @@ static const char *status_reason(int status)
         return "Not Found";
     case 405:
         return "Method Not Allowed";
+    case 413:
+        return "Content Too Large";
     case 500:
         return "Internal Server Error";
     default:
