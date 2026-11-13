@@ -209,6 +209,9 @@ static void response_send(struct mg_connection *connection,
     if (response->content_type != NULL) {
         mg_printf(connection, "Content-Type: %s\r\n", response->content_type);
     }
+    if (response->allow != NULL) {
+        mg_printf(connection, "Allow: %s\r\n", response->allow);
+    }
     if (response->status != 204) {
         mg_printf(connection, "Content-Length: %zu\r\n", response->body_len);
     }

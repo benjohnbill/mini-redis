@@ -24,6 +24,8 @@ struct api_response {
        다음 store 호출을 하기 전에 응답을 보내야 합니다. */
     const void *body;
     size_t body_len;
+    /* 405일 때 Allow 헤더에 실을 메서드 목록이고, 그 밖에는 NULL입니다. */
+    const char *allow;
 };
 
 /* 요청 하나를 처리하고 응답을 돌려줍니다. */

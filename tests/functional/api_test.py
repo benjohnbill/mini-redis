@@ -140,6 +140,20 @@ def raw_question_mark_rejected_and_encoded_one_kept(server):
     expect(found_body, b"w", "%3f 조회의 body")
 
 
+def method_not_allowed_sends_allow_header(server):
+    connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+    try:
+        connection.request("POST", "/keys/allow", body=b"v")
+        response = connection.getresponse()
+        status, allow, body = response.status, response.getheader("Allow"), response.read()
+    finally:
+        connection.close()
+
+    expect(status, 405, "상태 코드")
+    expect(allow, "GET, PUT, DELETE", "Allow")
+    expect(body, b'{"error":"method_not_allowed"}', "body")
+
+
 def headers_only_request(server, path, header, value):
     """헤더만 보내고 응답을 읽습니다. body는 보내지 않습니다. 보내면 서버가 읽지
     않은 데이터를 남긴 채 연결을 닫을 때 커널이 연결을 리셋해서, 클라이언트가
@@ -245,6 +259,7 @@ TESTS = [
     ("[T7] (기능) %00이 든 key가 실제 서버를 지나도 잘리지 않는다", encoded_nul_key_is_not_truncated),
     ("(기능) 경로의 인코딩하지 않은 ?는 400 bad_key_encoding을 받고, %3F로 보낸 ?는 key에 남는다",
      raw_question_mark_rejected_and_encoded_one_kept),
+    ("(기능) 지원하지 않는 메서드에 405와 Allow: GET, PUT, DELETE 헤더를 받는다", method_not_allowed_sends_allow_header),
     ("[T8] (기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다", headers_only_over_limit_returns_413),
     ("(기능) 헤더만 보내도 Transfer-Encoding: chunked이면 411을 받는다", headers_only_chunked_returns_411),
     ("(기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다", body_at_limit_round_trips),

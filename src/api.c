@@ -8,6 +8,8 @@
 #define KEYS_PREFIX_LEN (sizeof KEYS_PREFIX - 1)
 /* 오류 응답의 body입니다. 리터럴을 이어 붙여 컴파일 때 문자열 하나가 됩니다. */
 #define ERROR_BODY(reason) "{\"error\":\"" reason "\"}"
+/* 405 응답의 Allow 헤더 값입니다. key_action_parse가 받는 메서드와 같습니다. */
+#define ALLOWED_METHODS "GET, PUT, DELETE"
 
 /* 지원하는 메서드가 store에 하는 일입니다. */
 enum key_action {
@@ -53,7 +55,10 @@ struct api_response api_handle(struct store *store, const char *method,
     }
     enum key_action action = key_action_parse(method, method_len);
     if (action == KEY_ACTION_NONE) {
-        return response_error(405, ERROR_BODY("method_not_allowed"));
+        struct api_response response =
+            response_error(405, ERROR_BODY("method_not_allowed"));
+        response.allow = ALLOWED_METHODS;
+        return response;
     }
 
     return key_request_handle(store, action, path + KEYS_PREFIX_LEN,
@@ -208,8 +213,10 @@ static struct api_response key_get(struct store *store, const char *key,
     if (!store_get(store, key, key_len, &value, &value_len)) {
         return response_error(404, ERROR_BODY("key_not_found"));
     }
-    struct api_response response = {200, "application/octet-stream", value,
-                                    value_len};
+    struct api_response response = {.status = 200,
+                                    .content_type = "application/octet-stream",
+                                    .body = value,
+                                    .body_len = value_len};
 
     return response;
 }
@@ -223,7 +230,7 @@ static struct api_response key_set(struct store *store, const char *key,
     if (!store_set(store, key, key_len, value, value_len)) {
         return response_error(500, ERROR_BODY("out_of_memory"));
     }
-    struct api_response response = {204, NULL, NULL, 0};
+    struct api_response response = {.status = 204};
 
     return response;
 }
@@ -234,7 +241,7 @@ static struct api_response key_delete(struct store *store, const char *key,
     if (!store_delete(store, key, key_len)) {
         return response_error(404, ERROR_BODY("key_not_found"));
     }
-    struct api_response response = {204, NULL, NULL, 0};
+    struct api_response response = {.status = 204};
 
     return response;
 }
@@ -242,7 +249,9 @@ static struct api_response key_delete(struct store *store, const char *key,
 /* body는 오류 이유를 담은 JSON 리터럴(ERROR_BODY)입니다. */
 static struct api_response response_error(int status, const char *body)
 {
-    struct api_response response = {status, "application/json", body,
-                                    strlen(body)};
+    struct api_response response = {.status = status,
+                                    .content_type = "application/json",
+                                    .body = body,
+                                    .body_len = strlen(body)};
     return response;
 }

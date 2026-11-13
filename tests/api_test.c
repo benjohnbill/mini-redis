@@ -297,6 +297,21 @@ static void post_to_key_returns_405_method_not_allowed(void)
     store_destroy(store);
 }
 
+static void method_not_allowed_lists_allowed_methods(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response =
+        request(store, "PATCH", "/keys/name", "v", 1);
+
+    TEST_CHECK(response.status == 405);
+    TEST_ASSERT(response.allow != NULL);
+    TEST_CHECK(strcmp(response.allow, "GET, PUT, DELETE") == 0);
+    TEST_MSG("Allow: %s", response.allow);
+    store_destroy(store);
+}
+
 static void wrong_path_and_method_returns_404_route_not_found(void)
 {
     struct store *store = store_create();
@@ -333,7 +348,7 @@ static void body_one_byte_over_limit_returns_413_body_too_large(void)
 static void body_at_limit_is_accepted(void)
 {
     /* 거절하지 않으면 response를 건드리지 않으므로, 표시값이 남아야 합니다. */
-    struct api_response response = {-1, NULL, NULL, 0};
+    struct api_response response = {.status = -1};
 
     bool rejected = api_reject_headers(false, 16777216, &response);
 
@@ -394,6 +409,8 @@ TEST_LIST = {
     {"/keys/<key>에 POST를 보내면 405와 {\"error\":\"method_not_allowed\"}를 "
      "돌려준다",
      post_to_key_returns_405_method_not_allowed},
+    {"405 응답은 Allow 헤더로 GET, PUT, DELETE를 알린다",
+     method_not_allowed_lists_allowed_methods},
     {"[T11] 경로와 메서드가 모두 틀리면 경로 오류인 404와 route_not_found를 "
      "돌려준다",
      wrong_path_and_method_returns_404_route_not_found},
