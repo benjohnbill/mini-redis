@@ -141,6 +141,69 @@ static void encoded_slash_becomes_slash_byte_in_key(void)
     store_destroy(store);
 }
 
+static void encoded_nul_key_is_not_truncated(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    struct api_response saved = request(store, "PUT", "/keys/a%00b", "v", 1);
+    TEST_CHECK(saved.status == 204);
+
+    struct api_response found = request(store, "GET", "/keys/a%00b", NULL, 0);
+    /* '\0'에서 잘렸다면 key "a"로 저장됐을 것입니다. */
+    struct api_response truncated = request(store, "GET", "/keys/a", NULL, 0);
+
+    TEST_CHECK(found.status == 200);
+    TEST_MSG("a%%00b 조회의 상태 코드: %d", found.status);
+    TEST_ASSERT(found.body_len == 1);
+    TEST_CHECK(memcmp(found.body, "v", 1) == 0);
+    expect_error(truncated, 404, "{\"error\":\"key_not_found\"}");
+    store_destroy(store);
+}
+
+static void encoded_space_becomes_space_byte_in_key(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    request(store, "PUT", "/keys/a%20b", "v", 1);
+
+    struct api_response response = request(store, "GET", "/keys/a b", NULL, 0);
+
+    TEST_CHECK(response.status == 200);
+    TEST_MSG("상태 코드: %d", response.status);
+    store_destroy(store);
+}
+
+static void percent_encoding_is_decoded_only_once(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    request(store, "PUT", "/keys/%2541", "v", 1);
+
+    /* 두 번 풀었다면 key는 "A"입니다. */
+    struct api_response twice = request(store, "GET", "/keys/A", NULL, 0);
+    struct api_response once = request(store, "GET", "/keys/%2541", NULL, 0);
+
+    expect_error(twice, 404, "{\"error\":\"key_not_found\"}");
+    TEST_CHECK(once.status == 200);
+    TEST_MSG("%%2541 조회의 상태 코드: %d", once.status);
+    store_destroy(store);
+}
+
+static void encoded_hangul_becomes_utf8_bytes_in_key(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    request(store, "PUT", "/keys/%ED%95%9C", "v", 1);
+
+    /* "한"의 UTF-8 바이트 ED 95 9C를 인코딩 없이 보낸 경로입니다. */
+    struct api_response response =
+        request(store, "GET", "/keys/\xED\x95\x9C", NULL, 0);
+
+    TEST_CHECK(response.status == 200);
+    TEST_MSG("상태 코드: %d", response.status);
+    store_destroy(store);
+}
+
 TEST_LIST = {
     {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
@@ -158,5 +221,13 @@ TEST_LIST = {
      content_type_is_octet_stream_for_get_and_json_for_error},
     {"%2F는 경로 구분자가 아니라 key 안의 / 바이트가 된다",
      encoded_slash_becomes_slash_byte_in_key},
+    {"%00이 든 key를 잘리지 않고 저장하고 조회한다",
+     encoded_nul_key_is_not_truncated},
+    {"%20이 든 key를 공백 바이트 그대로 key로 쓴다",
+     encoded_space_becomes_space_byte_in_key},
+    {"%2541은 한 번만 풀려 %41이라는 key가 된다",
+     percent_encoding_is_decoded_only_once},
+    {"한글을 인코딩한 key를 그 UTF-8 바이트 그대로 key로 쓴다",
+     encoded_hangul_becomes_utf8_bytes_in_key},
     {NULL, NULL},
 };
