@@ -8,12 +8,15 @@
 
 테스트 시나리오(팀 확인 2026-11-13). 테스트 이름은 아래 문장을 그대로 씁니다.
 
-- [ ] Content-Length가 상한보다 1바이트 크면 413과 {"error":"body_too_large"}를 돌려준다
-- [ ] Content-Length가 상한과 같으면 받아들인다
-- [ ] (기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다
-- [ ] (기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다
-- [ ] `make verify`가 통과한다
+- [x] Content-Length가 상한보다 1바이트 크면 413과 {"error":"body_too_large"}를 돌려준다
+- [x] Content-Length가 상한과 같으면 받아들인다
+- [x] (기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다
+- [x] (기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다
+- [x] `make verify`가 통과한다
 
 기능 테스트는 상한을 넘는 요청에서 body를 보내지 않고 헤더만 보낸 뒤 응답을 읽습니다. body까지 보내면, 서버가 읽지 않은 데이터를 남긴 채 연결을 닫을 때 커널이 연결을 리셋해서 클라이언트가 `413`을 받지 못할 수 있습니다.
 
 ## Comments
+
+- 공개 함수는 `bool api_reject_large_body(size_t body_len, struct api_response *response)`이고 상한은 `src/api.h`의 `API_BODY_MAX`입니다. 서버의 `headers_check`가 413을 보낸 뒤 `is_draining = 1`로 두면, mongoose가 송신 버퍼를 비운 뒤 연결을 닫습니다. mongoose는 body를 기다리는 동안 데이터가 올 때마다 `MG_EV_HTTP_HDRS`를 다시 부르므로, 닫는 중인 연결은 건너뜁니다. `MG_MAX_RECV_SIZE`는 16,842,752(여유분 65,536바이트)입니다.
+- mongoose는 수신 버퍼를 `MG_IO_SIZE`(16 KiB)씩 새로 할당해 복사하며 늘려서, ASan 빌드에서 16 MiB PUT 하나가 30초 걸렸습니다. 서버의 `receive_buffer_grow`가 `MG_EV_READ`에서 꽉 찬 버퍼를 요청 길이까지 두 배씩 늘려 0.5초로 줄였습니다. 05에서 큰 body를 천천히 보내는 테스트는 이 경로를 지납니다. mongoose 소스(POSIX 소켓 경로)에서 받은 연결을 시간으로 닫는 코드는 찾지 못했습니다. 아무것도 보내지 않는 연결은 클라이언트가 닫거나 서버가 끝날 때까지 남는 것으로 보이며, 테스트로 확인하지는 않았습니다.
