@@ -92,6 +92,19 @@ def put_then_get_returns_value(server):
     expect(body, b"jungle", "조회의 body")
 
 
+def binary_value_round_trips(server):
+    # '\0'이 가운데와 끝에 있고, UTF-8로 풀 수 없는 바이트(0xFF, 0xC3 단독)가 든 value입니다.
+    value = b"a\x00b\xff\xfe\xc3\x00"
+    status, _, _ = server.request("PUT", "/keys/binary", body=value)
+    expect(status, 204, "저장의 상태 코드")
+
+    status, content_type, body = server.request("GET", "/keys/binary")
+
+    expect(status, 200, "조회의 상태 코드")
+    expect(content_type, "application/octet-stream", "조회의 Content-Type")
+    expect(body, value, "조회의 body")
+
+
 def stop_exits_zero_without_sanitizer_errors(server):
     code = server.stop()
 
@@ -105,6 +118,7 @@ def stop_exits_zero_without_sanitizer_errors(server):
 # 서버를 끄는 테스트는 마지막에 둡니다.
 TESTS = [
     ("(기능) 실제 서버에 저장한 value를 조회로 돌려받는다", put_then_get_returns_value),
+    ("(기능) '\\0'과 UTF-8이 아닌 바이트가 든 value를 그대로 돌려받는다", binary_value_round_trips),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
 ]
 
