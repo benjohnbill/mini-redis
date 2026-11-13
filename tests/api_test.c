@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <string.h>
 
 #include "acutest.h"
@@ -283,6 +284,29 @@ static void wrong_method_and_empty_key_returns_405(void)
     store_destroy(store);
 }
 
+static void body_one_byte_over_limit_returns_413_body_too_large(void)
+{
+    struct api_response response = {0};
+
+    /* 상한 16 MiB(16,777,216바이트)보다 1바이트 큽니다. */
+    bool rejected = api_reject_large_body(16777217, &response);
+
+    TEST_CHECK(rejected);
+    expect_error(response, 413, "{\"error\":\"body_too_large\"}");
+}
+
+static void body_at_limit_is_accepted(void)
+{
+    /* 거절하지 않으면 response를 건드리지 않으므로, 표시값이 남아야 합니다. */
+    struct api_response response = {-1, NULL, NULL, 0};
+
+    bool rejected = api_reject_large_body(16777216, &response);
+
+    TEST_CHECK(!rejected);
+    TEST_CHECK(response.status == -1);
+    TEST_MSG("상태 코드: %d", response.status);
+}
+
 TEST_LIST = {
     {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
@@ -324,5 +348,9 @@ TEST_LIST = {
      wrong_path_and_method_returns_404_route_not_found},
     {"메서드가 틀리고 key가 비면 메서드 오류인 405를 돌려준다",
      wrong_method_and_empty_key_returns_405},
+    {"Content-Length가 상한보다 1바이트 크면 413과 "
+     "{\"error\":\"body_too_large\"}를 돌려준다",
+     body_one_byte_over_limit_returns_413_body_too_large},
+    {"Content-Length가 상한과 같으면 받아들인다", body_at_limit_is_accepted},
     {NULL, NULL},
 };

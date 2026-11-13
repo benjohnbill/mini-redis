@@ -60,6 +60,16 @@ struct api_response api_handle(struct store *store, const char *method,
                               path_len - KEYS_PREFIX_LEN, body, body_len);
 }
 
+bool api_reject_large_body(size_t body_len, struct api_response *response)
+{
+    if (body_len <= API_BODY_MAX) {
+        return false;
+    }
+    *response = response_error(413, ERROR_BODY("body_too_large"));
+
+    return true;
+}
+
 /* `/keys/`로 시작해야 합니다. 끝에 /가 없는 `/keys`도 경로 오류입니다. */
 static bool path_is_keys(const char *path, size_t path_len)
 {
