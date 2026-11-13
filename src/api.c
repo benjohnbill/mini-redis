@@ -9,14 +9,28 @@
 /* 오류 응답의 body입니다. 리터럴을 이어 붙여 컴파일 때 문자열 하나가 됩니다. */
 #define ERROR_BODY(reason) "{\"error\":\"" reason "\"}"
 
-static struct api_response key_dispatch(struct store *store, const char *method,
-                                        size_t method_len, const char *key,
-                                        size_t key_len, const void *body,
-                                        size_t body_len);
+/* 지원하는 메서드가 store에 하는 일입니다. */
+enum key_action {
+    KEY_ACTION_NONE,
+    KEY_ACTION_GET,
+    KEY_ACTION_SET,
+    KEY_ACTION_DELETE,
+};
+
+static bool path_is_keys(const char *path, size_t path_len);
+static enum key_action key_action_parse(const char *method, size_t method_len);
+static bool method_is(const char *method, size_t method_len, const char *name);
+static struct api_response
+key_request_handle(struct store *store, enum key_action action,
+                   const char *encoded_key, size_t encoded_key_len,
+                   const void *body, size_t body_len);
 static bool key_decode(const char *encoded, size_t encoded_len, char *key,
                        size_t *key_len);
 static int hex_digit_value(char digit);
-static bool method_is(const char *method, size_t method_len, const char *name);
+static struct api_response key_action_run(struct store *store,
+                                          enum key_action action,
+                                          const char *key, size_t key_len,
+                                          const void *body, size_t body_len);
 static struct api_response key_get(struct store *store, const char *key,
                                    size_t key_len);
 static struct api_response key_set(struct store *store, const char *key,
@@ -25,19 +39,61 @@ static struct api_response key_set(struct store *store, const char *key,
 static struct api_response key_delete(struct store *store, const char *key,
                                       size_t key_len);
 static struct api_response response_error(int status, const char *body);
-static struct api_response response_unhandled(void);
 
+/* 경로, 메서드, key 순서로 검사하고 처음 걸린 오류 하나로 답합니다. 경로가
+   틀린 요청에 메서드나 key 오류를 알리면 다른 서버가 엉뚱한 곳을 고치게
+   되기 때문입니다(spec "오류의 우선순위"). */
 struct api_response api_handle(struct store *store, const char *method,
                                size_t method_len, const char *path,
                                size_t path_len, const void *body,
                                size_t body_len)
 {
-    if (path_len < KEYS_PREFIX_LEN ||
-        memcmp(path, KEYS_PREFIX, KEYS_PREFIX_LEN) != 0) {
+    if (!path_is_keys(path, path_len)) {
         return response_error(404, ERROR_BODY("route_not_found"));
     }
-    const char *encoded_key = path + KEYS_PREFIX_LEN;
-    size_t encoded_key_len = path_len - KEYS_PREFIX_LEN;
+    enum key_action action = key_action_parse(method, method_len);
+    if (action == KEY_ACTION_NONE) {
+        return response_error(405, ERROR_BODY("method_not_allowed"));
+    }
+
+    return key_request_handle(store, action, path + KEYS_PREFIX_LEN,
+                              path_len - KEYS_PREFIX_LEN, body, body_len);
+}
+
+/* `/keys/`로 시작해야 합니다. 끝에 /가 없는 `/keys`도 경로 오류입니다. */
+static bool path_is_keys(const char *path, size_t path_len)
+{
+    return path_len >= KEYS_PREFIX_LEN &&
+           memcmp(path, KEYS_PREFIX, KEYS_PREFIX_LEN) == 0;
+}
+
+static enum key_action key_action_parse(const char *method, size_t method_len)
+{
+    if (method_is(method, method_len, "GET")) {
+        return KEY_ACTION_GET;
+    }
+    if (method_is(method, method_len, "PUT")) {
+        return KEY_ACTION_SET;
+    }
+    if (method_is(method, method_len, "DELETE")) {
+        return KEY_ACTION_DELETE;
+    }
+
+    return KEY_ACTION_NONE;
+}
+
+static bool method_is(const char *method, size_t method_len, const char *name)
+{
+    return method_len == strlen(name) && memcmp(method, name, method_len) == 0;
+}
+
+/* key의 인코딩을 풀어 검사한 뒤 store에 action을 합니다. */
+static struct api_response key_request_handle(struct store *store,
+                                              enum key_action action,
+                                              const char *encoded_key,
+                                              size_t encoded_key_len,
+                                              const void *body, size_t body_len)
+{
     /* 푼 key는 인코딩된 key보다 길지 않습니다. 0바이트 malloc을 피하려고 1을 더합니다. */
     char *key = malloc(encoded_key_len + 1);
     if (key == NULL) {
@@ -52,31 +108,12 @@ struct api_response api_handle(struct store *store, const char *method,
            여지를 없애려고 거절합니다(spec Q3). */
         response = response_error(400, ERROR_BODY("empty_key"));
     } else {
-        response = key_dispatch(store, method, method_len, key, key_len, body,
-                                body_len);
+        response = key_action_run(store, action, key, key_len, body, body_len);
     }
     /* store는 key를 복사해서 가지므로, 응답을 돌려주기 전에 풀어도 됩니다. */
     free(key);
 
     return response;
-}
-
-static struct api_response key_dispatch(struct store *store, const char *method,
-                                        size_t method_len, const char *key,
-                                        size_t key_len, const void *body,
-                                        size_t body_len)
-{
-    if (method_is(method, method_len, "GET")) {
-        return key_get(store, key, key_len);
-    }
-    if (method_is(method, method_len, "PUT")) {
-        return key_set(store, key, key_len, body, body_len);
-    }
-    if (method_is(method, method_len, "DELETE")) {
-        return key_delete(store, key, key_len);
-    }
-
-    return response_unhandled();
 }
 
 /* %HH를 정확히 한 번 풀어 key에 쓰고, 그 길이를 *key_len에 둡니다. 푼 결과는
@@ -123,9 +160,20 @@ static int hex_digit_value(char digit)
     return -1;
 }
 
-static bool method_is(const char *method, size_t method_len, const char *name)
+/* action은 key_action_parse가 KEY_ACTION_NONE이 아니라고 확인한 값입니다. */
+static struct api_response key_action_run(struct store *store,
+                                          enum key_action action,
+                                          const char *key, size_t key_len,
+                                          const void *body, size_t body_len)
 {
-    return method_len == strlen(name) && memcmp(method, name, method_len) == 0;
+    if (action == KEY_ACTION_GET) {
+        return key_get(store, key, key_len);
+    }
+    if (action == KEY_ACTION_SET) {
+        return key_set(store, key, key_len, body, body_len);
+    }
+
+    return key_delete(store, key, key_len);
 }
 
 static struct api_response key_get(struct store *store, const char *key,
@@ -172,12 +220,5 @@ static struct api_response response_error(int status, const char *body)
 {
     struct api_response response = {status, "application/json", body,
                                     strlen(body)};
-    return response;
-}
-
-/* 이 티켓이 아직 다루지 않는 요청입니다. 뒤 티켓이 오류 응답으로 바꿉니다. */
-static struct api_response response_unhandled(void)
-{
-    struct api_response response = {501, NULL, NULL, 0};
     return response;
 }
