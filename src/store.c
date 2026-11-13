@@ -57,6 +57,11 @@ static void entry_free(struct hash_elem *e, void *aux) {
     free(hash_entry(e, struct entry, elem));
 }
 
+/* 조회용 임시 entry입니다. key만 채우면 hash와 less가 동작합니다. */
+static struct entry probe_for(const void *key, size_t key_len) {
+    return (struct entry){.key = bytes_or_empty(key, key_len), .key_len = key_len};
+}
+
 struct store *store_create(void) {
     struct store *s = malloc(sizeof *s);
     if (s == NULL) return NULL;
@@ -104,8 +109,7 @@ bool store_get(struct store *s, const void *key, size_t key_len,
                const void **value, size_t *value_len) {
     assert(s != NULL && value != NULL && value_len != NULL);
 
-    /* 조회용 임시 entry입니다. key만 채우면 hash와 less가 동작합니다. */
-    struct entry probe = {.key = bytes_or_empty(key, key_len), .key_len = key_len};
+    struct entry probe = probe_for(key, key_len);
     struct hash_elem *found = hash_find(&s->table, &probe.elem);
     if (found == NULL) return false;
 
@@ -118,9 +122,9 @@ bool store_get(struct store *s, const void *key, size_t key_len,
 bool store_delete(struct store *s, const void *key, size_t key_len) {
     assert(s != NULL);
 
-    /* store_get과 같은 조회용 임시 entry입니다. hash_delete는 테이블에서 뺀
-       entry를 돌려줄 뿐 해제하지 않으므로, 해제는 store가 합니다. */
-    struct entry probe = {.key = bytes_or_empty(key, key_len), .key_len = key_len};
+    /* hash_delete는 테이블에서 뺀 entry를 돌려줄 뿐 해제하지 않으므로, 해제는
+       store가 합니다. */
+    struct entry probe = probe_for(key, key_len);
     struct hash_elem *removed = hash_delete(&s->table, &probe.elem);
     if (removed == NULL) return false;
     entry_free(removed, NULL);
