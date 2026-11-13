@@ -89,6 +89,41 @@ static void delete_returns_204_or_404_key_not_found(void)
     store_destroy(store);
 }
 
+static void empty_value_returns_200_and_empty_body(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    struct api_response saved = request(store, "PUT", "/keys/empty", NULL, 0);
+    TEST_CHECK(saved.status == 204);
+
+    struct api_response response =
+        request(store, "GET", "/keys/empty", NULL, 0);
+
+    TEST_CHECK(response.status == 200);
+    TEST_MSG("상태 코드: %d", response.status);
+    TEST_CHECK(response.body_len == 0);
+    TEST_MSG("body 길이: %zu", response.body_len);
+    store_destroy(store);
+}
+
+static void content_type_is_octet_stream_for_get_and_json_for_error(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    request(store, "PUT", "/keys/name", "jungle", 6);
+
+    struct api_response found = request(store, "GET", "/keys/name", NULL, 0);
+    struct api_response missing = request(store, "GET", "/keys/none", NULL, 0);
+
+    TEST_ASSERT(found.content_type != NULL);
+    TEST_CHECK(strcmp(found.content_type, "application/octet-stream") == 0);
+    TEST_MSG("조회의 Content-Type: %s", found.content_type);
+    TEST_ASSERT(missing.content_type != NULL);
+    TEST_CHECK(strcmp(missing.content_type, "application/json") == 0);
+    TEST_MSG("오류의 Content-Type: %s", missing.content_type);
+    store_destroy(store);
+}
+
 TEST_LIST = {
     {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
@@ -99,5 +134,10 @@ TEST_LIST = {
     {"있는 key를 지우면 204를, 없는 key를 지우면 404와 "
      "{\"error\":\"key_not_found\"}를 돌려준다",
      delete_returns_204_or_404_key_not_found},
+    {"0바이트 value를 저장하고 조회하면 200과 0바이트 body를 돌려준다",
+     empty_value_returns_200_and_empty_body},
+    {"조회 응답의 Content-Type은 application/octet-stream이고, 오류 응답은 "
+     "application/json이다",
+     content_type_is_octet_stream_for_get_and_json_for_error},
     {NULL, NULL},
 };
