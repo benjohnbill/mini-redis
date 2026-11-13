@@ -105,6 +105,20 @@ def binary_value_round_trips(server):
     expect(body, value, "조회의 body")
 
 
+def encoded_nul_key_is_not_truncated(server):
+    status, _, _ = server.request("PUT", "/keys/nul%00key", body=b"v")
+    expect(status, 204, "저장의 상태 코드")
+
+    status, _, body = server.request("GET", "/keys/nul%00key")
+    # '\0'에서 잘렸다면 key "nul"로 저장됐을 것입니다.
+    truncated_status, _, truncated_body = server.request("GET", "/keys/nul")
+
+    expect(status, 200, "nul%00key 조회의 상태 코드")
+    expect(body, b"v", "nul%00key 조회의 body")
+    expect(truncated_status, 404, "nul 조회의 상태 코드")
+    expect(truncated_body, b'{"error":"key_not_found"}', "nul 조회의 body")
+
+
 def stop_exits_zero_without_sanitizer_errors(server):
     code = server.stop()
 
@@ -119,6 +133,7 @@ def stop_exits_zero_without_sanitizer_errors(server):
 TESTS = [
     ("(기능) 실제 서버에 저장한 value를 조회로 돌려받는다", put_then_get_returns_value),
     ("(기능) '\\0'과 UTF-8이 아닌 바이트가 든 value를 그대로 돌려받는다", binary_value_round_trips),
+    ("(기능) %00이 든 key가 실제 서버를 지나도 잘리지 않는다", encoded_nul_key_is_not_truncated),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
 ]
 
