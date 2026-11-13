@@ -289,7 +289,7 @@ static void body_one_byte_over_limit_returns_413_body_too_large(void)
     struct api_response response = {0};
 
     /* 상한 16 MiB(16,777,216바이트)보다 1바이트 큽니다. */
-    bool rejected = api_reject_large_body(16777217, &response);
+    bool rejected = api_reject_headers(false, 16777217, &response);
 
     TEST_CHECK(rejected);
     expect_error(response, 413, "{\"error\":\"body_too_large\"}");
@@ -300,11 +300,21 @@ static void body_at_limit_is_accepted(void)
     /* 거절하지 않으면 response를 건드리지 않으므로, 표시값이 남아야 합니다. */
     struct api_response response = {-1, NULL, NULL, 0};
 
-    bool rejected = api_reject_large_body(16777216, &response);
+    bool rejected = api_reject_headers(false, 16777216, &response);
 
     TEST_CHECK(!rejected);
     TEST_CHECK(response.status == -1);
     TEST_MSG("상태 코드: %d", response.status);
+}
+
+static void transfer_encoding_returns_411_length_required(void)
+{
+    struct api_response response = {0};
+
+    bool rejected = api_reject_headers(true, 0, &response);
+
+    TEST_CHECK(rejected);
+    expect_error(response, 411, "{\"error\":\"length_required\"}");
 }
 
 TEST_LIST = {
@@ -353,5 +363,8 @@ TEST_LIST = {
      "{\"error\":\"body_too_large\"}를 돌려준다",
      body_one_byte_over_limit_returns_413_body_too_large},
     {"Content-Length가 상한과 같으면 받아들인다", body_at_limit_is_accepted},
+    {"Transfer-Encoding으로 body 길이를 알리면 411과 "
+     "{\"error\":\"length_required\"}를 돌려준다",
+     transfer_encoding_returns_411_length_required},
     {NULL, NULL},
 };

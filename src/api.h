@@ -30,9 +30,12 @@ struct api_response api_handle(struct store *store, const char *method,
                                size_t path_len, const void *body,
                                size_t body_len);
 
-/* 헤더가 알린 body 길이가 API_BODY_MAX를 넘으면 413 응답을 *response에 쓰고
-   true를 돌려줍니다. 서버는 body를 받기 전에 이 응답을 보내고 연결을 닫습니다.
-   넘지 않으면 *response를 건드리지 않고 false를 돌려줍니다. */
-bool api_reject_large_body(size_t body_len, struct api_response *response);
+/* 헤더만 보고 거절할 요청이면 오류 응답을 *response에 쓰고 true를 돌려줍니다.
+   Transfer-Encoding 헤더가 있으면 411, 헤더가 알린 body 길이가 API_BODY_MAX를
+   넘으면 413이고, 이 순서로 검사합니다. 서버는 body를 받기 전에 이 응답을
+   보내고 연결을 닫습니다. 거절하지 않으면 *response를 건드리지 않고 false를
+   돌려줍니다. */
+bool api_reject_headers(bool has_transfer_encoding, size_t body_len,
+                        struct api_response *response);
 
 #endif /* API_H */

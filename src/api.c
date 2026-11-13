@@ -60,14 +60,21 @@ struct api_response api_handle(struct store *store, const char *method,
                               path_len - KEYS_PREFIX_LEN, body, body_len);
 }
 
-bool api_reject_large_body(size_t body_len, struct api_response *response)
+/* chunked 요청은 body 길이를 끝까지 받아야 알 수 있어서, 상한을 body를 받기
+   전에 검사할 수 없습니다. 그래서 Content-Length로 길이를 알리게 합니다. */
+bool api_reject_headers(bool has_transfer_encoding, size_t body_len,
+                        struct api_response *response)
 {
-    if (body_len <= API_BODY_MAX) {
-        return false;
+    if (has_transfer_encoding) {
+        *response = response_error(411, ERROR_BODY("length_required"));
+        return true;
     }
-    *response = response_error(413, ERROR_BODY("body_too_large"));
+    if (body_len > API_BODY_MAX) {
+        *response = response_error(413, ERROR_BODY("body_too_large"));
+        return true;
+    }
 
-    return true;
+    return false;
 }
 
 /* `/keys/`로 시작해야 합니다. 끝에 /가 없는 `/keys`도 경로 오류입니다. */

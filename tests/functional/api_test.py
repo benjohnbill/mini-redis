@@ -124,22 +124,37 @@ def encoded_nul_key_is_not_truncated(server):
     expect(truncated_body, b'{"error":"key_not_found"}', "nul 조회의 body")
 
 
-def headers_only_over_limit_returns_413(server):
-    # body는 보내지 않습니다. 보내면 서버가 읽지 않은 데이터를 남긴 채 연결을
-    # 닫을 때 커널이 연결을 리셋해서, 클라이언트가 413을 받지 못할 수 있습니다.
+def headers_only_request(server, path, header, value):
+    """헤더만 보내고 응답을 읽습니다. body는 보내지 않습니다. 보내면 서버가 읽지
+    않은 데이터를 남긴 채 연결을 닫을 때 커널이 연결을 리셋해서, 클라이언트가
+    응답을 받지 못할 수 있습니다."""
     connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
     try:
-        connection.putrequest("PUT", "/keys/too-large")
-        connection.putheader("Content-Length", str(BODY_MAX + 1))
+        connection.putrequest("PUT", path)
+        connection.putheader(header, value)
         connection.endheaders()
         response = connection.getresponse()
-        status, content_type, body = response.status, response.getheader("Content-Type"), response.read()
+        return response.status, response.getheader("Content-Type"), response.read()
     finally:
         connection.close()
+
+
+def headers_only_over_limit_returns_413(server):
+    status, content_type, body = headers_only_request(
+        server, "/keys/too-large", "Content-Length", str(BODY_MAX + 1))
 
     expect(status, 413, "상태 코드")
     expect(content_type, "application/json", "Content-Type")
     expect(body, b'{"error":"body_too_large"}', "body")
+
+
+def headers_only_chunked_returns_411(server):
+    status, content_type, body = headers_only_request(
+        server, "/keys/chunked", "Transfer-Encoding", "chunked")
+
+    expect(status, 411, "상태 코드")
+    expect(content_type, "application/json", "Content-Type")
+    expect(body, b'{"error":"length_required"}', "body")
 
 
 def body_at_limit_round_trips(server):
@@ -213,6 +228,7 @@ TESTS = [
     ("[T6] (기능) '\\0'과 UTF-8이 아닌 바이트가 든 value를 그대로 돌려받는다", binary_value_round_trips),
     ("[T7] (기능) %00이 든 key가 실제 서버를 지나도 잘리지 않는다", encoded_nul_key_is_not_truncated),
     ("[T8] (기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다", headers_only_over_limit_returns_413),
+    ("(기능) 헤더만 보내도 Transfer-Encoding: chunked이면 411을 받는다", headers_only_chunked_returns_411),
     ("(기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다", body_at_limit_round_trips),
     ("(기능) 헤더를 반쯤 보내고 멈춘 연결이 있어도 다른 요청은 바로 응답을 받는다", half_sent_headers_do_not_block_others),
     ("(기능) 큰 body를 천천히 보내는 연결이 있어도 다른 요청은 바로 응답을 받는다", slow_large_body_does_not_block_others),

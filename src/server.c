@@ -155,16 +155,20 @@ static void receive_buffer_grow(struct mg_connection *connection)
     }
 }
 
-/* body가 오기 전에 Content-Length가 상한을 넘는지 봅니다(spec Q10). 넘으면
-   413을 보내고, 송신 버퍼가 빈 뒤 mongoose가 연결을 닫게 합니다(is_draining).
-   mongoose는 body를 기다리는 동안 데이터가 올 때마다 이 이벤트를 다시 부르므로,
-   이미 닫는 중인 연결에는 413을 다시 보내지 않습니다. */
+/* body가 오기 전에 chunked 요청인지, Content-Length가 상한을 넘는지 봅니다(spec
+   Q10, "오류의 우선순위"). 걸리면 411이나 413을 보내고, 송신 버퍼가 빈 뒤
+   mongoose가 연결을 닫게 합니다(is_draining). mongoose는 body를 기다리는 동안
+   데이터가 올 때마다 이 이벤트를 다시 부르므로, 이미 닫는 중인 연결에는 응답을
+   다시 보내지 않습니다. */
 static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message)
 {
+    bool has_transfer_encoding =
+        mg_http_get_header(message, "Transfer-Encoding") != NULL;
     struct api_response response;
     if (connection->is_draining ||
-        !api_reject_large_body(message->body.len, &response)) {
+        !api_reject_headers(has_transfer_encoding, message->body.len,
+                            &response)) {
         return;
     }
     response_send(connection, &response);
@@ -214,6 +218,8 @@ static const char *status_reason(int status)
         return "Not Found";
     case 405:
         return "Method Not Allowed";
+    case 411:
+        return "Length Required";
     case 413:
         return "Content Too Large";
     case 500:
