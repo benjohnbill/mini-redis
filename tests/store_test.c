@@ -273,6 +273,20 @@ static void delete_once_after_setting_twice_makes_key_not_found(void) {
     store_destroy(s);
 }
 
+static void empty_key_can_be_deleted(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+    TEST_CHECK(store_set(s, NULL, 0, "v", 1));
+
+    TEST_CHECK(store_delete(s, NULL, 0));
+
+    const void *value = NULL;
+    size_t value_len = 0;
+    TEST_CHECK(!store_get(s, NULL, 0, &value, &value_len));
+
+    store_destroy(s);
+}
+
 TEST_LIST = {
     {"[T1] 저장한 key를 조회하면 저장한 value와 길이를 돌려준다", set_then_get_returns_value_and_length},
     {"[T2] 없는 key를 조회하면 찾지 못했다고 알린다", get_missing_key_reports_not_found},
@@ -291,5 +305,6 @@ TEST_LIST = {
     {"같은 key를 두 번 삭제하면 두 번째는 지운 것이 없다고 알린다", delete_same_key_twice_reports_nothing_removed_second_time},
     {"한 key를 삭제해도 다른 key는 그대로 조회된다", delete_one_key_keeps_other_keys},
     {"같은 key에 두 번 저장한 뒤 한 번 삭제하면 조회되지 않는다", delete_once_after_setting_twice_makes_key_not_found},
+    {"0바이트 key도 삭제할 수 있다", empty_key_can_be_deleted},
     {NULL, NULL},
 };
