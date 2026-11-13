@@ -10,6 +10,7 @@ python3 표준 라이브러리만 쓰므로 CI에 새 의존성이 없습니다.
 """
 
 import http.client
+import re
 import signal
 import socket
 import subprocess
@@ -252,6 +253,18 @@ def stop_exits_zero_without_sanitizer_errors(server):
     expect(code, 0, "서버의 종료 코드")
 
 
+def output_has_no_per_request_lines(server):
+    # 서버를 끈 뒤에 봅니다. 출력이 파일로 가면 끝날 때까지 버퍼에 남기 때문입니다.
+    # mongoose의 줄은 "<시각> <수준> mongoose.c:..."이고, 수준 1이 오류입니다.
+    # 오류보다 낮은 수준을 찍으면 읽기와 쓰기마다 줄이 생겨, 큰 body 하나가 출력을
+    # 수천 줄로 채웁니다.
+    server.stop()
+    chatty = [line for line in server.output().splitlines()
+              if re.match(r"\S+ [2-4] mongoose\.c:", line)]
+
+    expect(chatty[:3], [], "오류가 아닌 mongoose 줄")
+
+
 # 서버를 끄는 테스트는 마지막에 둡니다.
 TESTS = [
     ("[T5] (기능) 실제 서버에 저장한 value를 조회로 돌려받는다", put_then_get_returns_value),
@@ -266,6 +279,7 @@ TESTS = [
     ("(기능) 헤더를 반쯤 보내고 멈춘 연결이 있어도 다른 요청은 바로 응답을 받는다", half_sent_headers_do_not_block_others),
     ("(기능) 큰 body를 천천히 보내는 연결이 있어도 다른 요청은 바로 응답을 받는다", slow_large_body_does_not_block_others),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
+    ("(기능) 서버 출력에 mongoose가 요청마다 찍는 줄이 없고 오류만 남는다", output_has_no_per_request_lines),
 ]
 
 

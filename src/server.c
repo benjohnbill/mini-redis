@@ -92,6 +92,9 @@ static void stop_request(int signum)
 /* 신호를 받을 때까지 요청을 처리합니다. 연결을 받을 수 없으면 1을 돌려줍니다. */
 static int server_run(struct store *store, int port)
 {
+    /* mongoose의 기본 수준은 연결의 읽기와 쓰기마다 줄을 찍어, 큰 body 하나가
+       출력을 수천 줄로 채웁니다. 오류만 찍게 합니다. */
+    mg_log_set(MG_LL_ERROR);
     struct mg_mgr manager;
     mg_mgr_init(&manager);
     int exit_code = listener_open(&manager, store, port) ? 0 : 1;
