@@ -109,3 +109,15 @@ bool store_get(struct store *s, const void *key, size_t key_len,
     *value_len = en->value_len;
     return true;
 }
+
+bool store_delete(struct store *s, const void *key, size_t key_len) {
+    assert(s != NULL);
+
+    /* store_get과 같은 조회용 임시 entry입니다. hash_delete는 테이블에서 뺀
+       entry를 돌려줄 뿐 해제하지 않으므로, 해제는 store가 합니다. */
+    struct entry probe = {.key = bytes_or_empty(key, key_len), .key_len = key_len};
+    struct hash_elem *removed = hash_delete(&s->table, &probe.elem);
+    if (removed == NULL) return false;
+    entry_free(removed, NULL);
+    return true;
+}

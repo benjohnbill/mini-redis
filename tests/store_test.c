@@ -221,6 +221,20 @@ static void overwrite_leaves_no_leak_of_old_entry(void) {
     store_destroy(s);
 }
 
+static void delete_existing_key_reports_removed_and_get_fails(void) {
+    struct store *s = store_create();
+    TEST_ASSERT(s != NULL);
+    TEST_CHECK(store_set(s, "name", 4, "jungle", 6));
+
+    TEST_CHECK(store_delete(s, "name", 4));
+
+    const void *value = NULL;
+    size_t value_len = 0;
+    TEST_CHECK(!store_get(s, "name", 4, &value, &value_len));
+
+    store_destroy(s);
+}
+
 TEST_LIST = {
     {"[T1] 저장한 key를 조회하면 저장한 value와 길이를 돌려준다", set_then_get_returns_value_and_length},
     {"[T2] 없는 key를 조회하면 찾지 못했다고 알린다", get_missing_key_reports_not_found},
@@ -234,5 +248,6 @@ TEST_LIST = {
     {"[T3] 같은 key에 두 번 저장하면 나중 value를 돌려준다", set_twice_returns_later_value},
     {"길이가 다른 value로 덮어써도 새 길이를 돌려준다", overwrite_with_different_length_returns_new_length},
     {"덮어쓴 뒤 AddressSanitizer가 옛 entry의 누수를 보고하지 않는다", overwrite_leaves_no_leak_of_old_entry},
+    {"[T4] 있는 key를 삭제하면 지웠다고 알리고, 그 뒤 조회되지 않는다", delete_existing_key_reports_removed_and_get_fails},
     {NULL, NULL},
 };

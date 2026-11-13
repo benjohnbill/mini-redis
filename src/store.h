@@ -31,4 +31,8 @@ bool store_set(struct store *s, const void *key, size_t key_len,
 bool store_get(struct store *s, const void *key, size_t key_len,
                const void **value, size_t *value_len);
 
+/* key가 있으면 그 entry를 빼서 해제하고 true를 돌려줍니다.
+   없으면 false를 돌려주며, 이것은 오류가 아니라 "지운 것이 없음"입니다. */
+bool store_delete(struct store *s, const void *key, size_t key_len);
+
 #endif /* STORE_H */
