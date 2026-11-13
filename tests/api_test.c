@@ -124,6 +124,23 @@ static void content_type_is_octet_stream_for_get_and_json_for_error(void)
     store_destroy(store);
 }
 
+static void encoded_slash_becomes_slash_byte_in_key(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    struct api_response saved = request(store, "PUT", "/keys/a%2Fb", "v", 1);
+    TEST_CHECK(saved.status == 204);
+
+    /* 인코딩을 풀지 않은 /도 key의 바이트이므로, 같은 key "a/b"입니다. */
+    struct api_response response = request(store, "GET", "/keys/a/b", NULL, 0);
+
+    TEST_CHECK(response.status == 200);
+    TEST_MSG("상태 코드: %d", response.status);
+    TEST_ASSERT(response.body_len == 1);
+    TEST_CHECK(memcmp(response.body, "v", 1) == 0);
+    store_destroy(store);
+}
+
 TEST_LIST = {
     {"저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
@@ -139,5 +156,7 @@ TEST_LIST = {
     {"조회 응답의 Content-Type은 application/octet-stream이고, 오류 응답은 "
      "application/json이다",
      content_type_is_octet_stream_for_get_and_json_for_error},
+    {"%2F는 경로 구분자가 아니라 key 안의 / 바이트가 된다",
+     encoded_slash_becomes_slash_byte_in_key},
     {NULL, NULL},
 };
