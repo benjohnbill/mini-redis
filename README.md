@@ -33,9 +33,10 @@ make test                # 테스트만 실행
 | `GET /keys/<key>` | 저장한 value를 body로 돌려줍니다. |
 | `DELETE /keys/<key>` | key를 지웁니다. |
 
-- **key:** `/keys/` 뒤의 나머지 전부입니다. 퍼센트 인코딩(`%HH`)을 정확히 한 번 풀고, 그 바이트 그대로 key로 씁니다. 그래서 `%2F`는 경로 구분자가 아니라 key 안의 `/`이고, `%00`이 든 key도 잘리지 않으며, `%2541`은 `%41`이라는 key가 됩니다. 한글, 공백, `/`가 든 key는 인코딩해서 보냅니다.
+- **key:** `/keys/` 뒤의 나머지 전부입니다. 퍼센트 인코딩(`%HH`)을 정확히 한 번 풀고, 그 바이트 그대로 key로 씁니다. 그래서 `%2F`는 경로 구분자가 아니라 key 안의 `/`이고, `%00`이 든 key도 잘리지 않으며, `%2541`은 `%41`이라는 key가 됩니다. 한글, 공백, `/`가 든 key는 인코딩해서 보냅니다. key 안의 `?`는 반드시 `%3F`로 보냅니다. 인코딩하지 않은 `?`가 있으면 `400 bad_key_encoding`입니다. 그래서 `/keys/a?b=1` 같은 query는 쓸 수 없습니다.
 - **value:** body의 바이트 그대로이고, 길이는 `Content-Length`로 알립니다. JSON으로 감싸지 않습니다. `'\0'`이나 UTF-8이 아닌 바이트가 든 value(이미지 등)도 그대로 저장하고 돌려받습니다. 0바이트 value도 저장할 수 있고, 조회하면 `200`과 0바이트 body를 받습니다.
 - **body 상한:** 16 MiB(16,777,216바이트)입니다. `Content-Length`가 이 값을 넘으면 서버는 body를 받기 전에 `413`을 보내고 연결을 닫습니다.
+- **body 길이:** `Content-Length`로만 알립니다. `Transfer-Encoding: chunked`로 보내면 서버는 body를 받기 전에 `411`을 보내고 연결을 닫습니다. chunked body는 끝까지 받아야 길이를 알 수 있어서 상한을 먼저 검사할 수 없기 때문입니다.
 
 ### 응답
 
@@ -47,21 +48,23 @@ make test                # 테스트만 실행
 | 조회, 삭제할 key가 없음 | `404` | `{"error":"key_not_found"}` |
 | `/keys/`로 시작하지 않는 경로 (`/keys`도 포함) | `404` | `{"error":"route_not_found"}` |
 | 0바이트 key (`/keys/`) | `400` | `{"error":"empty_key"}` |
-| 깨진 퍼센트 인코딩 (`%G1`, 끝이 잘린 `%2`) | `400` | `{"error":"bad_key_encoding"}` |
-| `PUT`, `GET`, `DELETE`가 아닌 메서드 | `405` | `{"error":"method_not_allowed"}` |
+| 깨진 퍼센트 인코딩 (`%G1`, 끝이 잘린 `%2`), 경로에 인코딩하지 않은 `?` | `400` | `{"error":"bad_key_encoding"}` |
+| `PUT`, `GET`, `DELETE`가 아닌 메서드 | `405` | `{"error":"method_not_allowed"}`, 헤더 `Allow: GET, PUT, DELETE` |
+| `Transfer-Encoding: chunked` 요청 | `411` | `{"error":"length_required"}` |
 | `Content-Length`가 16 MiB를 넘음 | `413` | `{"error":"body_too_large"}` |
 | 서버의 메모리 부족 | `500` | `{"error":"out_of_memory"}` |
 
 오류 응답의 `Content-Type`은 `application/json`입니다. 상태 코드가 같은 오류도 body의 오류 이유로 나눌 수 있습니다.
 
-**오류 이유:** `key_not_found`, `route_not_found`, `empty_key`, `bad_key_encoding`, `method_not_allowed`, `body_too_large`, `out_of_memory`.
+**오류 이유:** `key_not_found`, `route_not_found`, `empty_key`, `bad_key_encoding`, `method_not_allowed`, `length_required`, `body_too_large`, `out_of_memory`.
 
 **오류의 우선순위:** 한 요청에 오류가 여럿이면 처음 걸린 하나로 답합니다.
 
-1. `Content-Length`가 16 MiB를 넘으면, 경로와 메서드를 보기 전에 `413`입니다. 헤더가 도착하자마자 검사하기 때문입니다.
-2. 경로가 `/keys/`로 시작하지 않으면 `404 route_not_found`입니다.
-3. 메서드가 `PUT`, `GET`, `DELETE`가 아니면 `405`입니다.
-4. key의 인코딩이 깨졌으면 `400 bad_key_encoding`, key가 비었으면 `400 empty_key`입니다.
+1. `Transfer-Encoding`이 있으면, 경로와 메서드를 보기 전에 `411`입니다. 헤더가 도착하자마자 검사하기 때문입니다.
+2. `Content-Length`가 16 MiB를 넘으면, 같은 이유로 경로와 메서드를 보기 전에 `413`입니다.
+3. 경로가 `/keys/`로 시작하지 않으면 `404 route_not_found`입니다.
+4. 메서드가 `PUT`, `GET`, `DELETE`가 아니면 `405`입니다.
+5. key의 인코딩이 깨졌거나 인코딩하지 않은 `?`가 있으면 `400 bad_key_encoding`, key가 비었으면 `400 empty_key`입니다.
 
 예를 들어 `POST /nope`는 `404 route_not_found`이고, `POST /keys/`는 `405`입니다.
 
@@ -135,6 +138,7 @@ mini-redis/
 ## 알려진 한계
 
 - eviction(메모리가 가득 찰 때 key를 내보내는 정책)은 LMS에 없어 구현하지 않습니다.
+- 요청을 끝까지 보내지 않는 연결(헤더나 body를 보내다 멈춘 연결)을 서버가 닫지 않습니다. 클라이언트가 끊을 때까지 연결과 수신 버퍼가 남습니다. 연결 처리를 다시 짜는 M3에서 다룹니다.
 - key의 해시(`hash_bytes`)에 서버마다 다른 무작위 seed를 섞지 않습니다. 같은 버킷에 떨어지는 key를 일부러 골라 많이 넣으면, 조회가 상수 시간이 아니라 그 버킷의 entry 수에 비례해 느려집니다. LMS에 없는 요구라 M1에서 다루지 않았습니다(`docs/milestones/store/spec.md`의 `Redis와 대조`).
 
 ## 문서
