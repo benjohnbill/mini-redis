@@ -26,6 +26,8 @@ HOST = "127.0.0.1"
 START_TIMEOUT = 10.0
 STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
+RECV_SIZE = 4096  # recv 한 번에 받는 최대 바이트 수입니다
+HEAD_END = b"\r\n\r\n"  # 헤더의 끝입니다. 마지막 헤더 줄의 줄바꿈과 빈 줄입니다
 BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), M2 spec Q10
 LARGE_REQUEST_TIMEOUT = 15.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
 PROMPT_TIMEOUT = 0.5  # 큰 요청이 도는 중에도 작은 GET이 이 시간 안에 응답을 받아야 합니다(ASan 기준)
@@ -273,6 +275,34 @@ def open_connections_served_while_rejecting(server):
         close_all(connections)
 
 
+# ── 테스트: 헤더만 보고 거절한 요청 ───────────────────────────
+
+def wait_until_closed(connection):
+    """서버가 연결을 닫을 때까지 기다립니다. 받은 바이트는 확인하지 않습니다.
+    서버가 읽지 않은 데이터를 남긴 채 닫으면 커널이 연결을 리셋해 응답이 오지 않을
+    수 있으므로, 리셋도 닫힌 것으로 봅니다."""
+    try:
+        while connection.recv(RECV_SIZE):
+            pass
+    except ConnectionResetError:
+        pass
+    except socket.timeout:
+        raise AssertionError(f"서버가 {REQUEST_TIMEOUT:.0f}초 동안 거절한 연결을 닫지 않습니다") from None
+
+
+def body_sent_with_rejected_headers_is_not_stored(server):
+    head = f"PUT /keys/rejected-body HTTP/1.1\r\nHost: x\r\nContent-Length: {BODY_MAX + 1}\r\n\r\n"
+    with server.connect() as rejected:
+        # 헤더와 body 앞 10바이트를 한 번에 보내, 서버가 413을 정할 때 body 조각을 이미 받아 두게 합니다.
+        rejected.sendall(head.encode("ascii") + b"0123456789")
+        # 서버가 연결을 닫을 때 받아 둔 body 조각을 저장하지 않는지 보려고, 닫힌 뒤에 조회합니다.
+        wait_until_closed(rejected)
+
+    status, _, body = server.request("GET", "/keys/rejected-body")
+    expect(status, 404, "거절한 저장 뒤 조회의 상태 코드")
+    expect(body, b'{"error":"key_not_found"}', "거절한 저장 뒤 조회의 body")
+
+
 # ── 테스트: 쉬는 시간 기한 ────────────────────────────────────
 
 def read_until_closed(connection):
@@ -283,7 +313,7 @@ def read_until_closed(connection):
     received = b""
     while True:
         try:
-            chunk = connection.recv(4096)
+            chunk = connection.recv(RECV_SIZE)
         except socket.timeout:
             raise AssertionError(f"서버가 {IDLE_TIMEOUT + CLOSE_GRACE:.0f}초 동안 연결을 닫지 않습니다") from None
         if not chunk:
@@ -299,7 +329,7 @@ def expect_not_early(elapsed, what):
 def expect_request_timeout(received, elapsed):
     """멈춘 뒤 기한이 지나 408 request_timeout 응답 하나를 받고 닫혔는지 봅니다."""
     expect_not_early(elapsed, "408 응답")
-    head, _, body = received.partition(b"\r\n\r\n")
+    head, _, body = received.partition(HEAD_END)
     lines = head.split(b"\r\n")
     headers = dict(line.split(b": ", 1) for line in lines[1:] if b": " in line)
     expect(lines[0].split(b" ")[1:2], [b"408"], "상태 코드")
@@ -345,6 +375,15 @@ def idle_after_response_closes_silently(server):
     expect(received, b"", "닫히기 전에 받은 바이트")
 
 
+def connection_sending_nothing_closes_silently(server):
+    # 연결만 열고 요청은 한 바이트도 보내지 않습니다.
+    with server.connect() as silent:
+        received, elapsed = read_until_closed(silent)
+
+    expect_not_early(elapsed, "아무것도 보내지 않은 연결")
+    expect(received, b"", "닫히기 전에 받은 바이트")
+
+
 def steady_slow_body_is_stored(server):
     chunks = [bytes([index]) * STEADY_BODY_CHUNK for index in range(STEADY_BODY_CHUNKS)]
     value = b"".join(chunks)
@@ -381,7 +420,7 @@ def slow_reader_of_large_response_is_kept(server):
 
     if elapsed <= IDLE_TIMEOUT:
         raise AssertionError(f"응답을 {elapsed:.2f}초 만에 다 읽어, 기한보다 오래 받지 못했습니다")
-    head, _, body = received.partition(b"\r\n\r\n")
+    head, _, body = received.partition(HEAD_END)
     expect(head.split(b" ")[1:2], [b"200"], "조회의 상태 코드")
     if body != value:
         raise AssertionError("천천히 받은 body가 저장한 body와 다릅니다")
@@ -406,8 +445,8 @@ def read_slowly(reader, body_len):
 
 
 def response_is_complete(received, body_len):
-    head_end = received.find(b"\r\n\r\n")
-    return head_end >= 0 and len(received) - head_end - 4 >= body_len
+    head_len = received.find(HEAD_END)
+    return head_len >= 0 and len(received) - head_len - len(HEAD_END) >= body_len
 
 
 # 하나씩 돌립니다. 작은 GET의 시간을 재므로 다른 테스트와 겹치지 않게 합니다.
@@ -422,6 +461,8 @@ TESTS = [
      freed_slot_accepts_new_connection),
     ("(기능) 129번째 연결이 거절되는 동안에도 이미 열린 연결의 요청은 정상 응답을 받는다",
      open_connections_served_while_rejecting),
+    ("(기능) 413으로 거절한 연결이 함께 보낸 body는 저장되지 않는다",
+     body_sent_with_rejected_headers_is_not_stored),
 ]
 
 # 모두 기한만큼 기다리므로 스레드로 함께 돌립니다.
@@ -431,13 +472,14 @@ WAITING_TESTS = [
     ("(기능) body를 보내다 10초 동안 멈춘 연결은 408과 request_timeout을 받고 닫힌다",
      stalled_body_gets_408_and_close),
     ("(기능) 응답을 받은 뒤 10초 동안 쉬는 연결은 응답 없이 닫힌다", idle_after_response_closes_silently),
+    ("(기능) 아무것도 보내지 않은 연결은 10초 뒤 응답 없이 닫힌다", connection_sending_nothing_closes_silently),
     ("(기능) body를 10초보다 오래 걸려 꾸준히 보내는 연결은 끊기지 않고 저장된다", steady_slow_body_is_stored),
     ("(기능) 16 MiB 응답을 10초보다 오래 걸려 천천히 받아 가는 연결은 끊기지 않는다",
      slow_reader_of_large_response_is_kept),
 ]
 
 
-def test_error(server, test):
+def test_run(server, test):
     """테스트를 돌리고, 실패면 그 오류를, 성공이면 None을 돌려줍니다."""
     try:
         test(server)
@@ -447,7 +489,7 @@ def test_error(server, test):
 
 
 def tests_run_one_by_one(server, tests):
-    return [test_error(server, test) for _, test in tests]
+    return [test_run(server, test) for _, test in tests]
 
 
 def tests_run_together(server, tests):
@@ -455,7 +497,7 @@ def tests_run_together(server, tests):
     errors = [None] * len(tests)
 
     def run(index, test):
-        errors[index] = test_error(server, test)
+        errors[index] = test_run(server, test)
 
     threads = [threading.Thread(target=run, args=(index, test))
                for index, (_, test) in enumerate(tests)]
@@ -476,7 +518,7 @@ def results_print(tests, errors):
     return sum(error is not None for error in errors)
 
 
-def stop_problem(server):
+def stop_and_find_problem(server):
     """서버를 끄고, 0으로 끝나지 않았거나 sanitizer 오류가 있으면 그 설명을 돌려줍니다."""
     code = server.stop()
     output = server.output()
@@ -501,7 +543,7 @@ def main():
         failed = total
         print(f"서버를 띄우지 못했습니다: {error}")
     finally:
-        problem = stop_problem(server)
+        problem = stop_and_find_problem(server)
     if problem is not None:
         print(problem)
     if failed or problem is not None:

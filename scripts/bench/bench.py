@@ -15,10 +15,10 @@ SMALL_GET_RATE개씩 정해진 시각마다 보내고, 작은 GET과 방해 요�
 응답까지)을 따로 출력합니다(spec Q3, 티켓 02).
 
   a-quiet       방해 없음. key 100,000개. python 기준선을 wrk 실험실과 견줍니다.
-  b-big-store   16 MiB value를 새 key에 저장하는 요청을 BIG_INTERVAL마다 보냅니다.
+  b-big-store   16 MiB value를 새 key에 저장하는 요청을 LARGE_INTERVAL마다 보냅니다.
   c-rehash      key 4,194,304개(2²²)를 채우고 하나를 지운 뒤, 새 key 저장과 삭제를
                 REHASH_INTERVAL마다 번갈아 보냅니다. 요청마다 rehash가 일어납니다(Q9).
-  d-big-delete  16 MiB value를 미리 넣어 둔 key를 BIG_INTERVAL마다 하나씩 지웁니다.
+  d-big-delete  16 MiB value를 미리 넣어 둔 key를 LARGE_INTERVAL마다 하나씩 지웁니다.
 
 새 시나리오는 SCENARIOS에 함수를 더합니다. 함수는 띄운 서버 하나를 받습니다.
 측정은 make verify와 CI에 넣지 않습니다. wrk는 측정하는 팀원에게만 필요합니다.
@@ -61,9 +61,9 @@ SAMPLE_COUNT = 8  # 미리 채운 뒤 무작위로 골라 조회하는 key 수
 NS_PER_SECOND = 1_000_000_000
 OPEN_LOOP_SECONDS = 10
 SMALL_GET_RATE = 5_000  # 초당 작은 GET 수. 연결 하나는 20 ms마다 하나를 보냅니다
-BIG_VALUE = b"b" * 16_777_216  # 상한 크기 value, API_BODY_MAX
-BIG_INTERVAL = 0.2  # 초. 16 MiB 저장과 삭제를 이 간격으로 보냅니다
-BIG_KEY_COUNT = round(OPEN_LOOP_SECONDS / BIG_INTERVAL)  # 50개, 합쳐서 800 MiB
+LARGE_VALUE = b"b" * 16_777_216  # 상한 크기 value, API_BODY_MAX
+LARGE_INTERVAL = 0.2  # 초. 16 MiB 저장과 삭제를 이 간격으로 보냅니다
+LARGE_KEY_COUNT = round(OPEN_LOOP_SECONDS / LARGE_INTERVAL)  # 50개, 합쳐서 800 MiB
 REHASH_INTERVAL = 1.0  # 초. rehash 하나(약 0.3초)가 끝나고 서버가 쉬는 틈을 둡니다
 SMALL_GET = "작은 GET"
 
@@ -204,14 +204,14 @@ def quiet(server):
     open_loop_measure(server, LAB_KEY_COUNT)
 
 
-def big_store(server):
+def large_store(server):
     prefill(server, LAB_KEY_COUNT)
 
-    def big_store_request(index):
-        return open_loop.Request("16 MiB 저장", "PUT", f"/keys/big-{index}",
-                                 BIG_VALUE, expect_status=204)
+    def large_store_request(index):
+        return open_loop.Request("16 MiB 저장", "PUT", f"/keys/large-{index}",
+                                 LARGE_VALUE, expect_status=204)
 
-    open_loop_measure(server, LAB_KEY_COUNT, BIG_INTERVAL, big_store_request)
+    open_loop_measure(server, LAB_KEY_COUNT, LARGE_INTERVAL, large_store_request)
 
 
 def rehash(server):
@@ -235,21 +235,21 @@ def rehash(server):
     open_loop_measure(server, REHASH_KEY_COUNT - 1, REHASH_INTERVAL, rehash_request)
 
 
-def big_delete(server):
+def large_delete(server):
     prefill(server, LAB_KEY_COUNT)
-    for index in range(BIG_KEY_COUNT):
-        status, _ = server.request("PUT", f"/keys/big-{index}", BIG_VALUE)
+    for index in range(LARGE_KEY_COUNT):
+        status, _ = server.request("PUT", f"/keys/large-{index}", LARGE_VALUE)
         if status != 204:
-            raise BenchError(f"16 MiB 삭제: big-{index} 저장이 {status}입니다")
-    print(f"16 MiB value {BIG_KEY_COUNT}개를 저장했습니다", flush=True)
+            raise BenchError(f"16 MiB 삭제: large-{index} 저장이 {status}입니다")
+    print(f"16 MiB value {LARGE_KEY_COUNT}개를 저장했습니다", flush=True)
 
-    def big_delete_request(index):
-        if index >= BIG_KEY_COUNT:
+    def large_delete_request(index):
+        if index >= LARGE_KEY_COUNT:
             return None
-        return open_loop.Request("16 MiB 삭제", "DELETE", f"/keys/big-{index}",
+        return open_loop.Request("16 MiB 삭제", "DELETE", f"/keys/large-{index}",
                                  expect_status=204)
 
-    open_loop_measure(server, LAB_KEY_COUNT, BIG_INTERVAL, big_delete_request)
+    open_loop_measure(server, LAB_KEY_COUNT, LARGE_INTERVAL, large_delete_request)
 
 
 def open_loop_measure(server, key_count, disturb_interval=None, disturb_request=None):
@@ -282,9 +282,9 @@ def open_loop_measure(server, key_count, disturb_interval=None, disturb_request=
 SCENARIOS = {
     "lab": lab,
     "a-quiet": quiet,
-    "b-big-store": big_store,
+    "b-big-store": large_store,
     "c-rehash": rehash,
-    "d-big-delete": big_delete,
+    "d-big-delete": large_delete,
 }
 
 

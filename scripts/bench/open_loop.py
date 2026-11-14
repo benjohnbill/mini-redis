@@ -20,10 +20,14 @@ import selectors
 import socket
 import time
 
+HOST = "127.0.0.1"
 SPIN_NS = 2_000_000  # 다음 예정 시각이 이만큼 남으면 epoll로 기다리지 않습니다
 SEND_CHUNK = 256 * 1024  # 큰 body를 나눠 보내 작은 GET의 송신을 오래 막지 않습니다
 RECV_SIZE = 65536
+HEAD_END = b"\r\n\r\n"  # 헤더의 끝입니다. 마지막 헤더 줄의 줄바꿈과 빈 줄입니다
 DRAIN_TIMEOUT_NS = 60_000_000_000  # 시간표가 끝난 뒤 남은 응답을 기다리는 한도
+# 시간표가 끝나 보낼 요청이 없을 때, 남은 응답을 기다리며 epoll이 한 번에 쉬는 시간
+DRAIN_WAIT_SECONDS = 0.1
 NS_PER_MS = 1_000_000
 NS_PER_SECOND = 1_000_000_000
 CLIENT_LATE = "client 늦음"
@@ -72,8 +76,12 @@ class Stream:
 
 
 class Connection:
-    def __init__(self, sock):
-        self.sock = sock
+    """서버에 연 연결 하나입니다. 소켓은 기다리지 않는(non-blocking) 상태로 둡니다."""
+
+    def __init__(self, port):
+        self.socket = socket.create_connection((HOST, port))
+        self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.socket.setblocking(False)
         self.waiting = collections.deque()
         self.current = None
         self.outgoing = collections.deque()
@@ -96,11 +104,8 @@ class Run:
     def connections_open(self, count):
         opened = []
         for _ in range(count):
-            sock = socket.create_connection(("127.0.0.1", self.port))
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            sock.setblocking(False)
-            connection = Connection(sock)
-            self.selector.register(sock, selectors.EVENT_READ, connection)
+            connection = Connection(self.port)
+            self.selector.register(connection.socket, selectors.EVENT_READ, connection)
             self.connections.append(connection)
             opened.append(connection)
         return opened
@@ -115,8 +120,8 @@ class Run:
         finally:
             gc.enable()
             for connection in self.connections:
-                self.selector.unregister(connection.sock)
-                connection.sock.close()
+                self.selector.unregister(connection.socket)
+                connection.socket.close()
             self.selector.close()
         return self.latencies
 
@@ -161,7 +166,7 @@ class Run:
 
     def wait_seconds(self, now, next_ns):
         if next_ns is None:
-            return 0.1
+            return DRAIN_WAIT_SECONDS
         left = next_ns - now - SPIN_NS
         return left / NS_PER_SECOND if left > 0 else 0
 
@@ -178,7 +183,7 @@ class Run:
         while connection.outgoing:
             chunk = connection.outgoing[0]
             try:
-                sent = connection.sock.send(chunk[:SEND_CHUNK])
+                sent = connection.socket.send(chunk[:SEND_CHUNK])
             except BlockingIOError:
                 break
             if sent == len(chunk):
@@ -193,7 +198,7 @@ class Run:
             return
         connection.is_writing = is_writing
         events = selectors.EVENT_READ | (selectors.EVENT_WRITE if is_writing else 0)
-        self.selector.modify(connection.sock, events, connection)
+        self.selector.modify(connection.socket, events, connection)
 
     def events_handle(self, timeout):
         for key, mask in self.selector.select(timeout):
@@ -204,7 +209,7 @@ class Run:
                 self.response_receive(connection)
 
     def response_receive(self, connection):
-        data = connection.sock.recv(RECV_SIZE)
+        data = connection.socket.recv(RECV_SIZE)
         now = time.perf_counter_ns()
         if not data:
             raise OpenLoopError("서버가 연결을 닫았습니다")
@@ -227,17 +232,17 @@ class Run:
 
 def response_parse(received):
     """응답 하나가 다 왔으면 (상태 코드, body, 쓴 바이트 수), 아니면 None입니다."""
-    head_end = received.find(b"\r\n\r\n")
-    if head_end < 0:
+    head_len = received.find(HEAD_END)
+    if head_len < 0:
         return None
-    lines = bytes(received[:head_end]).decode("latin-1").split("\r\n")
+    lines = bytes(received[:head_len]).decode("latin-1").split("\r\n")
     status = int(lines[0].split()[1])
     body_len = 0
     for line in lines[1:]:
         name, _, value = line.partition(":")
         if name.lower() == "content-length":
             body_len = int(value)
-    body_start = head_end + 4
+    body_start = head_len + len(HEAD_END)
     if len(received) < body_start + body_len:
         return None
     return status, bytes(received[body_start:body_start + body_len]), body_start + body_len
