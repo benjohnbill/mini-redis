@@ -203,7 +203,11 @@ static size_t target_len(const struct mg_http_message *message)
 }
 
 /* body는 mg_send로 보냅니다. mg_http_reply는 printf 형식이라 '\0'에서
-   value가 잘리기 때문입니다. 204에는 body도 Content-Length도 없습니다. */
+   value가 잘리기 때문입니다. 204에는 body도 Content-Length도 없습니다.
+   mongoose는 요청을 넘기기 전에 is_resp를 켜고, is_resp가 켜진 연결의 다음
+   요청은 해석하지 않습니다. mg_http_reply는 끝에서 is_resp를 끄지만 이 함수는
+   mg_http_reply를 쓰지 않으므로, 응답을 다 쓴 뒤 직접 끕니다. 그래야 같은
+   연결로 온 다음 요청도 처리합니다. */
 static void response_send(struct mg_connection *connection,
                           const struct api_response *response)
 {
@@ -222,6 +226,7 @@ static void response_send(struct mg_connection *connection,
     if (response->body_len > 0) {
         mg_send(connection, response->body, response->body_len);
     }
+    connection->is_resp = 0;
 }
 
 static const char *status_reason(int status)

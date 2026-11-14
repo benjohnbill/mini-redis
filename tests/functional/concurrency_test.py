@@ -154,7 +154,29 @@ def small_get_prompt_while_downloading_large_value(server):
         raise AssertionError("받아 간 body가 저장한 큰 body와 다릅니다")
 
 
+def next_request_answered_on_same_connection(server):
+    # wrk처럼 연결 하나로 요청을 이어 보냅니다. 응답을 받은 연결에 온 다음 요청도
+    # 처리해야, 측정(make bench)이 연결을 다시 열지 않고 지연만 잽니다.
+    connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+    try:
+        connection.connect()
+        first_socket = connection.sock
+        results = []
+        for method, body in (("PUT", b"kept"), ("GET", None), ("DELETE", None), ("GET", None)):
+            connection.request(method, "/keys/same-connection", body=body)
+            response = connection.getresponse()
+            results.append((response.status, response.read()))
+        expect(connection.sock, first_socket, "요청 네 개를 보낸 연결")
+    finally:
+        connection.close()
+
+    expect(results, [(204, b""), (200, b"kept"), (204, b""), (404, b'{"error":"key_not_found"}')],
+           "같은 연결로 보낸 요청 네 개의 응답")
+
+
 TESTS = [
+    ("(기능) 응답을 받은 연결로 다음 요청을 보내도 응답을 받는다",
+     next_request_answered_on_same_connection),
     ("[T14] (기능) 다른 연결이 16 MiB value를 저장하는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
      small_get_prompt_while_storing_large_value),
     ("(기능) 다른 연결이 16 MiB value를 조회해 받아 가는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
