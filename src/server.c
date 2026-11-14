@@ -55,10 +55,10 @@
 #define CONNECTION_MAX 128
 #define TTL_HEADER_NAME "TTL"
 
-/* mongoose가 연결마다 비워 둔 data 칸(MG_DATA_SIZE바이트)에 두는 값들의
-   자리입니다. data는 char 배열이라 uint64_t의 정렬에 맞지 않을 수 있으므로,
-   이 구조체를 data에 직접 겹쳐 쓰지 않고 offsetof로 찾은 자리에 memcpy로
-   옮깁니다. */
+/* mongoose가 연결마다 비워 둔 data 칸(MG_DATA_SIZE바이트)에 두는 값들입니다.
+   data는 char 배열이라 uint64_t의 정렬에 맞지 않을 수 있으므로, 이 구조체를
+   data에 직접 겹쳐 쓰지 않고 connection_state_get과 connection_state_set이
+   통째로 memcpy해 옮깁니다. */
 struct connection_state {
     /* 마지막으로 바이트가 오간 시각입니다(spec M3 Q4). */
     uint64_t last_activity;
@@ -82,6 +82,10 @@ static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
 static void last_activity_set(struct mg_connection *connection,
                               uint64_t millis);
+static struct connection_state
+connection_state_get(const struct mg_connection *connection);
+static void connection_state_set(struct mg_connection *connection,
+                                 const struct connection_state *state);
 static void connection_limit_check(struct mg_connection *connection);
 static size_t open_connections_count(const struct mg_mgr *manager);
 static void response_send_and_close(struct mg_connection *connection,
@@ -91,7 +95,6 @@ static void response_send(struct mg_connection *connection,
 static const char *status_reason(int status);
 static void receive_buffer_grow(struct mg_connection *connection);
 static void headers_received_note(struct mg_connection *connection);
-static bool has_headers_received_at(const struct mg_connection *connection);
 static void headers_received_at_set(struct mg_connection *connection,
                                     bool is_noted, uint64_t millis);
 static void headers_check(struct mg_connection *connection,
@@ -99,12 +102,10 @@ static void headers_check(struct mg_connection *connection,
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
 static struct api_ttl_header
-ttl_header_find(const struct mg_connection *connection,
+ttl_header_read(const struct mg_connection *connection,
                 const struct mg_http_message *message);
-static uint64_t headers_received_at_get(const struct mg_connection *connection);
 static size_t target_len(const struct mg_http_message *message);
 static void connection_close_if_idle(struct mg_connection *connection);
-static uint64_t last_activity_get(const struct mg_connection *connection);
 static uint64_t sweep_if_due(struct store *store, uint64_t deadline);
 static void sweep_trace(size_t deleted_count);
 
@@ -215,12 +216,30 @@ static void http_event_handle(struct mg_connection *connection, int event,
     }
 }
 
-/* 연결에서 마지막으로 바이트가 오간 시각(mg_millis의 ms)을 적습니다. 이 자리를
-   아는 함수는 last_activity_set과 last_activity_get 둘뿐입니다. */
+/* 연결에서 마지막으로 바이트가 오간 시각(mg_millis의 ms)을 적습니다. */
 static void last_activity_set(struct mg_connection *connection, uint64_t millis)
 {
-    memcpy(connection->data + offsetof(struct connection_state, last_activity),
-           &millis, sizeof millis);
+    struct connection_state state = connection_state_get(connection);
+    state.last_activity = millis;
+    connection_state_set(connection, &state);
+}
+
+/* 연결의 data 칸에서 connection_state를 꺼냅니다. data 칸을 아는 함수는
+   connection_state_get과 connection_state_set 둘뿐입니다. mongoose가 data 칸을
+   0으로 채워 연결을 만들므로, 처음 꺼낸 값은 모든 필드가 0입니다. */
+static struct connection_state
+connection_state_get(const struct mg_connection *connection)
+{
+    struct connection_state state;
+    memcpy(&state, connection->data, sizeof state);
+
+    return state;
+}
+
+static void connection_state_set(struct mg_connection *connection,
+                                 const struct connection_state *state)
+{
+    memcpy(connection->data, state, sizeof *state);
 }
 
 /* 새 연결을 받은 직후에 열린 연결을 셉니다. 새 연결까지 세어 CONNECTION_MAX를
@@ -342,22 +361,9 @@ static void receive_buffer_grow(struct mg_connection *connection)
    지웁니다. */
 static void headers_received_note(struct mg_connection *connection)
 {
-    if (!has_headers_received_at(connection)) {
+    if (!connection_state_get(connection).has_headers_received_at) {
         headers_received_at_set(connection, true, mg_millis());
     }
-}
-
-/* 지금 받는 요청의 헤더를 받은 시각을 이미 적었는지 돌려줍니다. 이 자리를 아는
-   함수는 has_headers_received_at, headers_received_at_set,
-   headers_received_at_get 셋뿐입니다. */
-static bool has_headers_received_at(const struct mg_connection *connection)
-{
-    bool is_noted = false;
-    memcpy(&is_noted,
-           connection->data +
-               offsetof(struct connection_state, has_headers_received_at),
-           sizeof is_noted);
-    return is_noted;
 }
 
 /* 헤더를 받은 시각과, 그 시각을 적었는지를 함께 씁니다. is_noted가 false면
@@ -365,12 +371,10 @@ static bool has_headers_received_at(const struct mg_connection *connection)
 static void headers_received_at_set(struct mg_connection *connection,
                                     bool is_noted, uint64_t millis)
 {
-    memcpy(connection->data +
-               offsetof(struct connection_state, has_headers_received_at),
-           &is_noted, sizeof is_noted);
-    memcpy(connection->data +
-               offsetof(struct connection_state, headers_received_at),
-           &millis, sizeof millis);
+    struct connection_state state = connection_state_get(connection);
+    state.has_headers_received_at = is_noted;
+    state.headers_received_at = millis;
+    connection_state_set(connection, &state);
 }
 
 /* body가 오기 전에 chunked 요청인지, Content-Length가 상한을 넘는지 봅니다(spec
@@ -402,7 +406,7 @@ static void request_handle(struct mg_connection *connection,
         return;
     }
     struct store *store = connection->fn_data;
-    struct api_ttl_header ttl_header = ttl_header_find(connection, message);
+    struct api_ttl_header ttl_header = ttl_header_read(connection, message);
     struct api_response response =
         api_handle(store, mg_millis(), message->method.buf, message->method.len,
                    message->uri.buf, target_len(message), &ttl_header,
@@ -418,16 +422,16 @@ static void request_handle(struct mg_connection *connection,
     headers_received_at_set(connection, false, 0);
 }
 
-/* 요청의 TTL 헤더를 찾아, 첫 번째 값과 개수와 헤더를 다 받은 시각을 묶습니다.
-   mg_http_get_header는 첫 번째 값만 돌려주므로 개수는 직접 셉니다(spec Q15).
-   헤더 이름은 대소문자를 가리지 않습니다. 값은 해석하지 않고 api 층에
-   넘깁니다. */
+/* 요청의 TTL 헤더를 읽어, 첫 번째 값과 개수와 헤더를 다 받은 시각을 묶습니다.
+   TTL 헤더가 없어도 count가 0인 값을 돌려줍니다. mg_http_get_header는 첫 번째
+   값만 돌려주므로 개수는 직접 셉니다(spec Q15). 헤더 이름은 대소문자를 가리지
+   않습니다. 값은 해석하지 않고 api 층에 넘깁니다. */
 static struct api_ttl_header
-ttl_header_find(const struct mg_connection *connection,
+ttl_header_read(const struct mg_connection *connection,
                 const struct mg_http_message *message)
 {
     struct api_ttl_header ttl_header = {
-        .received_at = headers_received_at_get(connection)};
+        .received_at = connection_state_get(connection).headers_received_at};
     size_t header_max = sizeof message->headers / sizeof message->headers[0];
     for (size_t i = 0; i < header_max && message->headers[i].name.len > 0;
          i++) {
@@ -443,17 +447,6 @@ ttl_header_find(const struct mg_connection *connection,
     }
 
     return ttl_header;
-}
-
-/* headers_received_note가 적은 시각을 돌려줍니다. */
-static uint64_t headers_received_at_get(const struct mg_connection *connection)
-{
-    uint64_t millis = 0;
-    memcpy(&millis,
-           connection->data +
-               offsetof(struct connection_state, headers_received_at),
-           sizeof millis);
-    return millis;
 }
 
 /* mongoose는 요청 줄의 대상을 ? 앞(uri)과 뒤(query)로 나눕니다. api 층은 ?를
@@ -477,7 +470,8 @@ static size_t target_len(const struct mg_http_message *message)
 static void connection_close_if_idle(struct mg_connection *connection)
 {
     if (connection->is_listening ||
-        mg_millis() - last_activity_get(connection) < IDLE_TIMEOUT_MS) {
+        mg_millis() - connection_state_get(connection).last_activity <
+            IDLE_TIMEOUT_MS) {
         return;
     }
     if (connection->is_draining || connection->recv.len == 0) {
@@ -487,16 +481,6 @@ static void connection_close_if_idle(struct mg_connection *connection)
     struct api_response response = api_reject_timeout();
     response_send_and_close(connection, &response);
     last_activity_set(connection, mg_millis());
-}
-
-/* last_activity_set이 적은 시각을 돌려줍니다. */
-static uint64_t last_activity_get(const struct mg_connection *connection)
-{
-    uint64_t millis = 0;
-    memcpy(&millis,
-           connection->data + offsetof(struct connection_state, last_activity),
-           sizeof millis);
-    return millis;
 }
 
 /* 기한이 지났으면 주기 청소를 한 번 하고 다음 기한 "기한 + S"를 돌려줍니다.

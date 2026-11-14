@@ -43,8 +43,8 @@ static struct api_response key_set(struct store *store, const char *key,
                                    size_t key_len,
                                    const struct api_ttl_header *ttl_header,
                                    const void *value, size_t value_len);
-static bool ttl_expires_at(const struct api_ttl_header *ttl_header,
-                           uint64_t *expires_at);
+static bool ttl_header_parse(const struct api_ttl_header *ttl_header,
+                             uint64_t *expires_at);
 static bool ttl_seconds_parse(const char *text, size_t text_len,
                               uint64_t *seconds);
 static struct api_response key_delete(struct store *store, uint64_t now,
@@ -256,7 +256,7 @@ static struct api_response key_set(struct store *store, const char *key,
     uint64_t expires_at = STORE_NO_EXPIRY;
     /* 잘못된 TTL을 "만료 없음"으로 저장하면 client의 실수가 조용히 사라지므로,
        store를 부르기 전에 거절합니다(spec Q14). */
-    if (!ttl_expires_at(ttl_header, &expires_at)) {
+    if (!ttl_header_parse(ttl_header, &expires_at)) {
         return response_error(400, ERROR_BODY("bad_ttl"));
     }
     /* store_set의 false는 메모리 부족뿐입니다. 할당 함수를 바꿔 끼울 seam이
@@ -264,6 +264,7 @@ static struct api_response key_set(struct store *store, const char *key,
     if (!store_set(store, key, key_len, value, value_len, expires_at)) {
         return response_error(500, ERROR_BODY("out_of_memory"));
     }
+
     return response_no_content();
 }
 
@@ -271,8 +272,8 @@ static struct api_response key_set(struct store *store, const char *key,
    없으면 STORE_NO_EXPIRY입니다. 헤더가 두 번 이상 왔거나, 값이 1 이상의 정수
    초가 아니거나, ms로 바꿔 받은 시각에 더하면 STORE_NO_EXPIRY에 닿으면 false를
    돌려줍니다. */
-static bool ttl_expires_at(const struct api_ttl_header *ttl_header,
-                           uint64_t *expires_at)
+static bool ttl_header_parse(const struct api_ttl_header *ttl_header,
+                             uint64_t *expires_at)
 {
     if (ttl_header->count == 0) {
         *expires_at = STORE_NO_EXPIRY;
@@ -321,6 +322,7 @@ static struct api_response key_delete(struct store *store, uint64_t now,
     if (!store_delete(store, now, key, key_len)) {
         return response_error(404, ERROR_BODY("key_not_found"));
     }
+
     return response_no_content();
 }
 
