@@ -132,13 +132,23 @@ make format   # 모양 위반을 고치고, 바꾼 줄을 보여 줍니다
 | 발표 순서의 요약과 각 문서로 가는 링크 | `README.md` |
 | mini-redis의 HTTP 계약 (요청, 응답, 오류 이유, 상한) | `docs/api.md` |
 | 상품 데모의 실행 방법과 HTTP 계약 | `demo/README.md` |
-| 측정 결과 | 그 마일스톤 `spec.md`의 `## 측정 결과` |
+| 측정 결과 | `docs/measurements/<도구>/`의 측정 기록. 그 마일스톤 `spec.md`의 `## 측정 결과`에는 결론과 기록 링크만 둡니다 |
 | 요구사항과 우리 해석 | `docs/requirements.md`의 `해석`, `근거` 칸 |
 | 큰 이유 (구조, 의존성, 인터페이스) | `docs/adr/` |
 | 작은 이유 | 그 코드 줄의 주석 |
 | 엣지 케이스 | 테스트 이름 |
 | 일부러 하지 않는 것 | 표의 `남은 일`, LMS 문장이 없으면 `README.md`의 "알려진 한계"에 한 문장과 링크, 세부는 링크한 문서 |
 | 용어 | `GLOSSARY.md` |
+
+## 측정 기록
+
+측정 한 번의 결과는 `docs/measurements/<도구>/`에 파일 하나로 남깁니다. `server/`는 `scripts/bench/bench.py`(`make bench`)의 결과이고, `cache-demo/`는 `scripts/bench/cache_bench.py`(`make cache-bench`)의 결과입니다. 같은 도구로 다시 잰 결과를 앞 결과와 나란히 비교하기 위해, 마일스톤이 아니라 도구로 폴더를 나눕니다.
+
+- **파일 이름:** `<세 자리 번호>-<이니셜>-<주제>.md`(예: `004-CJG-sqlite-grid.md`). 번호는 폴더마다 `001`부터 셉니다. 날짜는 이름에 넣지 않고 frontmatter에 적습니다.
+- **파일 하나는 측정 한 번입니다.** 시나리오는 파일로 나누지 않고 본문의 절로 나눕니다.
+- **frontmatter:** `seq`, `topic`, `date`, `who`, `commit`(측정한 코드), `previous`(비교한 앞 기록), `machine`, `build`, `command`, `milestones`, `data`를 적습니다. `data`는 `--output`으로 만든 같은 이름의 `.json`이며 `cache-demo/`에만 있습니다. AI가 기록을 고르고 비교할 때 읽는 칸입니다.
+- **본문:** 앞 기록과 달라진 점(`src/`의 변경 포함), 결론, 표를 이 순서로 씁니다. 사람이 읽는 칸입니다.
+- **고치지 않습니다.** 다시 재면 새 번호로 씁니다. 머신이 다른 기록의 숫자는 나란히 비교하지 않습니다.
 
 ## ADR
 

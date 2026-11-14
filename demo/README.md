@@ -63,7 +63,7 @@ PostgreSQL 연결이나 질의가 실패하면 상세·목록은 503 `origin_una
 
 ## 성능 비교
 
-캐시 on/off 비교는 `make cache-bench`가 최적화 빌드로 실행합니다. 기본 입력은 상품 10,000개, 연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회, TTL 60초와 2초입니다. `--quick`은 준비 1초·측정 3초·1회로 경로만 확인합니다. `--kind detail|list|search`, `--scenario 이름`, `--warmup/--measure/--runs`, `--db`(PostgreSQL 연결 문자열)를 받습니다. 측정은 `make verify`와 CI에 넣지 않습니다. 결과는 `/tmp` 같은 저장소 밖 파일로 남깁니다.
+캐시 on/off 비교는 `make cache-bench`가 최적화 빌드로 실행합니다. 기본 입력은 상품 10,000개, 연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회, TTL 60초와 2초입니다. `--quick`은 준비 1초·측정 3초·1회로 경로만 확인합니다. `--kind detail|list|search`, `--scenario 이름`, `--warmup/--measure/--runs`, `--db`(PostgreSQL 연결 문자열)를 받습니다. 측정은 `make verify`와 CI에 넣지 않습니다. 남길 결과는 `--output <기록>.json`으로 저장해 [`docs/measurements/cache-demo/`](../docs/measurements/cache-demo/)에 측정 기록과 함께 둡니다(`CONVENTION.md`의 "측정 기록").
 
 ## 한계
 
