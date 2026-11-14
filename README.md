@@ -26,13 +26,16 @@ make bench               # 지연 측정 (wrk 필요: sudo apt install wrk). mak
 
 ### SQLite 상품 데모 (M5 기준선)
 
-mini-redis와 별도 C 실행 파일입니다. 현재는 상세 조회와 캐시 off 기준선만 제공합니다. SQLite는 이 실행 파일에만 링크하며 `build/mini-redis`에는 링크하지 않습니다.
+mini-redis와 별도 C 실행 파일입니다. 상세 응답을 실제 mini-redis에 저장하는 캐시 on 모드와 원본만 읽는 off 모드를 제공합니다. SQLite는 이 실행 파일에만 링크하며 `build/mini-redis`에는 링크하지 않습니다.
 
 ```bash
 make cache-demo
 # 준비 명령은 해당 DB의 products 내용을 트랜잭션 안에서 교체합니다.
 ./build/cache-demo --db /tmp/products.sqlite --seed 1 --count 10000
 ./build/cache-demo --db /tmp/products.sqlite --port 8081 --cache off
+# 별도 터미널에서 ./build/mini-redis 8080 실행
+./build/cache-demo --db /tmp/products.sqlite --port 8081 --cache on \
+  --cache-url http://127.0.0.1:8080 --ttl-seconds 60 --cache-timeout-ms 100
 # 다른 터미널에서 실행합니다.
 curl http://127.0.0.1:8081/products/1
 curl http://127.0.0.1:8081/stats
@@ -41,11 +44,13 @@ make cache-functional  # 임시 DB와 실제 HTTP 서버를 사용하는 sanitiz
 
 준비 옵션은 `--db PATH --seed N [--count N]`입니다. seed는 1~2,147,483,646이며 count는 1~2,147,483,647, 생략하면 10,000입니다. id는 1부터 순서대로, 이름은 `상품 <id>`로 만듭니다. 가격은 seed를 시작값으로 매 상품마다 `state = state * 48271 % 2147483647`, `price = state % 1000000001`로 정합니다. seed 1의 첫 상품은 `{"id":1,"name":"상품 1","price":48271}`입니다. 상품 테이블의 기본 key는 id이고 `(price,id)` 인덱스를 둡니다.
 
-서버 옵션은 `--db PATH --port N --cache off`이며 모두 필수입니다. port는 1~65,535이고 localhost에서만 연결을 받습니다. 준비하지 않은 DB로 시작하면 종료 코드 1, 잘못된 옵션은 2로 끝납니다. `--seed`와 서버 옵션을 함께 쓰거나 옵션을 중복하면 거절합니다. `--cache off`는 캐시 연결이나 상태 확인을 하지 않습니다. SQLite 연결 하나를 재사용하고 잠금 대기는 최대 1초입니다. SIGTERM이나 SIGINT로 종료합니다.
+서버 필수 옵션은 `--db PATH --port N --cache on|off`입니다. `--cache-url`은 HTTP 호스트와 선택 port만 받으며 기본값은 `http://127.0.0.1:8000`입니다. IPv6 URL은 지원하지 않습니다. `--ttl-seconds`는 기본 60초, `--cache-timeout-ms`는 기본 100ms이고 둘 다 양의 정수입니다. 캐시 기한은 연결부터 응답 완료까지 요청마다 적용합니다. 캐시 연결과 별도 Mongoose manager를 재사용하여 상품 요청 처리가 재진입하지 않도록 합니다. port는 1~65,535이고 localhost에서만 연결을 받습니다. 준비하지 않은 DB로 시작하면 종료 코드 1, 잘못된 옵션은 2로 끝납니다. `--seed`와 서버 옵션을 함께 쓰거나 옵션을 중복하면 거절합니다. `--cache off`는 캐시 연결이나 상태 확인을 하지 않습니다. SQLite 연결 하나를 재사용하고 잠금 대기는 최대 1초입니다. SIGTERM이나 SIGINT로 종료합니다.
 
 `GET /products/{id}`는 상품 JSON을 200으로, 없는 상품을 `404 product_not_found`로 반환합니다. id 범위는 1~2,147,483,647이고 가격은 0~1,000,000,000입니다. 이름은 NUL 없는 UTF-8 1~120바이트입니다. 잘못된 id·query·GET body는 `400 invalid_request`, 모르는 경로는 `404 route_not_found`, 지원하지 않는 메서드는 `405 method_not_allowed`와 `Allow: GET`입니다. 원본 조회 실패나 잘못된 원본 데이터는 `503 origin_unavailable`이며, 다음 요청에서 원본을 다시 시도합니다. 모든 응답의 Content-Type은 `application/json`이고 오류는 `{"error":"고정된_영어_문자열"}` 형태입니다.
 
-`GET /stats`는 이 실행의 `product_gets`(유효한 상품 GET), `origin_queries`(404와 실패를 포함한 원본 조회 시도), `origin_failures`(원본 조회 실패), `cache_bypasses`(캐시 미사용 조회), `cache_state`(현재 `off`)를 반환합니다. 통계 요청과 준비 작업은 원본 조회로 세지 않습니다.
+`GET /stats`는 이 실행의 `product_gets`(유효한 상품 GET), `origin_queries`(404와 실패를 포함한 원본 조회 시도), `origin_failures`(원본 조회 실패), `cache_bypasses`(캐시 미사용 조회), `cache_state`(`off`, `active`, `suspended`)를 반환합니다. 통계 요청과 준비 작업은 원본 조회로 세지 않습니다. 추가 카운터는 `cache_gets`(GET 시도), `cache_hits`(200), `cache_misses`(404), `cache_get_errors`(그 외 상태·통신 오류), `cache_puts`(PUT 시도), `cache_put_failures`(PUT 실패), `cache_errors`(GET 오류 + PUT 실패)입니다. 적중률 분모는 `cache_gets = cache_hits + cache_misses + cache_get_errors`이며, off 또는 중단 상태의 조회는 `cache_bypasses`로만 셉니다.
+
+정상 200 body만 TTL 헤더를 붙여 저장하며, 적중 시 TTL을 늘리지 않습니다. 실행마다 새 식별자로 이전 캐시와 격리합니다. 캐시 GET·PUT 오류 뒤에는 `suspended` 상태로 원본만 사용합니다. 자동 재연결과 재개는 아직 구현하지 않았습니다.
 
 ## API
 
