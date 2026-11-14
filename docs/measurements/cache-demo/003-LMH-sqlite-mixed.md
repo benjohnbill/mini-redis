@@ -5,7 +5,7 @@ date: 2026-11-14
 who: LMH
 commit: 82b93ad
 previous: 001-LMH-sqlite-read-only.md
-machine: "원문에 적지 않았습니다. 같은 커밋의 001, 002와 같은 macOS 26.6.2 arm64, python 3.15.2, SQLite 3.54.1로 추정합니다"
+machine: unknown
 build: "build/bench/cache-demo, build/bench/mini-redis: -O2, sanitizer 끔"
 command: "python3 -B scripts/bench/cache_bench.py build/bench/cache-demo build/bench/mini-redis --warmup 3 --measure 10 --runs 1 --scenario ... (TTL 60초와 2초)"
 milestones: [cache]
@@ -16,7 +16,7 @@ data: none
 
 ## 앞 기록과 달라진 점
 
-`src/`는 001과 같습니다. `scripts/bench/cache_bench.py`에 조회·수정 비율 99:1과 90:10, TTL 2초를 더했고, 측정 뒤 cache off 데모와 응답을 대조하는 `correctness_check`를 더했습니다. 이 기록은 `docs/milestones/cache/issues/07-sqlite-mixed-benchmark.md`의 "구현과 검증"에서 옮겼습니다. `commit`은 결과를 처음 적은 커밋입니다.
+`src/`는 001과 같습니다. `scripts/bench/cache_bench.py`에 조회·수정 비율 99:1과 90:10, TTL 2초를 더했고, 측정 뒤 cache off 데모와 응답을 대조하는 `correctness_check`를 더했습니다. 이 기록은 `docs/milestones/cache/issues/07-sqlite-mixed-benchmark.md`의 "구현과 검증"에서 옮겼습니다. 원문에는 머신이 없습니다. 같은 커밋의 001, 002와 같은 macOS 26.6.2 arm64, python 3.15.2, SQLite 3.54.1로 추정합니다. `commit`은 결과를 처음 적은 커밋입니다.
 
 ## 결론
 

@@ -3,7 +3,7 @@ seq: 1
 topic: lab-baseline
 date: 2026-11-14
 who: DA
-commit: 65eb26f
+commit: f662f6b
 previous: none
 machine: "Intel Core Ultra 9 275HX(논리 코어 24개), Windows 11 Pro의 WSL2 Ubuntu 26.04(커널 6.18.33.2-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make bench: -std=c11 -Wall -Wextra -Werror -O2, sanitizer 끔, assert 남김, mongoose에 -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752"
@@ -16,7 +16,7 @@ data: none
 
 ## 앞 기록과 달라진 점
 
-첫 기록입니다. 서버는 쉬는 시간 기한(M3 티켓 03)과 연결 수 상한(티켓 04)을 합친 코드입니다. 이 기록은 `docs/milestones/concurrency/spec.md`의 `## 측정 결과`에서 옮겼습니다. `commit`은 결과를 처음 적은 커밋입니다.
+첫 기록입니다. 서버는 쉬는 시간 기한(M3 티켓 03)과 연결 수 상한(티켓 04)을 합친 코드입니다. 처음 숫자(`65eb26f`)는 합치기 전 서버로 쟀고, 이 기록은 합친 서버로 다시 잰 숫자입니다. 이 기록은 `docs/milestones/concurrency/spec.md`의 `## 측정 결과`에서 옮겼습니다. `commit`은 결과를 처음 적은 커밋입니다.
 
 ## 결론
 
