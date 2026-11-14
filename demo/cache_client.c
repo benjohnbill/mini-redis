@@ -4,16 +4,20 @@
 
 #define CACHE_POLL_MS 5
 #define CACHE_KEY_MAX 4096
-#define NAMESPACE_BYTES 16
 #define RECOVER_INTERVAL_MS 1000
+/* URL 인코딩은 바이트 하나를 %XX 세 글자로 늘립니다. */
+#define URL_ENCODED_BYTES_MAX 3
 
-static void cache_event_handle(struct mg_connection *connection, int event,
-                               void *event_data);
+static bool namespace_new(struct cache_client *cache);
 static int cache_request(struct cache_client *cache, const char *method,
                          const char *key, const char *body);
+static void request_state_reset(struct cache_client *cache);
+static void cache_event_handle(struct mg_connection *connection, int event,
+                               void *event_data);
+static void response_body_copy(struct cache_client *cache,
+                               const struct mg_http_message *message);
 static bool request_send(struct cache_client *cache, const char *method,
                          const char *key, const char *body);
-static bool namespace_new(struct cache_client *cache);
 static void cache_suspend(struct cache_client *cache);
 static void cache_connection_close(struct cache_client *cache);
 
@@ -115,15 +119,23 @@ bool cache_client_recover(struct cache_client *cache)
     return true;
 }
 
+static bool namespace_new(struct cache_client *cache)
+{
+    unsigned char random_bytes[NAMESPACE_BYTES];
+    if (!mg_random(random_bytes, sizeof random_bytes)) {
+        return false;
+    }
+    mg_snprintf(cache->namespace, sizeof cache->namespace, "%M", mg_print_hex,
+                (int)sizeof random_bytes, random_bytes);
+
+    return true;
+}
+
 static int cache_request(struct cache_client *cache, const char *method,
                          const char *key, const char *body)
 {
     uint64_t deadline = mg_millis() + (uint64_t)cache->timeout_ms;
-    cache->done = false;
-    cache->pending = true;
-    cache->status = 0;
-    free(cache->body);
-    cache->body = NULL;
+    request_state_reset(cache);
     if (cache->connection == NULL) {
         cache->connection = mg_http_connect(&cache->manager, cache->url,
                                             cache_event_handle, cache);
@@ -147,6 +159,15 @@ static int cache_request(struct cache_client *cache, const char *method,
     return cache->status;
 }
 
+static void request_state_reset(struct cache_client *cache)
+{
+    cache->done = false;
+    cache->pending = true;
+    cache->status = 0;
+    free(cache->body);
+    cache->body = NULL;
+}
+
 static void cache_event_handle(struct mg_connection *connection, int event,
                                void *event_data)
 {
@@ -162,13 +183,7 @@ static void cache_event_handle(struct mg_connection *connection, int event,
             free(reason);
         }
         if (cache->status == 200) {
-            cache->body = malloc(message->body.len + 1);
-            if (cache->body == NULL) {
-                cache->status = 0;
-            } else {
-                memcpy(cache->body, message->body.buf, message->body.len);
-                cache->body[message->body.len] = '\0';
-            }
+            response_body_copy(cache, message);
         }
         cache->done = true;
     } else if (event == MG_EV_ERROR) {
@@ -183,18 +198,32 @@ static void cache_event_handle(struct mg_connection *connection, int event,
     }
 }
 
+/* Copies the body as a NUL-terminated string; no memory turns the hit into an
+   error. */
+static void response_body_copy(struct cache_client *cache,
+                               const struct mg_http_message *message)
+{
+    cache->body = malloc(message->body.len + 1);
+    if (cache->body == NULL) {
+        cache->status = 0;
+        return;
+    }
+    memcpy(cache->body, message->body.buf, message->body.len);
+    cache->body[message->body.len] = '\0';
+}
+
 static bool request_send(struct cache_client *cache, const char *method,
                          const char *key, const char *body)
 {
-    char complete[CACHE_KEY_MAX];
-    int length = snprintf(complete, sizeof complete, "demo:%s:%s",
+    char full_key[CACHE_KEY_MAX];
+    int length = snprintf(full_key, sizeof full_key, "demo:%s:%s",
                           cache->namespace, key);
-    if (length < 0 || (size_t)length >= sizeof complete) {
+    if (length < 0 || (size_t)length >= sizeof full_key) {
         return false;
     }
-    char encoded[CACHE_KEY_MAX * 3];
+    char encoded[CACHE_KEY_MAX * URL_ENCODED_BYTES_MAX];
     size_t encoded_len =
-        mg_url_encode(complete, (size_t)length, encoded, sizeof encoded);
+        mg_url_encode(full_key, (size_t)length, encoded, sizeof encoded);
     if (encoded_len == 0 || encoded_len >= sizeof encoded) {
         return false;
     }
@@ -209,18 +238,6 @@ static bool request_send(struct cache_client *cache, const char *method,
     }
 
     return body_len == 0 || mg_send(cache->connection, body, body_len);
-}
-
-static bool namespace_new(struct cache_client *cache)
-{
-    unsigned char random[NAMESPACE_BYTES];
-    if (!mg_random(random, sizeof random)) {
-        return false;
-    }
-    mg_snprintf(cache->namespace, sizeof cache->namespace, "%M", mg_print_hex,
-                (int)sizeof random, random);
-
-    return true;
 }
 
 static void cache_suspend(struct cache_client *cache)

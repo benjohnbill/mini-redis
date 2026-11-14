@@ -3,11 +3,14 @@
 
 #include "mongoose.h"
 
+/* 실행 식별자를 만드는 난수의 바이트 수입니다. 16진수로 쓰면 두 배 길이가 됩니다. */
+#define NAMESPACE_BYTES 16
+
 struct cache_client {
     struct mg_mgr manager;
     struct mg_connection *connection;
     const char *url;
-    char namespace[33];
+    char namespace[NAMESPACE_BYTES * 2 + 1];
     int ttl_seconds;
     int timeout_ms;
     bool enabled;
