@@ -88,6 +88,11 @@ struct api_response api_request_timeout(void)
     return response_error(408, ERROR_BODY("request_timeout"));
 }
 
+struct api_response api_too_many_connections(void)
+{
+    return response_error(503, ERROR_BODY("too_many_connections"));
+}
+
 /* `/keys/`로 시작해야 합니다. 끝에 /가 없는 `/keys`도 경로 오류입니다. */
 static bool path_is_keys(const char *path, size_t path_len)
 {

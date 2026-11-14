@@ -7,8 +7,9 @@
 다른 key를 씁니다. 시간을 재는 테스트(TESTS)를 하나씩 먼저 돌리고, 서버의 쉬는 시간
 기한 10초를 실제로 기다리는 테스트(WAITING_TESTS, spec "10초 기다림")는 스레드로
 함께 돌려 기다림이 테스트 수만큼 쌓이지 않게 합니다. 함께 도는 연결이 앞의 시간
-측정을 흔들지 않도록 두 묶음을 나눕니다. 테스트가 실패해도 마지막에 서버를 끄고,
-종료 코드와 sanitizer 출력을 확인합니다.
+측정을 흔들지 않도록 두 묶음을 나눕니다. 연결 수 상한 테스트는 TESTS에 있고, 연
+연결을 테스트가 끝날 때 모두 닫으며, 기한 10초보다 훨씬 빨리 끝납니다. 테스트가
+실패해도 마지막에 서버를 끄고, 종료 코드와 sanitizer 출력을 확인합니다.
 python3 표준 라이브러리만 쓰므로 CI에 새 의존성이 없습니다.
 """
 
@@ -50,6 +51,7 @@ SLOW_READ_CHUNK = 16 * 1024
 # 서버가 client의 읽는 속도에 맞춰 조금씩 보내게 됩니다.
 SLOW_READ_BUFFER = 64 * 1024
 SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime error:")
+CONNECTION_MAX = 128  # 동시 연결의 상한, spec Q8
 
 
 class Server:
@@ -180,6 +182,95 @@ def small_get_prompt_while_downloading_large_value(server):
     expect(content_length, len(value), "큰 조회의 Content-Length")
     if body != value:
         raise AssertionError("받아 간 body가 저장한 큰 body와 다릅니다")
+
+
+# ── 테스트: 연결 수 상한 ──────────────────────────────────────
+
+def keep_alive_get(connection, key):
+    """열어 둔 연결로 없는 key를 조회하고 (상태 코드, body)를 돌려줍니다. 연결은
+    닫지 않습니다."""
+    connection.request("GET", f"/keys/{key}")
+    response = connection.getresponse()
+    return response.status, response.read()
+
+
+def expect_not_found(connection, key, what):
+    status, body = keep_alive_get(connection, key)
+    expect(status, 404, f"{what}의 상태 코드")
+    expect(body, b'{"error":"key_not_found"}', f"{what}의 body")
+
+
+def open_full(server, prefix):
+    """연결을 CONNECTION_MAX개 열고 돌려줍니다. 연결마다 요청 하나에 응답을 받아,
+    서버가 그 연결을 받아 세었음을 확인합니다."""
+    connections = []
+    try:
+        for index in range(CONNECTION_MAX):
+            connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+            connections.append(connection)
+            expect_not_found(connection, f"{prefix}-{index}", f"{index + 1}번째 연결의 조회")
+    except Exception:
+        close_all(connections)
+        raise
+    return connections
+
+
+def close_all(connections):
+    for connection in connections:
+        connection.close()
+
+
+def read_rejection(rejected):
+    """요청을 보내지 않은 연결에서 응답 하나를 읽고, 그 뒤 서버가 연결을 닫는지
+    봅니다. 요청을 보내지 않는 이유: 서버가 읽지 않은 데이터를 남긴 채 연결을
+    닫으면 커널이 연결을 리셋해서, 클라이언트가 응답을 받지 못할 수 있습니다."""
+    response = http.client.HTTPResponse(rejected)
+    response.begin()
+    status, content_type, body = response.status, response.getheader("Content-Type"), response.read()
+    rest = rejected.recv(1)
+    return status, content_type, body, rest
+
+
+def expect_rejected(status, content_type, body, rest):
+    expect(status, 503, "넘친 연결의 상태 코드")
+    expect(content_type, "application/json", "넘친 연결의 Content-Type")
+    expect(body, b'{"error":"too_many_connections"}', "넘친 연결의 body")
+    expect(rest, b"", "응답 뒤에 남은 바이트(닫히면 비어 있음)")
+
+
+def connection_over_limit_gets_503_and_closed(server):
+    connections = open_full(server, "limit-full")
+    try:
+        with server.connect() as rejected:
+            expect_rejected(*read_rejection(rejected))
+    finally:
+        close_all(connections)
+
+
+def freed_slot_accepts_new_connection(server):
+    connections = open_full(server, "freed-full")
+    try:
+        connections.pop().close()
+        replacement = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+        connections.append(replacement)
+
+        expect_not_found(replacement, "freed-new", "자리가 난 뒤 새 연결의 조회")
+    finally:
+        close_all(connections)
+
+
+def open_connections_served_while_rejecting(server):
+    connections = open_full(server, "serving-full")
+    try:
+        with server.connect() as rejected:
+            # 서버가 넘친 연결을 받아 거절하는 동안 열린 연결 하나로 요청합니다.
+            expect_not_found(connections[0], "serving-first", "열린 연결의 조회")
+            rejection = read_rejection(rejected)
+        expect_not_found(connections[-1], "serving-last", "거절 뒤 열린 연결의 조회")
+
+        expect_rejected(*rejection)
+    finally:
+        close_all(connections)
 
 
 # ── 테스트: 쉬는 시간 기한 ────────────────────────────────────
@@ -325,6 +416,12 @@ TESTS = [
      small_get_prompt_while_storing_large_value),
     ("(기능) 다른 연결이 16 MiB value를 조회해 받아 가는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
      small_get_prompt_while_downloading_large_value),
+    ("[T13] (기능) 연결 128개가 열려 있을 때 129번째 연결은 503과 too_many_connections를 받고 닫힌다",
+     connection_over_limit_gets_503_and_closed),
+    ("(기능) 열린 연결 하나가 닫혀 자리가 나면 새 연결이 다시 정상 응답을 받는다",
+     freed_slot_accepts_new_connection),
+    ("(기능) 129번째 연결이 거절되는 동안에도 이미 열린 연결의 요청은 정상 응답을 받는다",
+     open_connections_served_while_rejecting),
 ]
 
 # 모두 기한만큼 기다리므로 스레드로 함께 돌립니다.
