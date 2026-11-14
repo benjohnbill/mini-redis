@@ -330,6 +330,16 @@ rehash (struct hash *h) {
 	old_buckets = h->buckets;
 	old_bucket_cnt = h->bucket_cnt;
 
+	/* mini-redis M3: 버킷당 entry 수가 MIN_ELEMS_PER_BUCKET 이상,
+	   MAX_ELEMS_PER_BUCKET 이하이면 버킷 수를 바꾸지 않습니다. 위 두 상수의
+	   주석이 말하는 동작입니다. 원래 코드는 넣고 지울 때마다 이상적인 버킷 수를
+	   다시 계산해서, entry 수가 2의 거듭제곱 경계에 있으면 저장과 삭제가 번갈아
+	   올 때마다 entry 전부를 옮겼습니다(docs/milestones/concurrency/spec.md의
+	   "측정 결과"). */
+	if (h->elem_cnt >= old_bucket_cnt * MIN_ELEMS_PER_BUCKET
+	    && h->elem_cnt <= old_bucket_cnt * MAX_ELEMS_PER_BUCKET)
+		return;
+
 	/* Calculate the number of buckets to use now.
 	   We want one bucket for about every BEST_ELEMS_PER_BUCKET.
 	   We must have at least four buckets, and the number of
