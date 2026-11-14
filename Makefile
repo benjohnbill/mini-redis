@@ -75,7 +75,7 @@ functional: $(SERVER)
 	python3 -B tests/functional/concurrency_test.py $(SERVER)
 	python3 -B tests/functional/expire_test.py $(SERVER)
 
-verify: $(SERVER) test functional
+verify: $(SERVER) test functional cache-functional
 	python3 scripts/check-ids.py
 	python3 scripts/convention.py lint
 
@@ -119,3 +119,15 @@ $(BENCH_BUILD)/%.o: src/%.c | $(BENCH_BUILD)
 
 $(BENCH_BUILD):
 	mkdir -p $@
+
+# SQLite는 별도 상품 데모에만 링크합니다.
+CACHE_DEMO := $(BUILD)/cache-demo
+.PHONY: cache-demo cache-functional
+cache-demo: $(CACHE_DEMO)
+
+$(CACHE_DEMO): demo/product_demo.c $(MONGOOSE_OBJ) | $(BUILD)
+	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) $< $(MONGOOSE_OBJ) \
+	    $(LDFLAGS) -lsqlite3 -o $@
+
+cache-functional: $(CACHE_DEMO)
+	python3 -B tests/functional/cache_test.py $(CACHE_DEMO)

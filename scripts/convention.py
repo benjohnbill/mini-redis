@@ -22,7 +22,7 @@ with open(os.path.join(ROOT, '.clang-format-ignore'), encoding='utf-8') as f:
     IGNORED = {line.strip() for line in f
                if line.strip() and not line.startswith('#')}
 # Headers we wrote: warnings inside them are shown; the rest are not.
-HEADER_FILTER = '(src|tests)/'
+HEADER_FILTER = '(src|tests|demo)/'
 EXCLUDE_HEADER_FILTER = '|'.join(re.escape(p) for p in sorted(IGNORED)) or '^$'
 
 COLOR = sys.stdout.isatty()
@@ -46,11 +46,12 @@ def git_files(*patterns):
 
 
 def format_files():
-    return git_files('src/*.c', 'src/*.h', 'tests/*.c', 'tests/*.h')
+    return git_files('src/*.c', 'src/*.h', 'tests/*.c', 'tests/*.h',
+                     'demo/*.c', 'demo/*.h')
 
 
 def lint_files():
-    return git_files('src/*.c', 'tests/*.c')
+    return git_files('src/*.c', 'tests/*.c', 'demo/*.c')
 
 
 def formatted(path):

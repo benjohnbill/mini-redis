@@ -21,4 +21,5 @@ jobs:
       # CONVENTION.md의 설치 명령과 같은 버전을 씁니다.
       - run: pip install clang-format==21.1.8 clang-tidy==21.1.6
       - run: clang-format --version && clang-tidy --version
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - run: make verify
