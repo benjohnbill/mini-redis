@@ -219,7 +219,7 @@ def main():
             demo = Demo(binary, database, arguments)
             demo.wait_until_listening()
             detail_reuses_cache(demo)
-            print('PASS: 같은 상품의 정상 응답을 캐시하고 원본을 다시 읽지 않는다')
+            print("[T18] 같은 상품의 정상 응답을 캐시하고 원본을 다시 읽지 않는다")
             previous = demo
             demo = None
             stopped_check(previous)

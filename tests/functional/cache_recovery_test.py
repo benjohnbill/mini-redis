@@ -152,7 +152,7 @@ def main():
         database = os.path.join(directory, 'products.sqlite')
         command_check(binary, ['--db', database, '--seed', '1', '--count', '6'], 0)
         for name, test in [
-                ('실제 캐시 재시작 뒤 새 식별자로 재개하고 이전 응답을 쓰지 않는다',
+                ("[T21] 실제 캐시 재시작 뒤 새 식별자로 재개하고 이전 응답을 쓰지 않는다",
                  restart_resumes),
                 ('중단 중 상태 확인은 1초에 한 번만 시도한다', probe_rate_is_limited),
                 ('캐시 저장 실패는 원본 응답을 막지 않고 캐시를 중단한다',

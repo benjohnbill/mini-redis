@@ -236,7 +236,7 @@ def main():
                                           f'http://127.0.0.1:{redis.port}'])
             demo.wait_until_listening()
             for name, test in [
-                    ('수정이 상세와 목록 캐시를 무효화하고 새 값을 반환한다', update_changes_detail_and_lists),
+                    ("[T20] 수정이 상세와 목록 캐시를 무효화하고 새 값을 반환한다", update_changes_detail_and_lists),
                     ('검색 진입과 이탈과 가격 범위가 수정 뒤 반영된다', search_and_price_edges_follow),
                     ('한 상품 수정은 다른 상품의 상세 캐시를 유지한다', other_detail_cache_survives),
                     ('삭제는 상세와 목록에서 상품을 없앤다', delete_removes_product),

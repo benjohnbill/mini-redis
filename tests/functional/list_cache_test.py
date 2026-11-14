@@ -163,7 +163,7 @@ def main():
             demos.append(demo)
             demo.wait_until_listening()
             defaults_and_reuse(demo)
-            print('PASS: 기본 조건의 목록을 캐시하고 같은 조건은 원본을 다시 읽지 않는다')
+            print("[T19] 기본 조건의 목록을 캐시하고 같은 조건은 원본을 다시 읽지 않는다")
             equivalent_conditions_share_key(demo)
             print('PASS: 매개변수 순서와 기본값 표기가 달라도 같은 캐시를 쓴다')
             different_conditions_are_separate(demo)

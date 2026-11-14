@@ -1,7 +1,7 @@
 #include "mongoose.h"
 #include "cache_client.h"
+#include "origin.h"
 #include <signal.h>
-#include <sqlite3.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -10,12 +10,8 @@
 
 #define PORT_MAX 65535
 #define PRODUCT_ID_MAX 2147483647
-#define PRICE_MAX 1000000000
-#define NAME_MAX_BYTES 120
 #define PRODUCT_COUNT_DEFAULT 10000
 #define SEED_MAX 2147483646
-#define SEED_MULTIPLIER 48271
-#define SQLITE_WAIT_MS 1000
 #define POLL_INTERVAL_MS 10
 #define LISTEN_URL_MAX 64
 #define CACHE_TTL_DEFAULT 60
@@ -28,22 +24,15 @@
 #define LIST_VALUE_RAW_MAX (NAME_MAX_BYTES * 3)
 #define LIST_VALUE_SIZE (LIST_VALUE_RAW_MAX + 2)
 
-enum list_sort { LIST_SORT_ID, LIST_SORT_PRICE_ASC, LIST_SORT_PRICE_DESC };
-
-struct list_query {
-    char q[NAME_MAX_BYTES + 1];
-    size_t q_len;
-    int min_price;
-    int max_price;
-    int offset;
-    int limit;
-    enum list_sort sort;
-};
-
 struct text {
     char *data;
     size_t len;
     size_t capacity;
+};
+
+struct items_context {
+    struct text *body;
+    bool first;
 };
 
 struct options {
@@ -58,7 +47,7 @@ struct options {
 };
 
 struct demo {
-    sqlite3 *database;
+    struct origin *origin;
     struct cache_client cache;
     unsigned long long list_generation;
     uint64_t product_gets;
@@ -74,9 +63,8 @@ static bool positive_integer_parse(const char *text, int maximum, int *value);
 static bool cache_url_is_valid(const char *url);
 static bool integer_parse(const char *text, size_t text_len, int maximum,
                           int *value);
-static bool database_open(const struct options *options, sqlite3 **database);
-static bool database_seed(sqlite3 *database, const struct options *options);
-static bool products_insert(sqlite3 *database, const struct options *options);
+static bool items_append(void *context, int product_id, const char *name,
+                         size_t name_len, int price);
 static int server_run(struct demo *demo, int port);
 static void stop_signal_handle(int signum);
 static void http_event_handle(struct mg_connection *connection, int event,
@@ -112,13 +100,10 @@ static void product_delete(struct mg_connection *connection, struct demo *demo,
 static bool content_type_is_json(struct mg_http_message *message);
 static bool update_parse(struct mg_str body, char *name, size_t *name_len,
                          int *price);
-static int product_change(struct demo *demo, const char *sql, int product_id,
-                          const char *name, size_t name_len, int price);
 static void cache_invalidate(struct demo *demo, int product_id);
 static void cache_recover(struct demo *demo);
 static void body_send(struct mg_connection *connection, const char *body);
 static char *product_read(struct demo *demo, int product_id, int *status);
-static bool product_is_valid(sqlite3_stmt *statement);
 static bool name_is_valid(const unsigned char *name, int name_len);
 
 int main(int argc, char **argv)
@@ -133,13 +118,14 @@ int main(int argc, char **argv)
         return 2;
     }
     struct demo demo = {0};
-    if (!database_open(&options, &demo.database)) {
-        sqlite3_close(demo.database);
+    demo.origin = origin_open(options.database, options.seed != 0);
+    if (demo.origin == NULL) {
         return 1;
     }
     int exit_code = 0;
     if (options.seed != 0) {
-        exit_code = database_seed(demo.database, &options) ? 0 : 1;
+        exit_code =
+            origin_seed(demo.origin, options.seed, options.count) ? 0 : 1;
     } else {
         bool initialized = cache_client_init(
             &demo.cache,
@@ -148,7 +134,7 @@ int main(int argc, char **argv)
         exit_code = initialized ? server_run(&demo, options.port) : 1;
         cache_client_destroy(&demo.cache);
     }
-    sqlite3_close(demo.database);
+    origin_destroy(demo.origin);
 
     return exit_code;
 }
@@ -282,78 +268,6 @@ static bool integer_parse(const char *text, size_t text_len, int maximum,
     return true;
 }
 
-static bool database_open(const struct options *options, sqlite3 **database)
-{
-    int flags = SQLITE_OPEN_READWRITE;
-    if (options->seed != 0) {
-        flags |= SQLITE_OPEN_CREATE;
-    }
-    if (sqlite3_open_v2(options->database, database, flags, NULL) !=
-        SQLITE_OK) {
-        fprintf(stderr, "cache-demo: cannot open origin\n");
-        return false;
-    }
-    sqlite3_busy_timeout(*database, SQLITE_WAIT_MS);
-    if (options->seed == 0 &&
-        sqlite3_exec(*database, "SELECT id,name,price FROM products LIMIT 0",
-                     NULL, NULL, NULL) != SQLITE_OK) {
-        fprintf(stderr, "cache-demo: origin schema unavailable\n");
-        return false;
-    }
-
-    return true;
-}
-
-static bool database_seed(sqlite3 *database, const struct options *options)
-{
-    const char *schema =
-        "BEGIN IMMEDIATE;"
-        "CREATE TABLE IF NOT EXISTS products ("
-        "id INTEGER PRIMARY KEY CHECK(id BETWEEN 1 AND 2147483647),"
-        "name TEXT NOT NULL CHECK(length(CAST(name AS BLOB)) BETWEEN 1 AND 120"
-        " AND instr(name,char(0))=0),"
-        "price INTEGER NOT NULL CHECK(typeof(price)='integer' AND "
-        "price BETWEEN 0 AND 1000000000));"
-        "CREATE INDEX IF NOT EXISTS products_price_id ON products(price,id);"
-        "DELETE FROM products;";
-    bool success =
-        sqlite3_exec(database, schema, NULL, NULL, NULL) == SQLITE_OK &&
-        products_insert(database, options) &&
-        sqlite3_exec(database, "COMMIT", NULL, NULL, NULL) == SQLITE_OK;
-    if (!success) {
-        sqlite3_exec(database, "ROLLBACK", NULL, NULL, NULL);
-        fprintf(stderr, "cache-demo: seed failed\n");
-    }
-
-    return success;
-}
-
-static bool products_insert(sqlite3 *database, const struct options *options)
-{
-    sqlite3_stmt *statement = NULL;
-    if (sqlite3_prepare_v2(database, "INSERT INTO products VALUES(?,?,?)", -1,
-                           &statement, NULL) != SQLITE_OK) {
-        return false;
-    }
-    int64_t state = options->seed;
-    bool success = true;
-    for (int64_t i = 1; i <= options->count && success; i++) {
-        char name[64];
-        snprintf(name, sizeof name, "상품 %lld", (long long)i);
-        state = state * SEED_MULTIPLIER % PRODUCT_ID_MAX;
-        success = sqlite3_bind_int64(statement, 1, i) == SQLITE_OK &&
-                  sqlite3_bind_text(statement, 2, name, -1, SQLITE_TRANSIENT) ==
-                      SQLITE_OK &&
-                  sqlite3_bind_int64(statement, 3, state % (PRICE_MAX + 1)) ==
-                      SQLITE_OK &&
-                  sqlite3_step(statement) == SQLITE_DONE;
-        sqlite3_reset(statement);
-    }
-    sqlite3_finalize(statement);
-
-    return success;
-}
-
 static int server_run(struct demo *demo, int port)
 {
     struct sigaction action = {0};
@@ -482,7 +396,7 @@ static void stats_send(struct mg_connection *connection,
         "\"cache_puts\":%llu,\"cache_put_failures\":%llu,"
         "\"cache_deletes\":%llu,\"cache_delete_failures\":%llu,"
         "\"cache_probes\":%llu,\"cache_probe_failures\":%llu,"
-        "\"cache_recoveries\":%llu,\"cache_state\":\"%s\"}",
+        "\"cache_recoveries\":%llu,\"origin\":\"%s\",\"cache_state\":\"%s\"}",
         (unsigned long long)demo->product_gets,
         (unsigned long long)demo->origin_queries,
         (unsigned long long)demo->origin_failures,
@@ -499,7 +413,7 @@ static void stats_send(struct mg_connection *connection,
         (unsigned long long)cache->delete_failures,
         (unsigned long long)cache->probes,
         (unsigned long long)cache->probe_failures,
-        (unsigned long long)cache->recoveries,
+        (unsigned long long)cache->recoveries, origin_name(),
         !cache->enabled ? "off"
         : cache->active ? "active"
                         : "suspended");
@@ -597,6 +511,7 @@ static bool list_pair_apply(const char *pair, size_t pair_len,
             return false;
         }
         memcpy(list->q, value, value_len);
+        list->q[value_len] = '\0';
         list->q_len = value_len;
         return true;
     case 1:
@@ -653,58 +568,19 @@ static void list_key(const struct demo *demo, const struct list_query *list,
 static char *list_read(struct demo *demo, const struct list_query *list,
                        int *status)
 {
-    static const char *order_sql[] = {"id", "price,id", "price DESC,id"};
-    demo->origin_queries++;
-    char sql[256];
-    snprintf(sql, sizeof sql,
-             "SELECT id,name,price FROM products WHERE price BETWEEN ?1 AND "
-             "?2%s ORDER BY %s LIMIT ?3 OFFSET ?4",
-             list->q_len != 0 ? " AND instr(name,?5)>0" : "",
-             order_sql[list->sort]);
-    sqlite3_stmt *statement = NULL;
-    int result = sqlite3_prepare_v2(demo->database, sql, -1, &statement, NULL);
-    if (result == SQLITE_OK) {
-        result = sqlite3_bind_int(statement, 1, list->min_price);
-    }
-    if (result == SQLITE_OK) {
-        result = sqlite3_bind_int(statement, 2, list->max_price);
-    }
-    if (result == SQLITE_OK) {
-        result = sqlite3_bind_int(statement, 3, list->limit);
-    }
-    if (result == SQLITE_OK) {
-        result = sqlite3_bind_int(statement, 4, list->offset);
-    }
-    if (result == SQLITE_OK && list->q_len != 0) {
-        result = sqlite3_bind_text(statement, 5, list->q, (int)list->q_len,
-                                   SQLITE_TRANSIENT);
-    }
     struct text body = {0};
-    bool first = true;
-    bool success = result == SQLITE_OK && text_append(&body, "{\"items\":[");
-    int step = SQLITE_DONE;
-    while (success && (step = sqlite3_step(statement)) == SQLITE_ROW) {
-        if (!product_is_valid(statement)) {
-            success = false;
-            break;
-        }
-        char *item = mg_mprintf(
-            "%s{\"id\":%d,\"name\":%m,\"price\":%lld}", first ? "" : ",",
-            (int)sqlite3_column_int64(statement, 0),
-            MG_ESC((const char *)sqlite3_column_text(statement, 1)),
-            (long long)sqlite3_column_int64(statement, 2));
-        success = item != NULL && text_append(&body, item);
-        free(item);
-        first = false;
-    }
-    success = success && step == SQLITE_DONE && text_append(&body, "]}");
+    struct items_context items = {&body, true};
+    demo->origin_queries++;
+    bool success =
+        text_append(&body, "{\"items\":[") &&
+        origin_list_read(demo->origin, list, items_append, &items) == 200 &&
+        text_append(&body, "]}");
     *status = success ? 200 : 503;
     if (!success) {
         demo->origin_failures++;
         free(body.data);
         body.data = NULL;
     }
-    sqlite3_finalize(statement);
 
     return body.data;
 }
@@ -729,6 +605,25 @@ static bool text_append(struct text *text, const char *piece)
     text->data[text->len] = '\0';
 
     return true;
+}
+
+static bool items_append(void *context, int product_id, const char *name,
+                         size_t name_len, int price)
+{
+    struct items_context *items = context;
+    if (name == NULL || product_id < 1 || product_id > PRODUCT_ID_MAX ||
+        price < 0 || price > PRICE_MAX ||
+        !name_is_valid((const unsigned char *)name, (int)name_len)) {
+        return false;
+    }
+    char *item =
+        mg_mprintf("%s{\"id\":%d,\"name\":%m,\"price\":%d}",
+                   items->first ? "" : ",", product_id, MG_ESC(name), price);
+    items->first = false;
+    bool appended = item != NULL && text_append(items->body, item);
+    free(item);
+
+    return appended;
 }
 
 static void product_send(struct mg_connection *connection, struct demo *demo,
@@ -774,8 +669,10 @@ static void product_update(struct mg_connection *connection, struct demo *demo,
         return;
     }
     int status =
-        product_change(demo, "UPDATE products SET name=?2,price=?3 WHERE id=?1",
-                       product_id, name, name_len, price);
+        origin_product_write(demo->origin, product_id, name, name_len, price);
+    if (status == 503) {
+        demo->origin_failures++;
+    }
     if (status != 204) {
         error_send(connection, status,
                    status == 404 ? "product_not_found" : "origin_unavailable");
@@ -789,8 +686,10 @@ static void product_update(struct mg_connection *connection, struct demo *demo,
 static void product_delete(struct mg_connection *connection, struct demo *demo,
                            int product_id)
 {
-    int status = product_change(demo, "DELETE FROM products WHERE id=?1",
-                                product_id, NULL, 0, 0);
+    int status = origin_product_remove(demo->origin, product_id);
+    if (status == 503) {
+        demo->origin_failures++;
+    }
     if (status != 204) {
         error_send(connection, status,
                    status == 404 ? "product_not_found" : "origin_unavailable");
@@ -847,41 +746,6 @@ static bool update_parse(struct mg_str body, char *name, size_t *name_len,
     return has_name && has_price;
 }
 
-static int product_change(struct demo *demo, const char *sql, int product_id,
-                          const char *name, size_t name_len, int price)
-{
-    int result =
-        sqlite3_exec(demo->database, "BEGIN IMMEDIATE", NULL, NULL, NULL);
-    sqlite3_stmt *statement = NULL;
-    if (result == SQLITE_OK) {
-        result = sqlite3_prepare_v2(demo->database, sql, -1, &statement, NULL);
-    }
-    if (result == SQLITE_OK) {
-        result = sqlite3_bind_int(statement, 1, product_id);
-    }
-    if (result == SQLITE_OK && name != NULL) {
-        result = sqlite3_bind_text(statement, 2, name, (int)name_len,
-                                   SQLITE_TRANSIENT);
-    }
-    if (result == SQLITE_OK && name != NULL) {
-        result = sqlite3_bind_int(statement, 3, price);
-    }
-    bool applied =
-        result == SQLITE_OK && sqlite3_step(statement) == SQLITE_DONE;
-    bool committed = applied && sqlite3_exec(demo->database, "COMMIT", NULL,
-                                             NULL, NULL) == SQLITE_OK;
-    int changes = applied ? sqlite3_changes(demo->database) : 0;
-    if (!applied) {
-        sqlite3_exec(demo->database, "ROLLBACK", NULL, NULL, NULL);
-    }
-    if (!committed) {
-        demo->origin_failures++;
-    }
-    sqlite3_finalize(statement);
-
-    return !committed ? 503 : changes > 0 ? 204 : 404;
-}
-
 static void cache_recover(struct demo *demo)
 {
     if (cache_client_recover(&demo->cache)) {
@@ -908,48 +772,21 @@ static void body_send(struct mg_connection *connection, const char *body)
 
 static char *product_read(struct demo *demo, int product_id, int *status)
 {
+    struct text body = {0};
+    struct items_context items = {&body, true};
+    int count = 0;
     demo->origin_queries++;
-    sqlite3_stmt *statement = NULL;
-    int result = sqlite3_prepare_v2(
-        demo->database, "SELECT id,name,price FROM products WHERE id=?", -1,
-        &statement, NULL);
-    if (result == SQLITE_OK) {
-        result = sqlite3_bind_int(statement, 1, product_id);
+    *status = origin_product_read(demo->origin, product_id, items_append,
+                                  &items, &count);
+    if (*status != 200) {
+        free(body.data);
+        body.data = NULL;
+        if (*status == 503) {
+            demo->origin_failures++;
+        }
     }
-    if (result == SQLITE_OK) {
-        result = sqlite3_step(statement);
-    }
-    if (result == SQLITE_ROW && !product_is_valid(statement)) {
-        result = SQLITE_MISMATCH;
-    }
-    char *body = NULL;
-    if (result == SQLITE_ROW) {
-        body =
-            mg_mprintf("{\"id\":%d,\"name\":%m,\"price\":%lld}", product_id,
-                       MG_ESC((const char *)sqlite3_column_text(statement, 1)),
-                       (long long)sqlite3_column_int64(statement, 2));
-    }
-    *status = result == SQLITE_DONE ? 404 : body == NULL ? 503 : 200;
-    if (*status == 503) {
-        demo->origin_failures++;
-    }
-    sqlite3_finalize(statement);
 
-    return body;
-}
-
-static bool product_is_valid(sqlite3_stmt *statement)
-{
-    sqlite3_int64 product_id = sqlite3_column_int64(statement, 0);
-    sqlite3_int64 price = sqlite3_column_int64(statement, 2);
-
-    return sqlite3_column_type(statement, 0) == SQLITE_INTEGER &&
-           product_id >= 1 && product_id <= PRODUCT_ID_MAX &&
-           sqlite3_column_type(statement, 1) == SQLITE_TEXT &&
-           name_is_valid(sqlite3_column_text(statement, 1),
-                         sqlite3_column_bytes(statement, 1)) &&
-           sqlite3_column_type(statement, 2) == SQLITE_INTEGER && price >= 0 &&
-           price <= PRICE_MAX;
+    return body.data;
 }
 
 static bool name_is_valid(const unsigned char *name, int name_len)

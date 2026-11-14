@@ -36,7 +36,7 @@ MONGOOSE_OBJ   := $(BUILD)/mongoose.o
 # 이를 받아들입니다.
 MONGOOSE_FLAGS := -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752
 
-.PHONY: all test functional verify lint format clean bench
+.PHONY: all test functional verify lint format clean bench cache-demo cache-functional cache-bench cache-demo-postgres cache-functional-postgres cache-bench-postgres
 
 # 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_INTERVAL_MS, SWEEP_INTERVAL_MS,
 # SWEEP_MAX_COUNT를 빌드할 때 바꿉니다(spec Q19). 예:
@@ -125,9 +125,55 @@ CACHE_DEMO := $(BUILD)/cache-demo
 .PHONY: cache-demo cache-functional
 cache-demo: $(CACHE_DEMO)
 
-$(CACHE_DEMO): demo/product_demo.c demo/cache_client.c demo/cache_client.h $(MONGOOSE_OBJ) | $(BUILD)
-	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) demo/product_demo.c demo/cache_client.c $(MONGOOSE_OBJ) \
-	    $(LDFLAGS) -lsqlite3 -o $@
+# 상품 API는 demo/product_demo.c, 원본 접근은 demo/sqlite_origin.c가 맡습니다.
+# PostgreSQL 원본은 demo/postgres_origin.c를 링크하는 선택 빌드입니다.
+$(CACHE_DEMO): demo/product_demo.c demo/cache_client.c demo/sqlite_origin.c demo/origin.h demo/cache_client.h $(MONGOOSE_OBJ) | $(BUILD)
+	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) demo/product_demo.c demo/cache_client.c \
+	    demo/sqlite_origin.c $(MONGOOSE_OBJ) $(LDFLAGS) -lsqlite3 -o $@
+
+# make cache-bench: 최적화한 데모와 mini-redis로 캐시 효과를 잽니다(M5 spec).
+# sanitizer를 끈 빌드를 build/bench/에 따로 만들고, 시간 수치는 make verify와 CI에
+# 넣지 않습니다. 측정 계획과 출력은 scripts/bench/cache_bench.py가 정합니다.
+CACHE_BENCH_DEMO := $(BENCH_BUILD)/cache-demo
+cache-bench: $(CACHE_BENCH_DEMO) $(BENCH_SERVER)
+	python3 -B scripts/bench/cache_bench.py $(CACHE_BENCH_DEMO) $(BENCH_SERVER)
+
+# 선택 PostgreSQL 원본의 같은 실험입니다. SQLite 측정과 별도 환경으로 다룹니다.
+CACHE_BENCH_POSTGRES := $(BENCH_BUILD)/cache-demo-postgres
+cache-bench-postgres: $(CACHE_BENCH_POSTGRES) $(BENCH_SERVER)
+	@test -n "$(POSTGRES_URL)" || { echo "POSTGRES_URL을 지정하세요"; exit 1; }
+	python3 -B scripts/bench/cache_bench.py $(CACHE_BENCH_POSTGRES) $(BENCH_SERVER) --db "$(POSTGRES_URL)" $(POSTGRES_BENCH_FLAGS)
+
+$(CACHE_BENCH_POSTGRES): demo/product_demo.c demo/cache_client.c demo/postgres_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) -I$(PG_INCLUDEDIR) $(BENCH_CFLAGS) demo/product_demo.c \
+	    demo/cache_client.c demo/postgres_origin.c $(BENCH_MONGOOSE) -L$(PG_LIBDIR) -lpq -o $@
+
+$(CACHE_BENCH_DEMO): demo/product_demo.c demo/cache_client.c demo/sqlite_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) demo/product_demo.c demo/cache_client.c \
+	    demo/sqlite_origin.c $(BENCH_MONGOOSE) -lsqlite3 -o $@
+
+# PostgreSQL 원본은 선택 빌드입니다. libpq 개발 파일이 있어야 만들 수 있으며,
+# 기본 빌드·기능 검증·CI는 이것을 요구하지 않습니다(M5 spec). 예:
+#   make cache-demo-postgres
+#   ./build/cache-demo-postgres --db 'postgresql://user@host/db' --seed 1 --count 10000
+PG_CONFIG     ?= pg_config
+PG_INCLUDEDIR := $(shell $(PG_CONFIG) --includedir 2>/dev/null)
+PG_LIBDIR     := $(shell $(PG_CONFIG) --libdir 2>/dev/null)
+CACHE_DEMO_POSTGRES := $(BUILD)/cache-demo-postgres
+.PHONY: cache-demo-postgres
+cache-demo-postgres: $(CACHE_DEMO_POSTGRES)
+
+$(CACHE_DEMO_POSTGRES): demo/product_demo.c demo/cache_client.c demo/postgres_origin.c demo/origin.h demo/cache_client.h $(MONGOOSE_OBJ) | $(BUILD)
+	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) -I$(PG_INCLUDEDIR) $(CFLAGS) demo/product_demo.c \
+	    demo/cache_client.c demo/postgres_origin.c $(MONGOOSE_OBJ) $(LDFLAGS) -L$(PG_LIBDIR) -lpq -o $@
+
+# PostgreSQL 기능 검증은 선택입니다. 실행 중인 DB와 libpq 빌드가 필요합니다.
+#   make cache-functional-postgres POSTGRES_URL='postgresql://user@host/db'
+POSTGRES_URL ?=
+POSTGRES_BENCH_FLAGS ?=
+cache-functional-postgres: $(CACHE_DEMO_POSTGRES) $(SERVER)
+	@test -n "$(POSTGRES_URL)" || { echo "POSTGRES_URL을 지정하세요"; exit 1; }
+	python3 -B tests/functional/postgres_cache_test.py $(CACHE_DEMO_POSTGRES) $(SERVER) "$(POSTGRES_URL)"
 
 cache-functional: $(CACHE_DEMO) $(SERVER)
 	python3 -B tests/functional/cache_test.py $(CACHE_DEMO)
