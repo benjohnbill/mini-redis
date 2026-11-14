@@ -18,7 +18,7 @@ Specs and tickets for this repo live as Markdown files in `docs/milestones/`. Th
 
 - A milestone folder records what the team thought at that time. Do not edit a folder of a finished milestone.
 - When a later milestone changes an earlier decision, say so in the current milestone's `spec.md`, and supersede the old ADR (see `domain.md`).
-- The current state of a feature is in `src/`, `tests/`, and `README.md`, not in old milestone folders.
+- The current state of a feature is in `src/`, `tests/`, `README.md`, `docs/api.md`, and `demo/README.md`, not in old milestone folders. `README.md` holds only summaries and links; the HTTP contract goes in `docs/api.md`.
 
 ## The spec
 
