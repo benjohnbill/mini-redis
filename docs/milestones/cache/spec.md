@@ -202,6 +202,7 @@ Redis 공식 문서의 [cache-aside](https://redis.io/docs/latest/develop/use-ca
 - **조회 전용 (SQLite):** 같은 조건을 반복하는 목록·검색은 적중률 100%로 원본 조회가 사라지고 p50이 줄었습니다. 상세 조회와 매번 조건이 달라지는 목록·검색은 단일 스레드 데모가 mini-redis 왕복을 기다리므로 캐시를 켜면 더 느렸습니다([001](../../measurements/cache-demo/001-LMH-sqlite-read-only.md)).
 - **조회 전용 (로컬 PostgreSQL):** 목록 반복은 빨라지고 상세 균등과 다양한 조건의 검색은 느려졌습니다. SQLite와 다른 원본 환경이므로 차이를 네트워크 비용 하나로 해석하지 않습니다([002](../../measurements/cache-demo/002-LMH-local-postgres-read-only.md)).
 - **수정과 만료가 섞인 조건 (SQLite):** 수정이 섞여도 상세 집중 조회는 원본 조회가 절반 이하로 줄었고, TTL 2초에서는 적중률이 절반 이하로 떨어졌습니다([003](../../measurements/cache-demo/003-LMH-sqlite-mixed.md)).
+- **전체 시나리오 (SQLite, WSL2):** 시나리오 18개를 TTL 60초와 2초로 모두 잰 결과는 [004](../../measurements/cache-demo/004-CJG-sqlite-grid.md)에 있습니다. 적중률과 원본 조회 횟수는 003과 같았고, 반복 조건의 목록만 캐시로 빨라졌습니다.
 - 이 수치는 합격 기준이 아니며, 장비·부하·데이터가 다르면 달라집니다.
 
 ### 원격 PostgreSQL 비교 (미실행)
