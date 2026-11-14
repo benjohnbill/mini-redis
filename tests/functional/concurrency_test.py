@@ -26,6 +26,8 @@ HOST = "127.0.0.1"
 START_TIMEOUT = 10.0
 STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
+RECV_SIZE = 4096  # recv 한 번에 받는 최대 바이트 수입니다
+HEAD_END = b"\r\n\r\n"  # 헤더의 끝입니다. 마지막 헤더 줄의 줄바꿈과 빈 줄입니다
 BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), M2 spec Q10
 LARGE_REQUEST_TIMEOUT = 15.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
 PROMPT_TIMEOUT = 0.5  # 큰 요청이 도는 중에도 작은 GET이 이 시간 안에 응답을 받아야 합니다(ASan 기준)
@@ -283,7 +285,7 @@ def read_until_closed(connection):
     received = b""
     while True:
         try:
-            chunk = connection.recv(4096)
+            chunk = connection.recv(RECV_SIZE)
         except socket.timeout:
             raise AssertionError(f"서버가 {IDLE_TIMEOUT + CLOSE_GRACE:.0f}초 동안 연결을 닫지 않습니다") from None
         if not chunk:
@@ -299,7 +301,7 @@ def expect_not_early(elapsed, what):
 def expect_request_timeout(received, elapsed):
     """멈춘 뒤 기한이 지나 408 request_timeout 응답 하나를 받고 닫혔는지 봅니다."""
     expect_not_early(elapsed, "408 응답")
-    head, _, body = received.partition(b"\r\n\r\n")
+    head, _, body = received.partition(HEAD_END)
     lines = head.split(b"\r\n")
     headers = dict(line.split(b": ", 1) for line in lines[1:] if b": " in line)
     expect(lines[0].split(b" ")[1:2], [b"408"], "상태 코드")
@@ -381,7 +383,7 @@ def slow_reader_of_large_response_is_kept(server):
 
     if elapsed <= IDLE_TIMEOUT:
         raise AssertionError(f"응답을 {elapsed:.2f}초 만에 다 읽어, 기한보다 오래 받지 못했습니다")
-    head, _, body = received.partition(b"\r\n\r\n")
+    head, _, body = received.partition(HEAD_END)
     expect(head.split(b" ")[1:2], [b"200"], "조회의 상태 코드")
     if body != value:
         raise AssertionError("천천히 받은 body가 저장한 body와 다릅니다")
@@ -406,8 +408,8 @@ def read_slowly(reader, body_len):
 
 
 def response_is_complete(received, body_len):
-    head_end = received.find(b"\r\n\r\n")
-    return head_end >= 0 and len(received) - head_end - 4 >= body_len
+    head_len = received.find(HEAD_END)
+    return head_len >= 0 and len(received) - head_len - len(HEAD_END) >= body_len
 
 
 # 하나씩 돌립니다. 작은 GET의 시간을 재므로 다른 테스트와 겹치지 않게 합니다.
@@ -437,7 +439,7 @@ WAITING_TESTS = [
 ]
 
 
-def test_error(server, test):
+def test_run(server, test):
     """테스트를 돌리고, 실패면 그 오류를, 성공이면 None을 돌려줍니다."""
     try:
         test(server)
@@ -447,7 +449,7 @@ def test_error(server, test):
 
 
 def tests_run_one_by_one(server, tests):
-    return [test_error(server, test) for _, test in tests]
+    return [test_run(server, test) for _, test in tests]
 
 
 def tests_run_together(server, tests):
@@ -455,7 +457,7 @@ def tests_run_together(server, tests):
     errors = [None] * len(tests)
 
     def run(index, test):
-        errors[index] = test_error(server, test)
+        errors[index] = test_run(server, test)
 
     threads = [threading.Thread(target=run, args=(index, test))
                for index, (_, test) in enumerate(tests)]
@@ -476,7 +478,7 @@ def results_print(tests, errors):
     return sum(error is not None for error in errors)
 
 
-def stop_problem(server):
+def stop_and_find_problem(server):
     """서버를 끄고, 0으로 끝나지 않았거나 sanitizer 오류가 있으면 그 설명을 돌려줍니다."""
     code = server.stop()
     output = server.output()
@@ -501,7 +503,7 @@ def main():
         failed = total
         print(f"서버를 띄우지 못했습니다: {error}")
     finally:
-        problem = stop_problem(server)
+        problem = stop_and_find_problem(server)
     if problem is not None:
         print(problem)
     if failed or problem is not None:
