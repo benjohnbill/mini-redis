@@ -136,10 +136,40 @@ def connection_over_limit_gets_503_and_closed(server):
         close_all(connections)
 
 
+def freed_slot_accepts_new_connection(server):
+    connections = open_full(server, "freed-full")
+    try:
+        connections.pop().close()
+        replacement = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+        connections.append(replacement)
+
+        expect_not_found(replacement, "freed-new", "자리가 난 뒤 새 연결의 조회")
+    finally:
+        close_all(connections)
+
+
+def open_connections_served_while_rejecting(server):
+    connections = open_full(server, "serving-full")
+    try:
+        with socket.create_connection((HOST, server.port), timeout=REQUEST_TIMEOUT) as rejected:
+            # 서버가 넘친 연결을 받아 거절하는 동안 열린 연결 하나로 요청합니다.
+            expect_not_found(connections[0], "serving-first", "열린 연결의 조회")
+            rejection = read_rejection(rejected)
+        expect_not_found(connections[-1], "serving-last", "거절 뒤 열린 연결의 조회")
+
+        expect_rejected(*rejection)
+    finally:
+        close_all(connections)
+
+
 # 서버를 끄는 확인은 main의 마지막에 합니다.
 TESTS = [
     ("[T13] (기능) 연결 128개가 열려 있을 때 129번째 연결은 503과 too_many_connections를 받고 닫힌다",
      connection_over_limit_gets_503_and_closed),
+    ("(기능) 열린 연결 하나가 닫혀 자리가 나면 새 연결이 다시 정상 응답을 받는다",
+     freed_slot_accepts_new_connection),
+    ("(기능) 129번째 연결이 거절되는 동안에도 이미 열린 연결의 요청은 정상 응답을 받는다",
+     open_connections_served_while_rejecting),
 ]
 
 
