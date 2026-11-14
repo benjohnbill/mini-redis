@@ -4,7 +4,7 @@ Specs and tickets for this repo live as Markdown files in `docs/milestones/`. Th
 
 ## Conventions
 
-- One milestone per folder: `docs/milestones/<name>/`. `<name>` is the milestone name: `store`, `api`, `concurrency`, `expire`, `cache`, or `persist`.
+- One milestone per folder: `docs/milestones/<name>/`. `<name>` is the milestone name: `store`, `api`, `concurrency`, `expire`, `cache`, `persist`, or `perf`.
 - The spec is `docs/milestones/<name>/spec.md`.
 - Tickets are one file each: `docs/milestones/<name>/issues/<NN>-<slug>.md`, numbered from `01`. Never put all tickets in one file.
 - The triage state is a `Status:` line near the top of each file. See `triage-labels.md`.
