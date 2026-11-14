@@ -53,7 +53,7 @@ static struct api_response response_error(int status, const char *body);
 static struct api_response response_no_content(void);
 
 /* 경로, 메서드, key 순서로 검사하고 처음 걸린 오류 하나로 답합니다. 경로가
-   틀린 요청에 메서드나 key 오류를 알리면 다른 서버가 엉뚱한 곳을 고치게
+   틀린 요청에 메서드나 key 오류를 알리면 client가 엉뚱한 곳을 고치게
    되기 때문입니다(spec "오류의 우선순위"). */
 struct api_response api_handle(struct store *store, uint64_t now,
                                const char *method, size_t method_len,
@@ -172,7 +172,7 @@ static bool key_decode(const char *encoded, size_t encoded_len, char *key,
     size_t written = 0;
     for (size_t i = 0; i < encoded_len; i++) {
         /* ?는 HTTP에서 경로와 query를 나누는 문자라서, 인코딩하지 않은 ?를
-           key의 바이트로 쓰면 다른 서버와 라이브러리가 key를 다르게 읽습니다.
+           key의 바이트로 쓰면 client와 라이브러리가 key를 다르게 읽습니다.
            key 안의 ?는 %3F로 보내야 합니다(spec Q3). */
         if (encoded[i] == '?') {
             return false;
@@ -333,6 +333,7 @@ static struct api_response response_error(int status, const char *body)
                                     .content_type = "application/json",
                                     .body = body,
                                     .body_len = strlen(body)};
+
     return response;
 }
 

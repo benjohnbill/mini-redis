@@ -44,7 +44,7 @@ struct entry {
 static uint64_t entry_hash(const struct hash_elem *element, void *aux);
 static bool entry_less(const struct hash_elem *left,
                        const struct hash_elem *right, void *aux);
-static void entry_free(struct hash_elem *element, void *aux);
+static void entry_destroy(struct hash_elem *element, void *aux);
 static struct entry *entry_create(const void *key, size_t key_len,
                                   const void *value, size_t value_len,
                                   uint64_t expires_at);
@@ -65,7 +65,7 @@ static void heap_sift_down(struct heap *heap, size_t index);
 static void heap_insert(struct heap *heap, struct entry *entry);
 static struct entry *live_entry_find(struct store *store, uint64_t now,
                                      const void *key, size_t key_len);
-static struct entry probe_for(const void *key, size_t key_len);
+static struct entry probe_build(const void *key, size_t key_len);
 static bool entry_is_expired(const struct entry *entry, uint64_t now);
 
 struct store *store_create(void)
@@ -86,7 +86,7 @@ struct store *store_create(void)
 void store_destroy(struct store *store)
 {
     assert(store != NULL);
-    hash_destroy(&store->table, entry_free);
+    hash_destroy(&store->table, entry_destroy);
     free(store->heap.entries);
     free(store);
 }
@@ -108,7 +108,7 @@ bool store_set(struct store *store, const void *key, size_t key_len,
        않습니다. 할당 함수를 바꿔 끼울 seam이 없어서 이 차이는 자동 테스트하지
        않고 리뷰로 확인합니다. */
     if (entry_needs_heap_slot(store, entry) && !heap_reserve(&store->heap)) {
-        entry_free(&entry->elem, NULL);
+        entry_destroy(&entry->elem, NULL);
         return false;
     }
 
@@ -151,7 +151,7 @@ bool store_delete(struct store *store, uint64_t now, const void *key,
 
     /* hash_delete는 테이블에서 뺀 entry를 돌려줄 뿐 해제하지 않으므로, 해제는
        store가 합니다. */
-    struct entry probe = probe_for(key, key_len);
+    struct entry probe = probe_build(key, key_len);
     struct hash_elem *removed = hash_delete(&store->table, &probe.elem);
     if (removed == NULL) {
         return false;
@@ -210,7 +210,7 @@ static bool entry_less(const struct hash_elem *left,
     return left_entry->key_len < right_entry->key_len;
 }
 
-static void entry_free(struct hash_elem *element, void *aux)
+static void entry_destroy(struct hash_elem *element, void *aux)
 {
     (void)aux;
     free(hash_entry(element, struct entry, elem));
@@ -309,7 +309,7 @@ static void entry_discard(struct store *store, struct entry *entry)
     if (entry_has_expiry(entry)) {
         heap_delete(&store->heap, entry);
     }
-    entry_free(&entry->elem, NULL);
+    entry_destroy(&entry->elem, NULL);
 }
 
 /* 맨 끝 entry를 빈 자리로 옮긴 뒤, 부모보다 이르면 올리고 아니면 내립니다. */
@@ -396,7 +396,7 @@ static void heap_insert(struct heap *heap, struct entry *entry)
 static struct entry *live_entry_find(struct store *store, uint64_t now,
                                      const void *key, size_t key_len)
 {
-    struct entry probe = probe_for(key, key_len);
+    struct entry probe = probe_build(key, key_len);
     struct hash_elem *found = hash_find(&store->table, &probe.elem);
     if (found == NULL) {
         return NULL;
@@ -407,7 +407,7 @@ static struct entry *live_entry_find(struct store *store, uint64_t now,
 }
 
 /* 조회용 임시 entry입니다. key만 채우면 hash와 less가 동작합니다. */
-static struct entry probe_for(const void *key, size_t key_len)
+static struct entry probe_build(const void *key, size_t key_len)
 {
     return (struct entry){.key = bytes_or_empty(key, key_len),
                           .key_len = key_len};
