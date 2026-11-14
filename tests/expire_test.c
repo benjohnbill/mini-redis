@@ -15,10 +15,19 @@
 #define EXPIRES_AT 1000
 /* 주기 청소 테스트의 한 번 청소량입니다. 서버의 K와 상관없이 테스트가 정합니다. */
 #define SWEEP_MAX 20
-/* 무작위 테스트의 key 수입니다. 만료 시각을 key마다 다르게 만들려고 1000보다
-   작게 둡니다. */
+/* 무작위 테스트의 key 수입니다. 만료 시각을 key마다 다르게 만들려고
+   RANDOM_EXPIRY_UNIT보다 작게 둡니다. */
 #define RANDOM_KEY_COUNT 500
 #define RANDOM_STEP_COUNT 5000
+/* 무작위 만료 시각은 RANDOM_EXPIRY_UNIT의 배수에 key_index를 더한 값입니다.
+   그래서 만료 시각을 RANDOM_EXPIRY_UNIT으로 나눈 나머지가 key_index입니다. */
+#define RANDOM_EXPIRY_UNIT 1000
+/* 무작위 만료 시각이 고르는 RANDOM_EXPIRY_UNIT 배수의 개수입니다. */
+#define RANDOM_EXPIRY_UNIT_COUNT 100000
+/* "key499"와 '\0'이 들어가는 크기입니다. */
+#define RANDOM_KEY_NAME_MAX 16
+_Static_assert(RANDOM_KEY_COUNT <= RANDOM_EXPIRY_UNIT,
+               "key_index가 만료 시각의 아래 자리에 들어가야 합니다");
 /* 테스트가 기억하는 "지금 store에 없음"입니다. 만료 시각으로 쓰이지 않는 0입니다. */
 #define KEY_ABSENT 0
 
@@ -393,7 +402,7 @@ static void sweep_order_survives_random_changes(void)
     uint64_t expected[RANDOM_KEY_COUNT] = {0};
     random_changes_apply(store, expected);
 
-    char name[16];
+    char name[RANDOM_KEY_NAME_MAX];
     uint64_t expiries[RANDOM_KEY_COUNT];
     size_t expiry_count = 0;
     for (size_t key_index = 0; key_index < RANDOM_KEY_COUNT; key_index++) {
@@ -408,7 +417,8 @@ static void sweep_order_survives_random_changes(void)
     qsort(expiries, expiry_count, sizeof *expiries, expiry_compare);
     /* 만료 시각마다 한 개씩 지워지고, 지워진 key는 그 시각의 key입니다. */
     for (size_t order = 0; order < expiry_count; order++) {
-        random_key_name(name, sizeof name, expiries[order] % 1000);
+        random_key_name(name, sizeof name,
+                        expiries[order] % RANDOM_EXPIRY_UNIT);
         TEST_CHECK(store_delete_expired(store, expiries[order], SWEEP_MAX) ==
                    1);
         TEST_CHECK(!key_is_kept(store, name));
@@ -509,7 +519,7 @@ static bool key_is_kept(struct store *store, const char *key)
 static void random_changes_apply(struct store *store, uint64_t *expected)
 {
     uint64_t state = 42;
-    char name[16];
+    char name[RANDOM_KEY_NAME_MAX];
     for (size_t step = 0; step < RANDOM_STEP_COUNT; step++) {
         size_t key_index = random_next(&state) % RANDOM_KEY_COUNT;
         random_key_name(name, sizeof name, key_index);
@@ -535,14 +545,17 @@ static void random_key_name(char *name, size_t name_size, size_t key_index)
     snprintf(name, name_size, "key%zu", key_index);
 }
 
-/* key_index를 끝 세 자리에 넣어, 같은 순간에 store에 있는 key들의 만료 시각이
-   모두 다르게 합니다. 그래야 청소 순서를 하나로 기대할 수 있습니다. */
+/* key_index를 RANDOM_EXPIRY_UNIT 아래 자리에 넣어, 같은 순간에 store에 있는
+   key들의 만료 시각이 모두 다르게 합니다. 그래야 청소 순서를 하나로 기대할 수
+   있습니다. 배수는 1부터 골라, 삭제가 쓰는 "지금" 1보다 늦게 만료됩니다. */
 static uint64_t random_expiry(uint64_t *state, size_t key_index)
 {
     if (random_next(state) % 4 == 0) {
         return STORE_NO_EXPIRY;
     }
-    return 1000 + (random_next(state) % 100000) * 1000 + key_index;
+    uint64_t unit_index = 1 + random_next(state) % RANDOM_EXPIRY_UNIT_COUNT;
+
+    return unit_index * RANDOM_EXPIRY_UNIT + key_index;
 }
 
 static int expiry_compare(const void *left, const void *right)
