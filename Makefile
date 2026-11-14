@@ -92,6 +92,8 @@ clean:
 # 따로 만듭니다. 목적 파일도 따로 두어 make verify의 빌드와 섞이지 않게 합니다.
 # assert는 남깁니다(NDEBUG 없음). 테스트한 서버와 같은 검사를 하는 서버를 재기
 # 위해서입니다. 측정 순서와 출력은 scripts/bench/bench.py가 정합니다.
+# 측정 서버에만 SWEEP_TRACE를 켭니다. 주기 청소가 key를 지울 때마다 시각과 개수를
+# stderr에 적고, bench.py가 그 줄로 회수 지연을 잽니다(M4 spec "측정 결과").
 BENCH_BUILD    := $(BUILD)/bench
 BENCH_CFLAGS   := -std=c11 -Wall -Wextra -Werror -O2
 BENCH_SERVER   := $(BENCH_BUILD)/mini-redis
@@ -102,8 +104,8 @@ bench: $(BENCH_SERVER)
 	python3 -B scripts/bench/bench.py $(BENCH_SERVER)
 
 $(BENCH_SERVER): src/server.c $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) | $(BENCH_BUILD)
-	$(CC) $(CPPFLAGS) $(SERVER_FLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) $< $(BENCH_LIB_OBJS) \
-	    $(BENCH_MONGOOSE) -o $@
+	$(CC) $(CPPFLAGS) -DSWEEP_TRACE $(SERVER_FLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) $< \
+	    $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) -o $@
 
 $(BENCH_MONGOOSE): $(MONGOOSE_DIR)/mongoose.c $(MONGOOSE_DIR)/mongoose.h Makefile | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) $(MONGOOSE_FLAGS) $(BENCH_CFLAGS) -c $< -o $@

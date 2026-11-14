@@ -41,17 +41,21 @@ class Request:
     """보낼 요청 하나와 기대하는 응답입니다. kind는 지연을 모으는 이름입니다."""
 
     def __init__(self, kind, method, path, body=None, expect_status=200,
-                 expect_body=None):
+                 expect_body=None, headers=()):
         self.kind = kind
         self.method = method
         self.path = path
         self.body = body
         self.expect_status = expect_status
         self.expect_body = expect_body
+        self.headers = headers  # (이름, 값) 쌍들, 예: (("TTL", "2"),)
         self.scheduled_ns = 0
+        self.sent_ns = 0  # 첫 바이트를 보내기 시작한 시각(perf_counter_ns)
 
     def chunks(self):
         head = f"{self.method} {self.path} HTTP/1.1\r\nHost: bench\r\n"
+        for name, text in self.headers:
+            head += f"{name}: {text}\r\n"
         if self.body is not None:
             head += f"Content-Length: {len(self.body)}\r\n"
         parts = [memoryview((head + "\r\n").encode())]
@@ -172,6 +176,7 @@ class Run:
 
     def request_start(self, connection, request, is_on_time):
         connection.current = request
+        request.sent_ns = time.perf_counter_ns()
         connection.outgoing.extend(request.chunks())
         self.outgoing_send(connection)
         # 연결이 비어 있어 예정 시각에 바로 보낼 수 있었던 요청만, client가

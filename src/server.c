@@ -16,6 +16,7 @@
    SIGTERM이나 SIGINT를 받으면 루프를 빠져나와 mongoose와 store를 해제하고
    0으로 끝납니다. 그래야 AddressSanitizer가 누수를 끝에서 보고합니다. */
 
+#include <inttypes.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -32,17 +33,20 @@
 #define LISTEN_URL_MAX 64
 /* 아래 세 값은 빌드할 때 정하는 상수입니다(spec Q19). make bench가 조합마다
    -D로 바꿔 다시 빌드합니다(Makefile의 SERVER_FLAGS). */
+/* 요청이 없을 때 루프가 깨어나는 간격입니다. 청소 간격 S가 이보다 짧으면 실제
+   간격이 이 값으로 늘어나므로 S와 같게 둡니다(spec Q17의 "다시 볼 것"). */
 #ifndef POLL_INTERVAL_MS
-#define POLL_INTERVAL_MS 100
+#define POLL_INTERVAL_MS 25
 #endif
-/* 주기 청소의 간격 S(ms)와 한 번에 지우는 상한 K입니다(spec Q17, Q18). 측정 전에
-   드라이버가 정한 임시 기본값이며, 측정 뒤에 spec의 "측정 결과"에 적은 값으로
-   바꿉니다(spec Q21). */
+/* 주기 청소의 간격 S(ms)와 한 번에 지우는 상한 K입니다(spec Q17, Q18). 잰 조합
+   가운데 세 시나리오 모두에서 작은 GET의 p99가 10 ms 이하이고 회수 지연이 가장
+   짧은 값입니다(spec Q21, "측정 결과"). S 100, K 20(초당 200개)은 초당 1,000개씩
+   만료되는 key를 따라잡지 못했습니다. */
 #ifndef SWEEP_INTERVAL_MS
-#define SWEEP_INTERVAL_MS 100
+#define SWEEP_INTERVAL_MS 25
 #endif
 #ifndef SWEEP_MAX_COUNT
-#define SWEEP_MAX_COUNT 20
+#define SWEEP_MAX_COUNT 2000
 #endif
 /* 연결에서 이 시간 동안 바이트가 오가지 않으면 닫습니다(spec Q4). */
 #define IDLE_TIMEOUT_MS 10000
@@ -102,6 +106,7 @@ static size_t target_len(const struct mg_http_message *message);
 static void connection_close_if_idle(struct mg_connection *connection);
 static uint64_t last_activity_get(const struct mg_connection *connection);
 static uint64_t sweep_if_due(struct store *store, uint64_t deadline);
+static void sweep_trace(size_t deleted_count);
 
 int main(int argc, char **argv)
 {
@@ -503,7 +508,23 @@ static uint64_t sweep_if_due(struct store *store, uint64_t deadline)
     if (now < deadline) {
         return deadline;
     }
-    store_delete_expired(store, now, SWEEP_MAX_COUNT);
+    size_t deleted_count = store_delete_expired(store, now, SWEEP_MAX_COUNT);
+    sweep_trace(deleted_count);
 
     return deadline + SWEEP_INTERVAL_MS;
+}
+
+/* 측정 빌드(make bench)만 SWEEP_TRACE를 켭니다. 청소가 key를 지웠으면 끝난
+   시각(mg_millis)과 지운 개수를 stderr에 한 줄 적습니다. 만료된 key는 조회해도
+   없는 key와 같은 404라서, 바깥에서는 이 줄로만 회수 지연을 잽니다
+   (spec "측정 결과"). make verify의 빌드에서는 아무것도 하지 않습니다. */
+static void sweep_trace(size_t deleted_count)
+{
+#ifdef SWEEP_TRACE
+    if (deleted_count > 0) {
+        fprintf(stderr, "sweep %" PRIu64 " %zu\n", mg_millis(), deleted_count);
+    }
+#else
+    (void)deleted_count;
+#endif
 }
