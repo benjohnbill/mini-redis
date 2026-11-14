@@ -39,7 +39,8 @@ static bool listener_open(struct mg_mgr *manager, struct store *store,
                           int port);
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
-static void activity_mark(struct mg_connection *connection);
+static void last_activity_set(struct mg_connection *connection,
+                              uint64_t millis);
 static void connection_limit_check(struct mg_connection *connection);
 static size_t open_connections_count(const struct mg_mgr *manager);
 static void receive_buffer_grow(struct mg_connection *connection);
@@ -54,6 +55,7 @@ static void response_send(struct mg_connection *connection,
                           const struct api_response *response);
 static const char *status_reason(int status);
 static void idle_connection_close(struct mg_connection *connection);
+static uint64_t last_activity_get(const struct mg_connection *connection);
 
 int main(int argc, char **argv)
 {
@@ -138,8 +140,11 @@ static bool listener_open(struct mg_mgr *manager, struct store *store, int port)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
+    /* 바이트를 받거나 보낸 시각을 적습니다. 받기만 세면 느린 client가 16 MiB
+       응답을 끝까지 받지 못하므로 보내기도 셉니다(spec Q4). 연결이 열릴 때도
+       적어, 아무것도 보내지 않는 연결도 기한을 받게 합니다. */
     if (event == MG_EV_OPEN || event == MG_EV_READ || event == MG_EV_WRITE) {
-        activity_mark(connection);
+        last_activity_set(connection, mg_millis());
     }
     if (event == MG_EV_ACCEPT) {
         connection_limit_check(connection);
@@ -154,13 +159,13 @@ static void http_event_handle(struct mg_connection *connection, int event,
     }
 }
 
-/* 바이트를 받거나 보낸 시각을 연결의 data 칸 맨 앞에 적습니다. 받기만 세면
-   느린 client가 16 MiB 응답을 끝까지 받지 못하므로 보내기도 셉니다(spec Q4).
-   연결이 열릴 때도 적어, 아무것도 보내지 않는 연결도 기한을 받게 합니다. */
-static void activity_mark(struct mg_connection *connection)
+/* 연결에서 마지막으로 바이트가 오간 시각(mg_millis의 ms)을 적습니다. 시각은
+   mongoose가 연결마다 비워 둔 data 칸의 맨 앞 8바이트에 둡니다. 이 자리를 아는
+   함수는 last_activity_set과 last_activity_get 둘뿐입니다. data는 char 배열이라
+   uint64_t의 정렬에 맞지 않을 수 있으므로 memcpy로 옮깁니다. */
+static void last_activity_set(struct mg_connection *connection, uint64_t millis)
 {
-    uint64_t now = mg_millis();
-    memcpy(connection->data, &now, sizeof now);
+    memcpy(connection->data, &millis, sizeof millis);
 }
 
 /* 새 연결을 받은 직후에 열린 연결을 셉니다. 새 연결까지 세어 CONNECTION_MAX를
@@ -336,10 +341,8 @@ static const char *status_reason(int status)
    검사합니다(ADR single-thread-event-loop). */
 static void idle_connection_close(struct mg_connection *connection)
 {
-    uint64_t last_activity = 0;
-    memcpy(&last_activity, connection->data, sizeof last_activity);
     if (connection->is_listening ||
-        mg_millis() - last_activity < IDLE_TIMEOUT_MS) {
+        mg_millis() - last_activity_get(connection) < IDLE_TIMEOUT_MS) {
         return;
     }
     if (connection->is_draining || connection->recv.len == 0) {
@@ -348,5 +351,14 @@ static void idle_connection_close(struct mg_connection *connection)
     }
     struct api_response response = api_reject_timeout();
     response_send_and_close(connection, &response);
-    activity_mark(connection);
+    last_activity_set(connection, mg_millis());
+}
+
+/* last_activity_set이 적은 시각을 돌려줍니다. */
+static uint64_t last_activity_get(const struct mg_connection *connection)
+{
+    uint64_t millis = 0;
+    memcpy(&millis, connection->data, sizeof millis);
+
+    return millis;
 }
