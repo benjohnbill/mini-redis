@@ -9,7 +9,7 @@
 
 Krafton Jungle Week 11-12: a key-value store on a hash table, usable through an API
 
-[설치 및 실행](#설치-및-실행) · [API](#api) · [응답 캐시 데모](#응답-캐시-데모) · [마일스톤](#마일스톤) · [알려진 한계](#알려진-한계) · [파일 트리](#파일-트리) · [문서](#문서)
+[설치 및 실행](#설치-및-실행) · [API](#api) · [구조](#구조) · [응답 캐시 데모](#응답-캐시-데모) · [마일스톤](#마일스톤) · [알려진 한계](#알려진-한계) · [파일 트리](#파일-트리) · [문서](#문서)
 
 ## 설치 및 실행
 
@@ -69,6 +69,14 @@ hello
 ```
 
 key 인코딩, `TTL` 헤더의 규칙, body와 연결의 상한, 모든 상태 코드와 오류 이유, 오류의 우선순위는 [`docs/api.md`](docs/api.md)에 있습니다.
+
+## 구조
+
+<p align="center">
+  <img src="docs/images/mini-redis-architecture.png" width="100%" alt="mini-redis 구조: client의 HTTP 요청을 스레드 하나의 이벤트 루프가 받아 api 층과 store로 넘기고, 같은 루프가 주기 청소로 만료된 key를 지웁니다. store는 해시 테이블과 만료 heap을 씁니다.">
+</p>
+
+서버는 프로세스 1개, 스레드 1개로 모든 요청을 처리합니다([ADR `single-thread-event-loop`](docs/adr/single-thread-event-loop.md)). 그림의 원본은 [`docs/images/mini-redis-architecture.html`](docs/images/mini-redis-architecture.html)입니다.
 
 ## 응답 캐시 데모
 
