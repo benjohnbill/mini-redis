@@ -155,6 +155,26 @@ def method_not_allowed_sends_allow_header(server):
     expect(body, b'{"error":"method_not_allowed"}', "body")
 
 
+def second_request_on_same_connection_gets_response(server):
+    """연결 하나로 저장한 뒤 같은 연결로 조회합니다. 두 번째 응답이 오지 않으면
+    REQUEST_TIMEOUT 뒤 TimeoutError로 실패합니다."""
+    connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+    try:
+        connection.request("PUT", "/keys/keep-alive", body=b"v")
+        response = connection.getresponse()
+        put_status = response.status
+        response.read()
+        connection.request("GET", "/keys/keep-alive")
+        response = connection.getresponse()
+        get_status, get_body = response.status, response.read()
+    finally:
+        connection.close()
+
+    expect(put_status, 204, "첫 요청(저장)의 상태 코드")
+    expect(get_status, 200, "같은 연결로 보낸 두 번째 요청(조회)의 상태 코드")
+    expect(get_body, b"v", "두 번째 요청의 body")
+
+
 def headers_only_request(server, path, header, value):
     """헤더만 보내고 응답을 읽습니다. body는 보내지 않습니다. 보내면 서버가 읽지
     않은 데이터를 남긴 채 연결을 닫을 때 커널이 연결을 리셋해서, 클라이언트가
@@ -273,6 +293,7 @@ TESTS = [
     ("(기능) 경로의 인코딩하지 않은 ?는 400 bad_key_encoding을 받고, %3F로 보낸 ?는 key에 남는다",
      raw_question_mark_rejected_and_encoded_one_kept),
     ("(기능) 지원하지 않는 메서드에 405와 Allow: GET, PUT, DELETE 헤더를 받는다", method_not_allowed_sends_allow_header),
+    ("(기능) 연결 하나로 보낸 두 번째 요청도 응답을 받는다", second_request_on_same_connection_gets_response),
     ("[T8] (기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다", headers_only_over_limit_returns_413),
     ("(기능) 헤더만 보내도 Transfer-Encoding: chunked이면 411을 받는다", headers_only_chunked_returns_411),
     ("(기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다", body_at_limit_round_trips),
