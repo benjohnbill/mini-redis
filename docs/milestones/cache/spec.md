@@ -117,6 +117,38 @@ SQLite를 기본 실험으로, 같은 컴퓨터와 다른 컴퓨터의 PostgreSQ
 - 상세 DELETE의 204와 404 key_not_found는 모두 무효화 성공으로 봅니다. 다른 상품의 상세 key는 유지합니다. 원본 수정 실패나 없는 상품의 수정·삭제 요청은 목록 세대를 바꾸지 않습니다.
 - 모든 원본 변경과 캐시 세대 변경은 하나의 상품 요청 처리 안에서 마칩니다. 요청을 재처리하며 원본 수정을 자동으로 반복하지 않습니다. 원본 commit 뒤 캐시 무효화에 실패했다는 이유로 원본 수정이 실패했다고 응답하지 않습니다.
 
+조회 한 번의 순서입니다.
+
+```mermaid
+sequenceDiagram
+    participant D as 데모
+    participant R as mini-redis
+    participant S as 원본 DB
+    D->>R: GET 캐시 key
+    alt 적중 (200)
+        R-->>D: 저장된 응답
+    else 미적중 (404)
+        R-->>D: key_not_found
+        D->>S: 원본 조회
+        S-->>D: 상품
+        D->>R: PUT + TTL
+    end
+```
+
+수정·삭제 한 번의 순서입니다.
+
+```mermaid
+sequenceDiagram
+    participant D as 데모
+    participant R as mini-redis
+    participant S as 원본 DB
+    D->>S: 수정 트랜잭션
+    S-->>D: commit
+    D->>R: DELETE 상세 key
+    D->>D: 목록 세대 + 1
+    Note over D: 그 뒤 204 응답
+```
+
 ### 구현 기본안: 캐시 장애와 재개
 
 - mini-redis의 404 key_not_found만 캐시 미적중입니다. 연결 실패·응답 기한 초과·중간 연결 종료·그 밖의 오류 상태는 캐시 오류로 구분합니다. 기한은 연결 시작부터 응답 수신 완료까지의 전체 시간으로 제한하며, 느린 바이트 수신으로 무한히 연장하지 않습니다.

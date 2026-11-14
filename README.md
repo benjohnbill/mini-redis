@@ -9,7 +9,7 @@
 
 Krafton Jungle Week 11-12: a key-value store on a hash table, usable through an API
 
-[설치 및 실행](#설치-및-실행) · [API](#api) · [응답 캐시 데모](#응답-캐시-데모) · [마일스톤](#마일스톤) · [알려진 한계](#알려진-한계) · [파일 트리](#파일-트리) · [문서](#문서)
+[설치 및 실행](#설치-및-실행) · [API](#api) · [구조](#구조) · [응답 캐시 데모](#응답-캐시-데모) · [마일스톤](#마일스톤) · [알려진 한계](#알려진-한계) · [파일 트리](#파일-트리) · [문서](#문서)
 
 ## 설치 및 실행
 
@@ -70,6 +70,14 @@ hello
 
 key 인코딩, `TTL` 헤더의 규칙, body와 연결의 상한, 모든 상태 코드와 오류 이유, 오류의 우선순위는 [`docs/api.md`](docs/api.md)에 있습니다.
 
+## 구조
+
+<p align="center">
+  <img src="docs/images/mini-redis-architecture.png" width="100%" alt="mini-redis 구조: client의 HTTP 요청을 스레드 하나의 이벤트 루프가 받아 api 층과 store로 넘기고, 같은 루프가 주기 청소로 만료된 key를 지웁니다. store는 해시 테이블과 만료 heap을 씁니다.">
+</p>
+
+서버는 프로세스 1개, 스레드 1개로 모든 요청을 처리합니다([ADR `single-thread-event-loop`](docs/adr/single-thread-event-loop.md)). 그림의 원본은 [`docs/images/mini-redis-architecture.html`](docs/images/mini-redis-architecture.html)입니다.
+
 ## 응답 캐시 데모
 
 M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파일 `cache-demo`를 만들었습니다. 같은 조건을 반복하는 목록 조회는 적중률 100%로 원본 조회가 10초에 5,024번에서 0번이 되었습니다. 상세 조회는 적중률 36\~53%만큼 원본 조회가 줄었지만, 데모가 mini-redis 왕복을 기다리느라 더 느려졌습니다. WSL2에서 잰 p50은 반복 목록이 약 28\~32 ms에서 약 6 ms로 줄고, 상세 균등이 약 1.4 ms에서 약 8.6 ms로 늘었습니다([004](docs/measurements/cache-demo/004-CJG-sqlite-grid.md)).
@@ -88,6 +96,7 @@ M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파�
 | M4 | [`expire`](docs/milestones/expire/overview.md) | 보관 기간 | L9 | 진행 중 | [server/004](docs/measurements/server/004-CJG-expire-sweep.md) | [대조](docs/milestones/expire/spec.md#redis와-대조) |
 | M5 | [`cache`](docs/milestones/cache/spec.md) | API 응답 캐시, 무효화, 성능 비교 | L15 L11 L17 | 진행 중 | [cache-demo/001\~004](docs/measurements/cache-demo/) | [대조](docs/milestones/cache/spec.md#redis와-대조) |
 | M6 | `persist` | 서버가 꺼져도 데이터 유지 (선택) | L12 | 진행 전 | | |
+| M7 | [`perf`](docs/milestones/perf/overview.md) | 측정된 증상을 원인별로 줄이는 성능 개선 | L8 L17 | 진행 중 | [server/005](docs/measurements/server/005-CJG-baseline.md) | |
 
 요구사항 ID는 [`docs/requirements.md`](docs/requirements.md)에 있습니다. L16(엣지 케이스)은 모든 마일스톤의 테스트에 들어갑니다. `측정` 칸은 그 마일스톤의 측정 기록을 링크합니다. 마일스톤이 끝나면 `Redis와 대조` 칸에 그 `spec.md`의 `Redis와 대조` 절을 링크합니다.
 

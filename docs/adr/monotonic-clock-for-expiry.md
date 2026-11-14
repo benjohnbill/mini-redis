@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 milestone: expire
 ---
 
@@ -9,6 +9,6 @@ milestone: expire
 
 결정: 만료 시각 계산과 만료 판정은 mongoose의 `mg_millis`(Linux에서 `CLOCK_MONOTONIC_RAW`)로 합니다. M3의 쉬는 시간 기한과 같은 시계입니다.
 
-이유: (2단계에서 팀원이 말한 문장을 받아 적습니다. 문장을 받으면 status를 accepted로 바꿉니다.)
+이유: 재시작이나 저장이 없으면 단조시계가 더 안정적입니다. 지금은 재시작과 저장이 없으므로 단조시계를 씁니다.
 
 결과: 시스템 시각이 바뀌어도 key가 한꺼번에 만료되거나 오래 살아남지 않습니다. 대신 컴퓨터가 절전하는 동안은 시계가 멈춰 그만큼 key가 오래 삽니다. M6 `persist`에서 만료 시각을 저장하려면, 저장하고 불러올 때 벽시계 시각으로 바꿔 적어야 합니다.
