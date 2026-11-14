@@ -32,7 +32,7 @@ MONGOOSE_OBJ   := $(BUILD)/mongoose.o
 # 이를 받아들입니다.
 MONGOOSE_FLAGS := -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752
 
-.PHONY: all test functional verify lint format clean
+.PHONY: all test functional verify lint format clean bench
 
 SERVER   := $(BUILD)/mini-redis
 
@@ -62,6 +62,7 @@ test: $(TEST_BINS)
 # .pyc를 만들지 않게 합니다(scripts/check-ids.py가 tests/의 모든 파일을 텍스트로 읽습니다).
 functional: $(SERVER)
 	python3 -B tests/functional/api_test.py $(SERVER)
+	python3 -B tests/functional/concurrency_test.py $(SERVER)
 
 verify: $(SERVER) test functional
 	python3 scripts/check-ids.py
@@ -77,3 +78,31 @@ format:
 
 clean:
 	rm -rf $(BUILD)
+
+# make bench: 지연과 처리량을 잽니다(spec Q3). make verify와 CI에는 넣지 않습니다.
+# 시간 기준의 숫자는 머신마다 흔들리기 때문입니다. AddressSanitizer 빌드는 몇 배
+# 느려서 숫자에 의미가 없으므로, sanitizer를 끄고 최적화한 서버를 build/bench/에
+# 따로 만듭니다. 목적 파일도 따로 두어 make verify의 빌드와 섞이지 않게 합니다.
+# assert는 남깁니다(NDEBUG 없음). 테스트한 서버와 같은 검사를 하는 서버를 재기
+# 위해서입니다. 측정 순서와 출력은 scripts/bench/bench.py가 정합니다.
+BENCH_BUILD    := $(BUILD)/bench
+BENCH_CFLAGS   := -std=c11 -Wall -Wextra -Werror -O2
+BENCH_SERVER   := $(BENCH_BUILD)/mini-redis
+BENCH_LIB_OBJS := $(LIB_SRCS:src/%.c=$(BENCH_BUILD)/%.o)
+BENCH_MONGOOSE := $(BENCH_BUILD)/mongoose.o
+
+bench: $(BENCH_SERVER)
+	python3 -B scripts/bench/bench.py $(BENCH_SERVER)
+
+$(BENCH_SERVER): src/server.c $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) $< $(BENCH_LIB_OBJS) \
+	    $(BENCH_MONGOOSE) -o $@
+
+$(BENCH_MONGOOSE): $(MONGOOSE_DIR)/mongoose.c $(MONGOOSE_DIR)/mongoose.h Makefile | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(MONGOOSE_FLAGS) $(BENCH_CFLAGS) -c $< -o $@
+
+$(BENCH_BUILD)/%.o: src/%.c | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) -c $< -o $@
+
+$(BENCH_BUILD):
+	mkdir -p $@

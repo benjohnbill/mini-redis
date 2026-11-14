@@ -1,9 +1,13 @@
-/* mini-redis 서버입니다. 연결과 요청 해석은 mongoose가 맡고, 이 파일은
-   mongoose의 요청 이벤트에서 메서드, 경로, body를 꺼내 api 층에 넘기고
-   돌려받은 응답을 보내는 일만 합니다.
-   스레드 하나가 mg_mgr_poll을 반복해서 부르며 요청을 하나씩 처리합니다.
-   그래서 api 층이 빌려준 value를 다음 store 호출 전에 송신 버퍼로 복사할 수
-   있습니다. 이 근거는 M3 concurrency에서 다시 봅니다.
+/* mini-redis 서버입니다. 연결과 요청 해석은 mongoose가 맡고, 이 파일은 세 가지
+   일을 합니다.
+   - mongoose의 요청 이벤트에서 메서드, 경로, body를 꺼내 api 층에 넘기고
+     돌려받은 응답을 보냅니다.
+   - 동시 연결을 CONNECTION_MAX개까지만 받고, 넘친 연결은 503으로 거절합니다.
+   - IDLE_TIMEOUT_MS 동안 바이트가 오가지 않은 연결을 닫습니다.
+   스레드 하나가 mg_mgr_poll을 반복해서 부르며 연결 받기, 요청 처리, 기한
+   검사를 모두 맡습니다(ADR single-thread-event-loop). 요청을 하나씩 끝까지
+   처리하므로, api 층이 빌려준 value를 다음 store 호출 전에 송신 버퍼로 복사할
+   수 있습니다(ADR get-lends-value-until-next-change).
 
    사용법: mini-redis <port>
    SIGTERM이나 SIGINT를 받으면 루프를 빠져나와 mongoose와 store를 해제하고
@@ -11,8 +15,10 @@
 
 #include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "api.h"
 #include "mongoose.h"
@@ -21,6 +27,11 @@
 #define PORT_MAX 65535
 #define LISTEN_URL_MAX 64
 #define POLL_INTERVAL_MS 100
+/* 연결에서 이 시간 동안 바이트가 오가지 않으면 닫습니다(spec Q4). */
+#define IDLE_TIMEOUT_MS 10000
+/* 동시 연결의 상한입니다(spec Q8). 리스너는 세지 않습니다. 연결마다 수신 버퍼가
+   최대 MG_MAX_RECV_SIZE(약 16 MiB)까지 크므로, 128개면 최악 약 2 GiB입니다. */
+#define CONNECTION_MAX 128
 
 static volatile sig_atomic_t stop_requested = 0;
 
@@ -32,15 +43,23 @@ static bool listener_open(struct mg_mgr *manager, struct store *store,
                           int port);
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
+static void last_activity_set(struct mg_connection *connection,
+                              uint64_t millis);
+static void connection_limit_check(struct mg_connection *connection);
+static size_t open_connections_count(const struct mg_mgr *manager);
+static void response_send_and_close(struct mg_connection *connection,
+                                    const struct api_response *response);
+static void response_send(struct mg_connection *connection,
+                          const struct api_response *response);
+static const char *status_reason(int status);
 static void receive_buffer_grow(struct mg_connection *connection);
 static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
 static size_t target_len(const struct mg_http_message *message);
-static void response_send(struct mg_connection *connection,
-                          const struct api_response *response);
-static const char *status_reason(int status);
+static void connection_close_if_idle(struct mg_connection *connection);
+static uint64_t last_activity_get(const struct mg_connection *connection);
 
 int main(int argc, char **argv)
 {
@@ -125,12 +144,118 @@ static bool listener_open(struct mg_mgr *manager, struct store *store, int port)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
-    if (event == MG_EV_READ) {
+    /* 바이트를 받거나 보낸 시각을 적습니다. 받기만 세면 느린 client가 16 MiB
+       응답을 끝까지 받지 못하므로 보내기도 셉니다(spec Q4). 연결이 열릴 때도
+       적어, 아무것도 보내지 않는 연결도 기한을 받게 합니다. */
+    if (event == MG_EV_OPEN || event == MG_EV_READ || event == MG_EV_WRITE) {
+        last_activity_set(connection, mg_millis());
+    }
+    if (event == MG_EV_ACCEPT) {
+        connection_limit_check(connection);
+    } else if (event == MG_EV_READ) {
         receive_buffer_grow(connection);
     } else if (event == MG_EV_HTTP_HDRS) {
         headers_check(connection, event_data);
     } else if (event == MG_EV_HTTP_MSG) {
         request_handle(connection, event_data);
+    } else if (event == MG_EV_POLL) {
+        connection_close_if_idle(connection);
+    }
+}
+
+/* 연결에서 마지막으로 바이트가 오간 시각(mg_millis의 ms)을 적습니다. 시각은
+   mongoose가 연결마다 비워 둔 data 칸의 맨 앞 8바이트에 둡니다. 이 자리를 아는
+   함수는 last_activity_set과 last_activity_get 둘뿐입니다. data는 char 배열이라
+   uint64_t의 정렬에 맞지 않을 수 있으므로 memcpy로 옮깁니다. */
+static void last_activity_set(struct mg_connection *connection, uint64_t millis)
+{
+    memcpy(connection->data, &millis, sizeof millis);
+}
+
+/* 새 연결을 받은 직후에 열린 연결을 셉니다. 새 연결까지 세어 CONNECTION_MAX를
+   넘으면 503을 보내고, 송신 버퍼가 빈 뒤 mongoose가 연결을 닫게 합니다
+   (is_draining). 받지 않고 두면 client에게 서버가 멈춘 것처럼 보이고, 응답 없이
+   닫으면 네트워크 오류와 구분할 수 없기 때문입니다(spec Q8). */
+static void connection_limit_check(struct mg_connection *connection)
+{
+    if (open_connections_count(connection->mgr) <= CONNECTION_MAX) {
+        return;
+    }
+    struct api_response response = api_reject_connection();
+    response_send_and_close(connection, &response);
+}
+
+/* 리스너와 이미 닫기로 한 연결(is_closing)은 세지 않습니다. 응답을 보내고 닫는
+   중인 연결(is_draining)은 아직 fd와 버퍼를 쥐고 있으므로 셉니다. */
+static size_t open_connections_count(const struct mg_mgr *manager)
+{
+    size_t count = 0;
+    for (const struct mg_connection *connection = manager->conns;
+         connection != NULL; connection = connection->next) {
+        if (!connection->is_listening && !connection->is_closing) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+/* 오류 응답을 보내고, 송신 버퍼가 빈 뒤 mongoose가 연결을 닫게 합니다
+   (is_draining). 바로 닫으면(is_closing) 보내지 못한 응답이 버려집니다. */
+static void response_send_and_close(struct mg_connection *connection,
+                                    const struct api_response *response)
+{
+    response_send(connection, response);
+    connection->is_draining = 1;
+}
+
+/* body는 mg_send로 보냅니다. mg_http_reply는 printf 형식이라 '\0'에서
+   value가 잘리기 때문입니다. 204에는 body도 Content-Length도 없습니다. */
+static void response_send(struct mg_connection *connection,
+                          const struct api_response *response)
+{
+    mg_printf(connection, "HTTP/1.1 %d %s\r\n", response->status,
+              status_reason(response->status));
+    if (response->content_type != NULL) {
+        mg_printf(connection, "Content-Type: %s\r\n", response->content_type);
+    }
+    if (response->allow != NULL) {
+        mg_printf(connection, "Allow: %s\r\n", response->allow);
+    }
+    if (response->status != 204) {
+        mg_printf(connection, "Content-Length: %zu\r\n", response->body_len);
+    }
+    mg_printf(connection, "\r\n");
+    if (response->body_len > 0) {
+        mg_send(connection, response->body, response->body_len);
+    }
+}
+
+static const char *status_reason(int status)
+{
+    switch (status) {
+    case 200:
+        return "OK";
+    case 204:
+        return "No Content";
+    case 400:
+        return "Bad Request";
+    case 404:
+        return "Not Found";
+    case 405:
+        return "Method Not Allowed";
+    case 408:
+        return "Request Timeout";
+    case 411:
+        return "Length Required";
+    case 413:
+        return "Content Too Large";
+    case 500:
+        return "Internal Server Error";
+    case 503:
+        return "Service Unavailable";
+    default:
+        return "Unknown";
     }
 }
 
@@ -175,13 +300,18 @@ static void headers_check(struct mg_connection *connection,
                             &response)) {
         return;
     }
-    response_send(connection, &response);
-    connection->is_draining = 1;
+    response_send_and_close(connection, &response);
 }
 
+/* 이미 오류 응답(408, 411, 413, 503)을 보내고 닫는 중인 연결의 요청은 처리하지
+   않습니다. mongoose는 연결을 닫을 때 받다 만 요청도 받은 데까지를 body로 삼아
+   이 이벤트를 부르므로, 거르지 않으면 잘린 body가 저장됩니다. */
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message)
 {
+    if (connection->is_draining) {
+        return;
+    }
     struct store *store = connection->fn_data;
     struct api_response response = api_handle(
         store, message->method.buf, message->method.len, message->uri.buf,
@@ -207,48 +337,31 @@ static size_t target_len(const struct mg_http_message *message)
     return (size_t)(message->query.buf + message->query.len - message->uri.buf);
 }
 
-/* body는 mg_send로 보냅니다. mg_http_reply는 printf 형식이라 '\0'에서
-   value가 잘리기 때문입니다. 204에는 body도 Content-Length도 없습니다. */
-static void response_send(struct mg_connection *connection,
-                          const struct api_response *response)
+/* mongoose가 루프를 돌 때마다(POLL_INTERVAL_MS 이내) 연결마다 부릅니다. 기한이
+   지났고 요청을 받는 중이면(수신 버퍼에 요청 조각이 남아 있으면) 408을 보내고,
+   송신 버퍼가 빈 뒤 mongoose가 닫게 합니다. 이때 시각을 다시 적어 408을 보낼
+   시간을 한 번 더 줍니다. 응답 뒤에 쉬는 연결, 응답을 받아 가지 않는 연결, 이미
+   닫는 중인 연결은 응답 없이 바로 닫습니다. 스레드를 더하지 않고 같은 루프에서
+   검사합니다(ADR single-thread-event-loop). */
+static void connection_close_if_idle(struct mg_connection *connection)
 {
-    mg_printf(connection, "HTTP/1.1 %d %s\r\n", response->status,
-              status_reason(response->status));
-    if (response->content_type != NULL) {
-        mg_printf(connection, "Content-Type: %s\r\n", response->content_type);
+    if (connection->is_listening ||
+        mg_millis() - last_activity_get(connection) < IDLE_TIMEOUT_MS) {
+        return;
     }
-    if (response->allow != NULL) {
-        mg_printf(connection, "Allow: %s\r\n", response->allow);
+    if (connection->is_draining || connection->recv.len == 0) {
+        connection->is_closing = 1;
+        return;
     }
-    if (response->status != 204) {
-        mg_printf(connection, "Content-Length: %zu\r\n", response->body_len);
-    }
-    mg_printf(connection, "\r\n");
-    if (response->body_len > 0) {
-        mg_send(connection, response->body, response->body_len);
-    }
+    struct api_response response = api_reject_timeout();
+    response_send_and_close(connection, &response);
+    last_activity_set(connection, mg_millis());
 }
 
-static const char *status_reason(int status)
+/* last_activity_set이 적은 시각을 돌려줍니다. */
+static uint64_t last_activity_get(const struct mg_connection *connection)
 {
-    switch (status) {
-    case 200:
-        return "OK";
-    case 204:
-        return "No Content";
-    case 400:
-        return "Bad Request";
-    case 404:
-        return "Not Found";
-    case 405:
-        return "Method Not Allowed";
-    case 411:
-        return "Length Required";
-    case 413:
-        return "Content Too Large";
-    case 500:
-        return "Internal Server Error";
-    default:
-        return "Unknown";
-    }
+    uint64_t millis = 0;
+    memcpy(&millis, connection->data, sizeof millis);
+    return millis;
 }
