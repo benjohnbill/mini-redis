@@ -1,6 +1,7 @@
 #include "origin.h"
 #include <sqlite3.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #define PRODUCT_ID_MAX 2147483647

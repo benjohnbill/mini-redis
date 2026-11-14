@@ -1,6 +1,7 @@
 #include "origin.h"
 #include <libpq-fe.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
