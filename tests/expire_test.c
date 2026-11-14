@@ -16,8 +16,8 @@ static void key_without_expiry_is_found_at_far_future(void)
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_ASSERT(store_get(store, FAR_FUTURE_NOW, "name", 4, &value,
-                          &value_len));
+    TEST_ASSERT(
+        store_get(store, FAR_FUTURE_NOW, "name", 4, &value, &value_len));
     TEST_CHECK(value_len == 6);
     TEST_CHECK(memcmp(value, "jungle", 6) == 0);
 
