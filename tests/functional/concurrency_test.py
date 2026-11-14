@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""기능 테스트(M3 concurrency): 실제 mini-redis 서버를 띄우고, 연결을 여러 개 열어
-쉬는 시간 기한을 확인합니다.
+"""기능 테스트(M3 concurrency): 실제 mini-redis 서버를 띄우고 바깥에서 연결과 요청을 보냅니다.
 
 사용법: python3 -B tests/functional/concurrency_test.py build/mini-redis
 
-서버의 쉬는 시간 기한 10초를 실제로 기다립니다(spec "10초 기다림"). 기다리는
-테스트들은 스레드로 함께 돌려, 기다림이 테스트 수만큼 쌓이지 않게 합니다. 서버는
-한 번만 띄우고 테스트마다 서로 다른 key를 씁니다. 끝나면 서버를 끄고, 종료 코드와
-sanitizer 출력을 확인합니다. python3 표준 라이브러리만 씁니다.
+서버를 띄우는 방식은 api_test.py와 같습니다. 서버는 한 번만 띄우고, 테스트마다 서로
+다른 key를 씁니다. 시간을 재는 테스트(TESTS)를 하나씩 먼저 돌리고, 서버의 쉬는 시간
+기한 10초를 실제로 기다리는 테스트(WAITING_TESTS, spec "10초 기다림")는 스레드로
+함께 돌려 기다림이 테스트 수만큼 쌓이지 않게 합니다. 함께 도는 연결이 앞의 시간
+측정을 흔들지 않도록 두 묶음을 나눕니다. 테스트가 실패해도 마지막에 서버를 끄고,
+종료 코드와 sanitizer 출력을 확인합니다.
+python3 표준 라이브러리만 쓰므로 CI에 새 의존성이 없습니다.
 """
 
 import http.client
@@ -25,6 +27,9 @@ STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
 BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), M2 spec Q10
 LARGE_REQUEST_TIMEOUT = 15.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
+PROMPT_TIMEOUT = 0.5  # 큰 요청이 도는 중에도 작은 GET이 이 시간 안에 응답을 받아야 합니다(ASan 기준)
+LARGE_CHUNK = 1024 * 1024  # 큰 value를 이 크기씩 보내거나 받습니다
+CHUNKS_PER_CHECK = 4  # 큰 value를 이만큼 주고받을 때마다 작은 GET을 한 번 보냅니다
 IDLE_TIMEOUT = 10.0  # 서버의 쉬는 시간 기한입니다(spec Q4)
 # 기한이 지난 뒤 서버가 닫을 때까지 기다리는 여유입니다. 서버는 100 ms마다
 # 기한을 보고, ASan 빌드는 느리므로 넉넉히 둡니다.
@@ -35,13 +40,14 @@ EARLY_MARGIN = 0.5
 STEADY_BODY_CHUNKS = 12  # 1초마다 한 조각씩, 모두 12초 동안 보냅니다
 STEADY_BODY_INTERVAL = 1.0
 STEADY_BODY_CHUNK = 1024
-# 16 MiB 응답을 이 시간에 걸쳐 고르게 읽습니다. 서버의 송신 소켓 버퍼(최대 약
-# 4 MiB)가 응답 끝부분을 먼저 받아 두어도, 서버의 마지막 보내기가 요청을 받은 때로부터
-# 10초 뒤에 오도록 길게 잡습니다.
+# 16 MiB 응답을 이 시간에 걸쳐 고르게 읽습니다. 커널의 소켓 버퍼(서버의 송신
+# 버퍼와 client의 수신 버퍼, 재 보니 합쳐 약 3 MB)가 응답 끝부분을 먼저 받아
+# 두어도, 서버의 마지막 보내기가 요청을 받은 때로부터 10초 뒤에 오도록 길게
+# 잡습니다. 받기만 세는 서버는 이 테스트에서 약 11.6초에 연결을 닫았습니다.
 SLOW_READ_SECONDS = 14.0
 SLOW_READ_CHUNK = 16 * 1024
 # client의 수신 소켓 버퍼입니다. 작게 고정해야 커널이 응답을 미리 다 받아 두지 못하고,
-# 서버가 읽는 속도에 맞춰 조금씩 보내게 됩니다.
+# 서버가 client의 읽는 속도에 맞춰 조금씩 보내게 됩니다.
 SLOW_READ_BUFFER = 64 * 1024
 SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime error:")
 
@@ -104,6 +110,80 @@ def expect(actual, want, what):
         raise AssertionError(f"{what}: 기대 {want!r}, 실제 {actual!r}")
 
 
+# ── 테스트: 큰 요청 중의 작은 GET ─────────────────────────────
+
+def large_value():
+    # 바이트마다 값이 바뀌어, 잘리거나 밀린 곳이 있으면 비교가 실패합니다.
+    return bytes(range(256)) * (BODY_MAX // 256)
+
+
+def expect_small_get_prompt(server, key):
+    """큰 요청과 별개인 새 연결의 작은 GET이 PROMPT_TIMEOUT 안에 응답을 받는지 봅니다."""
+    started = time.monotonic()
+    status, _, body = server.request("GET", f"/keys/{key}", timeout=PROMPT_TIMEOUT)
+    elapsed = time.monotonic() - started
+
+    expect(status, 404, "작은 GET의 상태 코드")
+    expect(body, b'{"error":"key_not_found"}', "작은 GET의 body")
+    if elapsed >= PROMPT_TIMEOUT:
+        raise AssertionError(f"작은 GET이 {elapsed:.3f}초 걸렸습니다")
+
+
+def small_get_prompt_while_storing_large_value(server):
+    value = large_value()
+    head = f"PUT /keys/large-store HTTP/1.1\r\nHost: x\r\nContent-Length: {len(value)}\r\n\r\n"
+    with socket.create_connection((HOST, server.port), timeout=LARGE_REQUEST_TIMEOUT) as large:
+        large.sendall(head.encode("ascii"))
+        # 조각을 쉬지 않고 보내므로, 작은 GET이 도착할 때 서버는 아직 받지 않은 body를 읽는 중입니다.
+        for index in range(len(value) // LARGE_CHUNK):
+            large.sendall(value[index * LARGE_CHUNK:(index + 1) * LARGE_CHUNK])
+            if index % CHUNKS_PER_CHECK == 0:
+                expect_small_get_prompt(server, f"small-while-storing-{index}")
+        status_line = large.makefile("rb").readline()
+
+    expect(status_line.split(b" ")[1:2], [b"204"], "큰 저장의 상태 코드")
+    status, _, body = server.request("GET", "/keys/large-store", timeout=LARGE_REQUEST_TIMEOUT)
+    expect(status, 200, "큰 저장 뒤 조회의 상태 코드")
+    if body != value:
+        raise AssertionError("조회한 body가 저장한 큰 body와 다릅니다")
+
+
+def read_response_head(stream):
+    """상태 줄과 헤더를 읽어 (상태 코드, Content-Length)를 돌려줍니다."""
+    status = int(stream.readline().split(b" ")[1])
+    content_length = None
+    for line in iter(stream.readline, b"\r\n"):
+        name, _, field = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            content_length = int(field)
+    return status, content_length
+
+
+def small_get_prompt_while_downloading_large_value(server):
+    value = large_value()
+    status, _, _ = server.request("PUT", "/keys/large-download", body=value, timeout=LARGE_REQUEST_TIMEOUT)
+    expect(status, 204, "큰 저장의 상태 코드")
+
+    with socket.create_connection((HOST, server.port), timeout=LARGE_REQUEST_TIMEOUT) as large:
+        large.sendall(b"GET /keys/large-download HTTP/1.1\r\nHost: x\r\n\r\n")
+        stream = large.makefile("rb")
+        status, content_length = read_response_head(stream)
+        # 조금씩 받으므로, 작은 GET이 도착할 때 서버는 아직 보내지 못한 body를 들고 있습니다.
+        received = []
+        for index in range(len(value) // LARGE_CHUNK):
+            if index % CHUNKS_PER_CHECK == 0:
+                expect_small_get_prompt(server, f"small-while-downloading-{index}")
+            received.append(stream.read(LARGE_CHUNK))
+        body = b"".join(received)
+
+    expect(status, 200, "큰 조회의 상태 코드")
+    expect(content_length, len(value), "큰 조회의 Content-Length")
+    if body != value:
+        raise AssertionError("받아 간 body가 저장한 큰 body와 다릅니다")
+
+
+# ── 테스트: 쉬는 시간 기한 ────────────────────────────────────
+
 def read_until_closed(connection):
     """서버가 연결을 닫을 때까지 받은 바이트와 걸린 초를 돌려줍니다. 기한에
     여유를 더한 시간 안에 닫지 않으면 실패합니다."""
@@ -136,8 +216,6 @@ def expect_request_timeout(received, elapsed):
     expect(body, b'{"error":"request_timeout"}', "body")
 
 
-# ── 테스트 ────────────────────────────────────────────────────
-
 def stalled_headers_get_408_and_close(server):
     # 요청 줄과 헤더 일부만 보내고 빈 줄(헤더의 끝)은 보내지 않습니다.
     with server.connect() as stalled:
@@ -155,6 +233,7 @@ def stalled_body_gets_408_and_close(server):
         received, elapsed = read_until_closed(stalled)
 
     expect_request_timeout(received, elapsed)
+    # 받다 만 body가 연결을 닫을 때 저장되지 않았는지 봅니다.
     status, _, _ = server.request("GET", "/keys/stalled-body")
     expect(status, 404, "멈춘 저장 뒤 조회의 상태 코드")
 
@@ -198,8 +277,7 @@ def steady_slow_body_is_stored(server):
 
 
 def slow_reader_of_large_response_is_kept(server):
-    # 바이트마다 값이 바뀌어, 잘리거나 밀린 곳이 있으면 비교가 실패합니다.
-    value = bytes(range(256)) * (BODY_MAX // 256)
+    value = large_value()
     status, _, _ = server.request("PUT", "/keys/slow-read", body=value, timeout=LARGE_REQUEST_TIMEOUT)
     expect(status, 204, "저장의 상태 코드")
 
@@ -208,7 +286,7 @@ def slow_reader_of_large_response_is_kept(server):
         reader.settimeout(REQUEST_TIMEOUT)
         reader.connect((HOST, server.port))
         reader.sendall(b"GET /keys/slow-read HTTP/1.1\r\nHost: x\r\n\r\n")
-        received, elapsed = read_slowly(reader, BODY_MAX)
+        received, elapsed = read_slowly(reader, len(value))
 
     if elapsed <= IDLE_TIMEOUT:
         raise AssertionError(f"응답을 {elapsed:.2f}초 만에 다 읽어, 기한보다 오래 받지 못했습니다")
@@ -241,8 +319,16 @@ def response_is_complete(received, body_len):
     return head_end >= 0 and len(received) - head_end - 4 >= body_len
 
 
-# 모두 기한만큼 기다리는 테스트라서 스레드로 함께 돌립니다.
+# 하나씩 돌립니다. 작은 GET의 시간을 재므로 다른 테스트와 겹치지 않게 합니다.
 TESTS = [
+    ("[T14] (기능) 다른 연결이 16 MiB value를 저장하는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
+     small_get_prompt_while_storing_large_value),
+    ("(기능) 다른 연결이 16 MiB value를 조회해 받아 가는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
+     small_get_prompt_while_downloading_large_value),
+]
+
+# 모두 기한만큼 기다리므로 스레드로 함께 돌립니다.
+WAITING_TESTS = [
     ("[T12] (기능) 헤더를 보내다 10초 동안 멈춘 연결은 408과 request_timeout을 받고 닫힌다",
      stalled_headers_get_408_and_close),
     ("(기능) body를 보내다 10초 동안 멈춘 연결은 408과 request_timeout을 받고 닫힌다",
@@ -254,24 +340,43 @@ TESTS = [
 ]
 
 
-def tests_run_together(server):
-    """테스트마다 스레드 하나를 띄우고, 모두 끝나면 이름 순서대로 결과를 돌려줍니다.
-    결과는 실패면 오류, 성공이면 None입니다."""
-    errors = [None] * len(TESTS)
+def test_error(server, test):
+    """테스트를 돌리고, 실패면 그 오류를, 성공이면 None을 돌려줍니다."""
+    try:
+        test(server)
+        return None
+    except Exception as error:  # 한 테스트가 실패해도 나머지를 돌립니다.
+        return error
+
+
+def tests_run_one_by_one(server, tests):
+    return [test_error(server, test) for _, test in tests]
+
+
+def tests_run_together(server, tests):
+    """테스트마다 스레드 하나를 띄우고, 모두 끝나면 목록 순서대로 결과를 돌려줍니다."""
+    errors = [None] * len(tests)
 
     def run(index, test):
-        try:
-            test(server)
-        except Exception as error:  # 한 테스트가 실패해도 나머지를 돌립니다.
-            errors[index] = error
+        errors[index] = test_error(server, test)
 
     threads = [threading.Thread(target=run, args=(index, test))
-               for index, (_, test) in enumerate(TESTS)]
+               for index, (_, test) in enumerate(tests)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
     return errors
+
+
+def results_print(tests, errors):
+    """결과를 출력하고 실패한 테스트 수를 돌려줍니다."""
+    for (name, _), error in zip(tests, errors):
+        if error is None:
+            print(f"Test {name}... [ OK ]")
+        else:
+            print(f"Test {name}... [ FAILED ]\n  {error}")
+    return sum(error is not None for error in errors)
 
 
 def stop_problem(server):
@@ -289,24 +394,21 @@ def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     server = Server(sys.argv[1])
+    total = len(TESTS) + len(WAITING_TESTS)
     failed = 0
     try:
         server.wait_until_listening()
-        for (name, _), error in zip(TESTS, tests_run_together(server)):
-            if error is None:
-                print(f"Test {name}... [ OK ]")
-            else:
-                failed += 1
-                print(f"Test {name}... [ FAILED ]\n  {error}")
+        failed += results_print(TESTS, tests_run_one_by_one(server, TESTS))
+        failed += results_print(WAITING_TESTS, tests_run_together(server, WAITING_TESTS))
     except AssertionError as error:
-        failed = len(TESTS)
+        failed = total
         print(f"서버를 띄우지 못했습니다: {error}")
     finally:
         problem = stop_problem(server)
     if problem is not None:
         print(problem)
     if failed or problem is not None:
-        print(f"FAILED: {failed} of {len(TESTS)} functional tests have failed.")
+        print(f"FAILED: {failed} of {total} functional tests have failed.")
         return 1
     print("SUCCESS: No functional tests have failed.")
     return 0
