@@ -16,6 +16,13 @@ static void expect_error(struct api_response response, int status,
     TEST_CHECK(memcmp(response.body, body, response.body_len) == 0);
 }
 
+static void request_timeout_returns_408_request_timeout(void)
+{
+    struct api_response response = api_request_timeout();
+
+    expect_error(response, 408, "{\"error\":\"request_timeout\"}");
+}
+
 static void too_many_connections_returns_503_json(void)
 {
     struct api_response response = api_too_many_connections();
@@ -24,6 +31,9 @@ static void too_many_connections_returns_503_json(void)
 }
 
 TEST_LIST = {
+    {"요청 시간 초과 응답은 408과 {\"error\":\"request_timeout\"}이고 "
+     "Content-Type은 application/json이다",
+     request_timeout_returns_408_request_timeout},
     {"연결 수 초과 응답은 503과 {\"error\":\"too_many_connections\"}이고 "
      "Content-Type은 application/json이다",
      too_many_connections_returns_503_json},

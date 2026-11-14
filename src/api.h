@@ -42,6 +42,10 @@ struct api_response api_handle(struct store *store, const char *method,
 bool api_reject_headers(bool has_transfer_encoding, size_t body_len,
                         struct api_response *response);
 
+/* 요청을 받는 중에 연결이 너무 오래 멈췄을 때 보낼 408 응답을 돌려줍니다(spec
+   Q4). 서버는 이 응답을 보낸 뒤 연결을 닫습니다. */
+struct api_response api_request_timeout(void);
+
 /* 동시 연결이 상한에 차 있을 때 새 연결에 보낼 503 응답입니다(spec Q8).
    서버는 이 응답을 보낸 뒤 연결을 닫습니다. */
 struct api_response api_too_many_connections(void);
