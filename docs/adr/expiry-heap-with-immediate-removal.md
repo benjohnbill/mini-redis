@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 milestone: expire
 ---
 
@@ -9,7 +9,7 @@ milestone: expire
 
 결정: 기간이 있는 key의 entry만 만료 시각 순 min-heap에 넣고, 청소는 맨 앞부터 만료된 것만 꺼냅니다. entry는 만료 시각과 heap 안의 자기 위치를 갖고, key를 지우거나 덮어쓰면 그 항목을 heap에서 바로 뺍니다.
 
-이유: 시간 vs. 공간에서 공간 복잡도를 조금 더 우선시했습니다(Q16). (heap을 고른 이유의 문장을 기다립니다. 문장을 받으면 status를 accepted로 바꿉니다.)
+이유: 시간 vs. 공간에서 공간 복잡도를 조금 더 우선시했습니다(Q16). 지운 key를 heap에 남겨 두면 정리되지 않은 항목이 쌓여 탐색 성능이 나빠지므로, 지울 때 바로 뺍니다.
 
 버린 대안: 모든 entry를 커서로 훑기, 무작위 일부 검사, 지운 key의 항목을 heap에 두었다가 꺼낼 때 버리기(같은 key를 기간과 함께 계속 덮어쓰면 heap이 끝없이 커집니다).
 
