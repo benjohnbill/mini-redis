@@ -132,3 +132,4 @@ $(CACHE_DEMO): demo/product_demo.c demo/cache_client.c demo/cache_client.h $(MON
 cache-functional: $(CACHE_DEMO) $(SERVER)
 	python3 -B tests/functional/cache_test.py $(CACHE_DEMO)
 	python3 -B tests/functional/detail_cache_test.py $(CACHE_DEMO) $(SERVER)
+	python3 -B tests/functional/list_cache_test.py $(CACHE_DEMO) $(SERVER)

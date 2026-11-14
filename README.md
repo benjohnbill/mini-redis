@@ -48,6 +48,8 @@ make cache-functional  # 임시 DB와 실제 HTTP 서버를 사용하는 sanitiz
 
 `GET /products/{id}`는 상품 JSON을 200으로, 없는 상품을 `404 product_not_found`로 반환합니다. id 범위는 1~2,147,483,647이고 가격은 0~1,000,000,000입니다. 이름은 NUL 없는 UTF-8 1~120바이트입니다. 잘못된 id·query·GET body는 `400 invalid_request`, 모르는 경로는 `404 route_not_found`, 지원하지 않는 메서드는 `405 method_not_allowed`와 `Allow: GET`입니다. 원본 조회 실패나 잘못된 원본 데이터는 `503 origin_unavailable`이며, 다음 요청에서 원본을 다시 시도합니다. 모든 응답의 Content-Type은 `application/json`이고 오류는 `{"error":"고정된_영어_문자열"}` 형태입니다.
 
+`GET /products`는 조건에 맞는 상품을 `{"items":[...]}`로 반환합니다. 매개변수는 `q`(부분 문자열, 대소문자 구분, 최대 120바이트), `min_price`·`max_price`(0~1,000,000,000, 양 끝 포함), `sort`(`id`, `price_asc`, `price_desc`), `offset`(0~1,000,000), `limit`(1~100)이며 기본값은 빈 `q`, 0, 1,000,000,000, `id`, 0, 20입니다. 가격이 같으면 id 오름차순입니다. 매개변수 이름과 값을 한 번 디코딩하며, 중복·알 수 없는 이름·깨진 인코딩·범위 밖 값·`min_price > max_price`는 `400 invalid_request`입니다. 정렬된 조건의 고정된 표현으로 캐시 key를 만들어 매개변수 순서와 기본값 표기가 달라도 같은 key를 씁니다. 빈 `items`도 정상 200이므로 저장합니다.
+
 `GET /stats`는 이 실행의 `product_gets`(유효한 상품 GET), `origin_queries`(404와 실패를 포함한 원본 조회 시도), `origin_failures`(원본 조회 실패), `cache_bypasses`(캐시 미사용 조회), `cache_state`(`off`, `active`, `suspended`)를 반환합니다. 통계 요청과 준비 작업은 원본 조회로 세지 않습니다. 추가 카운터는 `cache_gets`(GET 시도), `cache_hits`(200), `cache_misses`(404), `cache_get_errors`(그 외 상태·통신 오류), `cache_puts`(PUT 시도), `cache_put_failures`(PUT 실패), `cache_errors`(GET 오류 + PUT 실패)입니다. 적중률 분모는 `cache_gets = cache_hits + cache_misses + cache_get_errors`이며, off 또는 중단 상태의 조회는 `cache_bypasses`로만 셉니다.
 
 정상 200 body만 TTL 헤더를 붙여 저장하며, 적중 시 TTL을 늘리지 않습니다. 실행마다 새 식별자로 이전 캐시와 격리합니다. 캐시 GET·PUT 오류 뒤에는 `suspended` 상태로 원본만 사용합니다. 자동 재연결과 재개는 아직 구현하지 않았습니다.

@@ -20,6 +20,30 @@
 #define LISTEN_URL_MAX 64
 #define CACHE_TTL_DEFAULT 60
 #define CACHE_TIMEOUT_DEFAULT 100
+#define LIST_LIMIT_DEFAULT 20
+#define LIST_LIMIT_MAX 100
+#define LIST_OFFSET_MAX 1000000
+#define LIST_KEY_MAX 512
+#define LIST_VALUE_RAW_MAX (NAME_MAX_BYTES * 3)
+#define LIST_VALUE_SIZE (LIST_VALUE_RAW_MAX + 2)
+
+enum list_sort { LIST_SORT_ID, LIST_SORT_PRICE_ASC, LIST_SORT_PRICE_DESC };
+
+struct list_query {
+    char q[NAME_MAX_BYTES + 1];
+    size_t q_len;
+    int min_price;
+    int max_price;
+    int offset;
+    int limit;
+    enum list_sort sort;
+};
+
+struct text {
+    char *data;
+    size_t len;
+    size_t capacity;
+};
 
 struct options {
     const char *database;
@@ -35,6 +59,7 @@ struct options {
 struct demo {
     sqlite3 *database;
     struct cache_client cache;
+    unsigned long long list_generation;
     uint64_t product_gets;
     uint64_t origin_queries;
     uint64_t origin_failures;
@@ -55,16 +80,30 @@ static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
+static bool method_is(const struct mg_http_message *message,
+                      const char *method);
 static void error_send(struct mg_connection *connection, int status,
                        const char *reason);
 static void stats_send(struct mg_connection *connection,
                        const struct demo *demo);
+static void list_send(struct mg_connection *connection, struct demo *demo,
+                      struct mg_str query);
+static bool list_query_parse(struct mg_str query, struct list_query *list);
+static bool list_pair_apply(const char *pair, size_t pair_len,
+                            struct list_query *list, bool *seen);
+static bool list_value_decode(const char *text, size_t text_len, char *value,
+                              size_t value_size, size_t *value_len);
+static void list_key(const struct demo *demo, const struct list_query *list,
+                     char *key, size_t key_size);
+static char *list_read(struct demo *demo, const struct list_query *list,
+                       int *status);
+static bool text_append(struct text *text, const char *piece);
+static void product_send(struct mg_connection *connection, struct demo *demo,
+                         int product_id);
 static void body_send(struct mg_connection *connection, const char *body);
 static char *product_read(struct demo *demo, int product_id, int *status);
 static bool product_is_valid(sqlite3_stmt *statement);
 static bool name_is_valid(const unsigned char *name, int name_len);
-static void product_send(struct mg_connection *connection, struct demo *demo,
-                         int product_id);
 
 int main(int argc, char **argv)
 {
@@ -340,14 +379,15 @@ static void request_handle(struct mg_connection *connection,
 {
     struct demo *demo = connection->fn_data;
     bool stats = mg_match(message->uri, mg_str("/stats"), NULL);
+    bool list = mg_match(message->uri, mg_str("/products"), NULL);
     bool product =
         message->uri.len >= strlen("/products/") &&
         memcmp(message->uri.buf, "/products/", strlen("/products/")) == 0;
-    if (!stats && !product) {
+    if (!stats && !list && !product) {
         error_send(connection, 404, "route_not_found");
         return;
     }
-    if (!mg_match(message->method, mg_str("GET"), NULL)) {
+    if (!method_is(message, "GET")) {
         mg_http_reply(connection, 405,
                       "Content-Type: application/json\r\nAllow: GET\r\n",
                       "{\"error\":\"method_not_allowed\"}");
@@ -360,7 +400,8 @@ static void request_handle(struct mg_connection *connection,
                                 message->uri.len - strlen("/products/"),
                                 decoded, sizeof decoded, 0)
                 : 0;
-    if (message->query.buf != NULL || message->body.len != 0 ||
+    if (message->body.len != 0 ||
+        ((stats || product) && message->query.len != 0) ||
         (product && (decoded_len < 0 ||
                      !integer_parse(decoded, (size_t)decoded_len,
                                     PRODUCT_ID_MAX, &product_id) ||
@@ -370,10 +411,19 @@ static void request_handle(struct mg_connection *connection,
     }
     if (stats) {
         stats_send(connection, demo);
+        return;
+    }
+    if (list) {
+        list_send(connection, demo, message->query);
     } else {
         demo->product_gets++;
         product_send(connection, demo, product_id);
     }
+}
+
+static bool method_is(const struct mg_http_message *message, const char *method)
+{
+    return mg_match(message->method, mg_str(method), NULL);
 }
 
 static void error_send(struct mg_connection *connection, int status,
@@ -407,6 +457,231 @@ static void stats_send(struct mg_connection *connection,
         !cache->enabled ? "off"
         : cache->active ? "active"
                         : "suspended");
+}
+
+static void list_send(struct mg_connection *connection, struct demo *demo,
+                      struct mg_str query)
+{
+    struct list_query list;
+    if (!list_query_parse(query, &list)) {
+        error_send(connection, 400, "invalid_request");
+        return;
+    }
+    demo->product_gets++;
+    char key[LIST_KEY_MAX];
+    list_key(demo, &list, key, sizeof key);
+    char *cached = cache_client_get(&demo->cache, key);
+    if (cached != NULL) {
+        body_send(connection, cached);
+        free(cached);
+        return;
+    }
+    int status = 0;
+    char *body = list_read(demo, &list, &status);
+    if (body == NULL) {
+        error_send(connection, status, "origin_unavailable");
+        return;
+    }
+    cache_client_set(&demo->cache, key, body);
+    body_send(connection, body);
+    free(body);
+}
+
+static bool list_query_parse(struct mg_str query, struct list_query *list)
+{
+    list->q_len = 0;
+    list->min_price = 0;
+    list->max_price = PRICE_MAX;
+    list->offset = 0;
+    list->limit = LIST_LIMIT_DEFAULT;
+    list->sort = LIST_SORT_ID;
+    bool seen[6] = {false};
+    size_t start = 0;
+    while (start < query.len) {
+        size_t end = start;
+        while (end < query.len && query.buf[end] != '&') {
+            end++;
+        }
+        if (!list_pair_apply(query.buf + start, end - start, list, seen)) {
+            return false;
+        }
+        start = end + 1;
+    }
+
+    return list->min_price <= list->max_price;
+}
+
+static bool list_pair_apply(const char *pair, size_t pair_len,
+                            struct list_query *list, bool *seen)
+{
+    static const char *names[] = {"q",    "min_price", "max_price",
+                                  "sort", "offset",    "limit"};
+    size_t equals = 0;
+    while (equals < pair_len && pair[equals] != '=') {
+        equals++;
+    }
+    char name[16];
+    char value[LIST_VALUE_SIZE];
+    size_t name_len = 0;
+    size_t value_len = 0;
+    if (equals == pair_len ||
+        !list_value_decode(pair, equals, name, sizeof name, &name_len) ||
+        !list_value_decode(pair + equals + 1, pair_len - equals - 1, value,
+                           sizeof value, &value_len) ||
+        strlen(name) != name_len || strlen(value) != value_len) {
+        return false;
+    }
+    int field = -1;
+    for (int i = 0; i < 6; i++) {
+        if (strcmp(name, names[i]) == 0) {
+            field = i;
+        }
+    }
+    if (field < 0 || seen[field]) {
+        return false;
+    }
+    seen[field] = true;
+
+    switch (field) {
+    case 0:
+        if (value_len > NAME_MAX_BYTES ||
+            (value_len != 0 &&
+             !name_is_valid((const unsigned char *)value, (int)value_len))) {
+            return false;
+        }
+        memcpy(list->q, value, value_len);
+        list->q_len = value_len;
+        return true;
+    case 1:
+        return integer_parse(value, value_len, PRICE_MAX, &list->min_price);
+    case 2:
+        return integer_parse(value, value_len, PRICE_MAX, &list->max_price);
+    case 3:
+        if (strcmp(value, "id") == 0) {
+            list->sort = LIST_SORT_ID;
+        } else if (strcmp(value, "price_asc") == 0) {
+            list->sort = LIST_SORT_PRICE_ASC;
+        } else if (strcmp(value, "price_desc") == 0) {
+            list->sort = LIST_SORT_PRICE_DESC;
+        } else {
+            return false;
+        }
+        return true;
+    case 4:
+        return integer_parse(value, value_len, LIST_OFFSET_MAX, &list->offset);
+    default:
+        return integer_parse(value, value_len, LIST_LIMIT_MAX, &list->limit) &&
+               list->limit > 0;
+    }
+}
+
+static bool list_value_decode(const char *text, size_t text_len, char *value,
+                              size_t value_size, size_t *value_len)
+{
+    if (text_len >= value_size) {
+        return false;
+    }
+    int decoded_len = mg_url_decode(text, text_len, value, value_size, 0);
+    if (decoded_len < 0) {
+        return false;
+    }
+    *value_len = (size_t)decoded_len;
+
+    return true;
+}
+
+static void list_key(const struct demo *demo, const struct list_query *list,
+                     char *key, size_t key_size)
+{
+    static const char *sort_names[] = {"id", "price_asc", "price_desc"};
+    char encoded[LIST_VALUE_SIZE];
+    size_t encoded_len =
+        mg_url_encode(list->q, list->q_len, encoded, sizeof encoded);
+    snprintf(key, key_size, "list:%llu:%.*s:%d:%d:%s:%d:%d",
+             demo->list_generation, (int)encoded_len, encoded, list->min_price,
+             list->max_price, sort_names[list->sort], list->offset,
+             list->limit);
+}
+
+static char *list_read(struct demo *demo, const struct list_query *list,
+                       int *status)
+{
+    static const char *order_sql[] = {"id", "price,id", "price DESC,id"};
+    demo->origin_queries++;
+    char sql[256];
+    snprintf(sql, sizeof sql,
+             "SELECT id,name,price FROM products WHERE price BETWEEN ?1 AND "
+             "?2%s ORDER BY %s LIMIT ?3 OFFSET ?4",
+             list->q_len != 0 ? " AND instr(name,?5)>0" : "",
+             order_sql[list->sort]);
+    sqlite3_stmt *statement = NULL;
+    int result = sqlite3_prepare_v2(demo->database, sql, -1, &statement, NULL);
+    if (result == SQLITE_OK) {
+        result = sqlite3_bind_int(statement, 1, list->min_price);
+    }
+    if (result == SQLITE_OK) {
+        result = sqlite3_bind_int(statement, 2, list->max_price);
+    }
+    if (result == SQLITE_OK) {
+        result = sqlite3_bind_int(statement, 3, list->limit);
+    }
+    if (result == SQLITE_OK) {
+        result = sqlite3_bind_int(statement, 4, list->offset);
+    }
+    if (result == SQLITE_OK && list->q_len != 0) {
+        result = sqlite3_bind_text(statement, 5, list->q, (int)list->q_len,
+                                   SQLITE_TRANSIENT);
+    }
+    struct text body = {0};
+    bool first = true;
+    bool success = result == SQLITE_OK && text_append(&body, "{\"items\":[");
+    int step = SQLITE_DONE;
+    while (success && (step = sqlite3_step(statement)) == SQLITE_ROW) {
+        if (!product_is_valid(statement)) {
+            success = false;
+            break;
+        }
+        char *item = mg_mprintf(
+            "%s{\"id\":%d,\"name\":%m,\"price\":%lld}", first ? "" : ",",
+            (int)sqlite3_column_int64(statement, 0),
+            MG_ESC((const char *)sqlite3_column_text(statement, 1)),
+            (long long)sqlite3_column_int64(statement, 2));
+        success = item != NULL && text_append(&body, item);
+        free(item);
+        first = false;
+    }
+    success = success && step == SQLITE_DONE && text_append(&body, "]}");
+    *status = success ? 200 : 503;
+    if (!success) {
+        demo->origin_failures++;
+        free(body.data);
+        body.data = NULL;
+    }
+    sqlite3_finalize(statement);
+
+    return body.data;
+}
+
+static bool text_append(struct text *text, const char *piece)
+{
+    size_t piece_len = strlen(piece);
+    if (text->len + piece_len + 1 > text->capacity) {
+        size_t capacity = text->capacity == 0 ? 256 : text->capacity * 2;
+        while (capacity < text->len + piece_len + 1) {
+            capacity *= 2;
+        }
+        char *data = realloc(text->data, capacity);
+        if (data == NULL) {
+            return false;
+        }
+        text->data = data;
+        text->capacity = capacity;
+    }
+    memcpy(text->data + text->len, piece, piece_len);
+    text->len += piece_len;
+    text->data[text->len] = '\0';
+
+    return true;
 }
 
 static void product_send(struct mg_connection *connection, struct demo *demo,
