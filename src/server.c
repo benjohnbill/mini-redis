@@ -1,9 +1,12 @@
 /* mini-redis 서버입니다. 연결과 요청 해석은 mongoose가 맡고, 이 파일은 세 가지
    일을 합니다.
-   - mongoose의 요청 이벤트에서 메서드, 경로, body를 꺼내 api 층에 넘기고
-     돌려받은 응답을 보냅니다.
+   - mongoose의 요청 이벤트에서 메서드, 경로, TTL 헤더, body를 꺼내 api 층에
+     넘기고 돌려받은 응답을 보냅니다. 보관 기간을 세기 시작하는 시각으로, 요청
+     헤더를 다 받은 시각을 연결마다 기억해 함께 넘깁니다.
    - 동시 연결을 CONNECTION_MAX개까지만 받고, 넘친 연결은 503으로 거절합니다.
    - IDLE_TIMEOUT_MS 동안 바이트가 오가지 않은 연결을 닫습니다.
+   - SWEEP_INTERVAL_MS마다 주기 청소로 만료된 key를 SWEEP_MAX_COUNT개까지
+     지웁니다.
    스레드 하나가 mg_mgr_poll을 반복해서 부르며 연결 받기, 요청 처리, 기한
    검사를 모두 맡습니다(ADR single-thread-event-loop). 요청을 하나씩 끝까지
    처리하므로, api 층이 빌려준 value를 다음 store 호출 전에 송신 버퍼로 복사할
@@ -13,8 +16,10 @@
    SIGTERM이나 SIGINT를 받으면 루프를 빠져나와 mongoose와 store를 해제하고
    0으로 끝납니다. 그래야 AddressSanitizer가 누수를 끝에서 보고합니다. */
 
+#include <inttypes.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,12 +31,44 @@
 
 #define PORT_MAX 65535
 #define LISTEN_URL_MAX 64
-#define POLL_INTERVAL_MS 100
+/* 아래 세 값은 빌드할 때 정하는 상수입니다(spec Q19). make bench가 조합마다
+   -D로 바꿔 다시 빌드합니다(Makefile의 SERVER_FLAGS). */
+/* 요청이 없을 때 루프가 깨어나는 간격입니다. 청소 간격 S가 이보다 짧으면 실제
+   간격이 이 값으로 늘어나므로 S와 같게 둡니다(spec Q17의 "다시 볼 것"). */
+#ifndef POLL_INTERVAL_MS
+#define POLL_INTERVAL_MS 25
+#endif
+/* 주기 청소의 간격 S(ms)와 한 번에 지우는 상한 K입니다(spec Q17, Q18). 잰 조합
+   가운데 세 시나리오 모두에서 작은 GET의 p99가 10 ms 이하이고 회수 지연이 가장
+   짧은 값입니다(spec Q21, "측정 결과"). S 100, K 20(초당 200개)은 초당 1,000개씩
+   만료되는 key를 따라잡지 못했습니다. */
+#ifndef SWEEP_INTERVAL_MS
+#define SWEEP_INTERVAL_MS 25
+#endif
+#ifndef SWEEP_MAX_COUNT
+#define SWEEP_MAX_COUNT 2000
+#endif
 /* 연결에서 이 시간 동안 바이트가 오가지 않으면 닫습니다(spec Q4). */
 #define IDLE_TIMEOUT_MS 10000
 /* 동시 연결의 상한입니다(spec Q8). 리스너는 세지 않습니다. 연결마다 수신 버퍼가
    최대 MG_MAX_RECV_SIZE(약 16 MiB)까지 크므로, 128개면 최악 약 2 GiB입니다. */
 #define CONNECTION_MAX 128
+#define TTL_HEADER_NAME "TTL"
+
+/* mongoose가 연결마다 비워 둔 data 칸(MG_DATA_SIZE바이트)에 두는 값들입니다.
+   data는 char 배열이라 uint64_t의 정렬에 맞지 않을 수 있으므로, 이 구조체를
+   data에 직접 겹쳐 쓰지 않고 connection_state_get과 connection_state_set이
+   통째로 memcpy해 옮깁니다. */
+struct connection_state {
+    /* 마지막으로 바이트가 오간 시각입니다(spec M3 Q4). */
+    uint64_t last_activity;
+    /* 지금 받는 요청의 헤더를 다 받은 시각입니다(spec Q11). */
+    uint64_t headers_received_at;
+    /* headers_received_at을 이 요청에서 이미 적었는지입니다. */
+    bool has_headers_received_at;
+};
+_Static_assert(sizeof(struct connection_state) <= MG_DATA_SIZE,
+               "connection_state는 mongoose의 연결 data 칸에 들어가야 합니다");
 
 static volatile sig_atomic_t stop_requested = 0;
 
@@ -45,6 +82,10 @@ static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
 static void last_activity_set(struct mg_connection *connection,
                               uint64_t millis);
+static struct connection_state
+connection_state_get(const struct mg_connection *connection);
+static void connection_state_set(struct mg_connection *connection,
+                                 const struct connection_state *state);
 static void connection_limit_check(struct mg_connection *connection);
 static size_t open_connections_count(const struct mg_mgr *manager);
 static void response_send_and_close(struct mg_connection *connection,
@@ -53,13 +94,20 @@ static void response_send(struct mg_connection *connection,
                           const struct api_response *response);
 static const char *status_reason(int status);
 static void receive_buffer_grow(struct mg_connection *connection);
+static void headers_received_note(struct mg_connection *connection);
+static void headers_received_at_set(struct mg_connection *connection,
+                                    bool is_noted, uint64_t millis);
 static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
+static struct api_ttl_header
+ttl_header_read(const struct mg_connection *connection,
+                const struct mg_http_message *message);
 static size_t target_len(const struct mg_http_message *message);
 static void connection_close_if_idle(struct mg_connection *connection);
-static uint64_t last_activity_get(const struct mg_connection *connection);
+static void sweep_run_if_due(struct store *store, uint64_t *deadline);
+static void sweep_trace(size_t deleted_count);
 
 int main(int argc, char **argv)
 {
@@ -117,8 +165,13 @@ static int server_run(struct store *store, int port)
     struct mg_mgr manager;
     mg_mgr_init(&manager);
     int exit_code = listener_open(&manager, store, port) ? 0 : 1;
+    /* 0이면 첫 sweep_run_if_due가 "지금 + S"로 정합니다. */
+    uint64_t sweep_deadline = 0;
     while (exit_code == 0 && !stop_requested) {
         mg_mgr_poll(&manager, POLL_INTERVAL_MS);
+        /* handler가 모두 끝난 뒤라, 빌려준 value를 가진 handler가 없습니다
+           (spec "빌린 value"). */
+        sweep_run_if_due(store, &sweep_deadline);
     }
     mg_mgr_free(&manager);
 
@@ -155,6 +208,7 @@ static void http_event_handle(struct mg_connection *connection, int event,
     } else if (event == MG_EV_READ) {
         receive_buffer_grow(connection);
     } else if (event == MG_EV_HTTP_HDRS) {
+        headers_received_note(connection);
         headers_check(connection, event_data);
     } else if (event == MG_EV_HTTP_MSG) {
         request_handle(connection, event_data);
@@ -163,13 +217,30 @@ static void http_event_handle(struct mg_connection *connection, int event,
     }
 }
 
-/* 연결에서 마지막으로 바이트가 오간 시각(mg_millis의 ms)을 적습니다. 시각은
-   mongoose가 연결마다 비워 둔 data 칸의 맨 앞 8바이트에 둡니다. 이 자리를 아는
-   함수는 last_activity_set과 last_activity_get 둘뿐입니다. data는 char 배열이라
-   uint64_t의 정렬에 맞지 않을 수 있으므로 memcpy로 옮깁니다. */
+/* 연결에서 마지막으로 바이트가 오간 시각(mg_millis의 ms)을 적습니다. */
 static void last_activity_set(struct mg_connection *connection, uint64_t millis)
 {
-    memcpy(connection->data, &millis, sizeof millis);
+    struct connection_state state = connection_state_get(connection);
+    state.last_activity = millis;
+    connection_state_set(connection, &state);
+}
+
+/* 연결의 data 칸에서 connection_state를 꺼냅니다. data 칸을 아는 함수는
+   connection_state_get과 connection_state_set 둘뿐입니다. mongoose가 data 칸을
+   0으로 채워 연결을 만들므로, 처음 꺼낸 값은 모든 필드가 0입니다. */
+static struct connection_state
+connection_state_get(const struct mg_connection *connection)
+{
+    struct connection_state state;
+    memcpy(&state, connection->data, sizeof state);
+
+    return state;
+}
+
+static void connection_state_set(struct mg_connection *connection,
+                                 const struct connection_state *state)
+{
+    memcpy(connection->data, state, sizeof *state);
 }
 
 /* 새 연결을 받은 직후에 열린 연결을 셉니다. 새 연결까지 세어 CONNECTION_MAX를
@@ -284,6 +355,29 @@ static void receive_buffer_grow(struct mg_connection *connection)
     }
 }
 
+/* 요청 헤더를 다 받은 시각을 적습니다. mongoose는 body를 기다리는 동안 데이터가
+   올 때마다 MG_EV_HTTP_HDRS를 다시 부르므로, 요청마다 처음 한 번만 적습니다.
+   그래야 16 MiB body를 느리게 올려도 보관 기간이 헤더를 받은 순간부터
+   세어집니다(spec Q11). request_handle이 요청을 처리한 뒤 다음 요청을 위해
+   지웁니다. */
+static void headers_received_note(struct mg_connection *connection)
+{
+    if (!connection_state_get(connection).has_headers_received_at) {
+        headers_received_at_set(connection, true, mg_millis());
+    }
+}
+
+/* 헤더를 받은 시각과, 그 시각을 적었는지를 함께 씁니다. is_noted가 false면
+   다음 요청이 시각을 새로 적습니다. */
+static void headers_received_at_set(struct mg_connection *connection,
+                                    bool is_noted, uint64_t millis)
+{
+    struct connection_state state = connection_state_get(connection);
+    state.has_headers_received_at = is_noted;
+    state.headers_received_at = millis;
+    connection_state_set(connection, &state);
+}
+
 /* body가 오기 전에 chunked 요청인지, Content-Length가 상한을 넘는지 봅니다(spec
    Q10, "오류의 우선순위"). 걸리면 411이나 413을 보내고, 송신 버퍼가 빈 뒤
    mongoose가 연결을 닫게 합니다(is_draining). mongoose는 body를 기다리는 동안
@@ -313,9 +407,11 @@ static void request_handle(struct mg_connection *connection,
         return;
     }
     struct store *store = connection->fn_data;
-    struct api_response response = api_handle(
-        store, message->method.buf, message->method.len, message->uri.buf,
-        target_len(message), message->body.buf, message->body.len);
+    struct api_ttl_header ttl_header = ttl_header_read(connection, message);
+    struct api_response response =
+        api_handle(store, mg_millis(), message->method.buf, message->method.len,
+                   message->uri.buf, target_len(message), &ttl_header,
+                   message->body.buf, message->body.len);
     /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. */
     response_send(connection, &response);
     /* mongoose는 이 이벤트 전에 is_resp를 세우고, 세워져 있는 동안 같은 연결의
@@ -323,6 +419,35 @@ static void request_handle(struct mg_connection *connection,
        응답을 mg_printf와 mg_send로 보내므로, 여기서 직접 내립니다. 내리지 않으면
        연결 하나에서 두 번째 요청부터 응답이 오지 않습니다. */
     connection->is_resp = 0;
+    /* 다음 요청이 헤더를 받은 시각을 새로 적게 합니다. */
+    headers_received_at_set(connection, false, 0);
+}
+
+/* 요청의 TTL 헤더를 읽어, 첫 번째 값과 개수와 헤더를 다 받은 시각을 묶습니다.
+   TTL 헤더가 없어도 count가 0인 값을 돌려줍니다. mg_http_get_header는 첫 번째
+   값만 돌려주므로 개수는 직접 셉니다(spec Q15). 헤더 이름은 대소문자를 가리지
+   않습니다. 값은 해석하지 않고 api 층에 넘깁니다. */
+static struct api_ttl_header
+ttl_header_read(const struct mg_connection *connection,
+                const struct mg_http_message *message)
+{
+    struct api_ttl_header ttl_header = {
+        .received_at = connection_state_get(connection).headers_received_at};
+    size_t header_max = sizeof message->headers / sizeof message->headers[0];
+    for (size_t i = 0; i < header_max && message->headers[i].name.len > 0;
+         i++) {
+        const struct mg_http_header *header = &message->headers[i];
+        if (mg_strcasecmp(header->name, mg_str(TTL_HEADER_NAME)) != 0) {
+            continue;
+        }
+        if (ttl_header.count == 0) {
+            ttl_header.text = header->value.buf;
+            ttl_header.text_len = header->value.len;
+        }
+        ttl_header.count++;
+    }
+
+    return ttl_header;
 }
 
 /* mongoose는 요청 줄의 대상을 ? 앞(uri)과 뒤(query)로 나눕니다. api 층은 ?를
@@ -346,7 +471,8 @@ static size_t target_len(const struct mg_http_message *message)
 static void connection_close_if_idle(struct mg_connection *connection)
 {
     if (connection->is_listening ||
-        mg_millis() - last_activity_get(connection) < IDLE_TIMEOUT_MS) {
+        mg_millis() - connection_state_get(connection).last_activity <
+            IDLE_TIMEOUT_MS) {
         return;
     }
     if (connection->is_draining || connection->recv.len == 0) {
@@ -358,10 +484,32 @@ static void connection_close_if_idle(struct mg_connection *connection)
     last_activity_set(connection, mg_millis());
 }
 
-/* last_activity_set이 적은 시각을 돌려줍니다. */
-static uint64_t last_activity_get(const struct mg_connection *connection)
+/* *deadline이 지났으면 주기 청소를 한 번 하고 *deadline을 다음 기한으로
+   옮깁니다. 기한에서 많이 늦었어도 한 번만 청소합니다. 다음 기한은 보통 "기한 +
+   S"로 잡아 간격의 격자를 지키고, S보다 더 늦었으면 "지금 + S"로 잡아 밀린
+   청소를 몰아서 하지 않습니다(spec Q17). 이 규칙은 mongoose의
+   mg_timer_expired와 같으므로 그 함수를 씁니다. */
+static void sweep_run_if_due(struct store *store, uint64_t *deadline)
 {
-    uint64_t millis = 0;
-    memcpy(&millis, connection->data, sizeof millis);
-    return millis;
+    uint64_t now = mg_millis();
+    if (!mg_timer_expired(deadline, SWEEP_INTERVAL_MS, now)) {
+        return;
+    }
+    size_t deleted_count = store_delete_expired(store, now, SWEEP_MAX_COUNT);
+    sweep_trace(deleted_count);
+}
+
+/* 측정 빌드(make bench)만 SWEEP_TRACE를 켭니다. 청소가 key를 지웠으면 끝난
+   시각(mg_millis)과 지운 개수를 stderr에 한 줄 적습니다. 만료된 key는 조회해도
+   없는 key와 같은 404라서, 바깥에서는 이 줄로만 회수 지연을 잽니다
+   (spec "측정 결과"). make verify의 빌드에서는 아무것도 하지 않습니다. */
+static void sweep_trace(size_t deleted_count)
+{
+#ifdef SWEEP_TRACE
+    if (deleted_count > 0) {
+        fprintf(stderr, "sweep %" PRIu64 " %zu\n", mg_millis(), deleted_count);
+    }
+#else
+    (void)deleted_count;
+#endif
 }

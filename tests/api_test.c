@@ -4,13 +4,18 @@
 #include "acutest.h"
 #include "api.h"
 
+/* 만료와 상관없는 테스트가 넘기는 "지금"입니다. 모든 key를 만료 없이 저장하므로
+   어떤 시각이어도 결과가 같습니다. */
+#define ANY_NOW 0
+
 /* C 문자열 리터럴로 메서드와 경로를 넘깁니다. body는 주소와 길이로 받습니다. */
 static struct api_response request(struct store *store, const char *method,
                                    const char *path, const void *body,
                                    size_t body_len)
 {
-    return api_handle(store, method, strlen(method), path, strlen(path), body,
-                      body_len);
+    struct api_ttl_header no_ttl_header = {.received_at = ANY_NOW};
+    return api_handle(store, ANY_NOW, method, strlen(method), path,
+                      strlen(path), &no_ttl_header, body, body_len);
 }
 
 /* 오류 응답이 상태 코드, application/json, 기대한 body인지 확인합니다. */

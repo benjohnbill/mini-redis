@@ -5,6 +5,10 @@
 #include "api.h"
 #include "store.h"
 
+/* 만료와 상관없는 테스트가 넘기는 "지금"입니다. 모든 key를 만료 없이 저장하므로
+   어떤 시각이어도 결과가 같습니다. */
+#define ANY_NOW 0
+
 /* 버킷이 여러 번 늘었다가 줄어들 만큼의 key 수입니다. */
 #define MANY_KEY_COUNT 20000
 #define KEPT_KEY_COUNT 1000
@@ -50,7 +54,8 @@ static void store_put_index(struct store *store, int index)
     char key_text[KEY_TEXT_MAX];
     size_t key_len = key_format(key_text, index);
 
-    TEST_ASSERT(store_set(store, key_text, key_len, &index, sizeof index));
+    TEST_ASSERT(store_set(store, key_text, key_len, &index, sizeof index,
+                          STORE_NO_EXPIRY));
 }
 
 /* index의 key가 있는지 보고, 있으면 저장한 value(index 자신)인지 확인합니다. */
@@ -60,7 +65,7 @@ static bool store_has_index(struct store *store, int index)
     size_t key_len = key_format(key_text, index);
     const void *value = NULL;
     size_t value_len = 0;
-    if (!store_get(store, key_text, key_len, &value, &value_len)) {
+    if (!store_get(store, ANY_NOW, key_text, key_len, &value, &value_len)) {
         return false;
     }
     TEST_CHECK(value_len == sizeof index);
@@ -74,7 +79,7 @@ static void store_delete_index(struct store *store, int index)
     char key_text[KEY_TEXT_MAX];
     size_t key_len = key_format(key_text, index);
 
-    TEST_ASSERT(store_delete(store, key_text, key_len));
+    TEST_ASSERT(store_delete(store, ANY_NOW, key_text, key_len));
 }
 
 static void keys_survive_growing_then_shrinking(void)

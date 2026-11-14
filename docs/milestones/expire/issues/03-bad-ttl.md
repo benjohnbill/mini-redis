@@ -6,20 +6,20 @@
 
 **Blocked by:** 02
 
-테스트 시나리오(팀 확인 전). 테스트 이름은 아래 문장을 그대로 씁니다.
+테스트 시나리오(팀 확인). 테스트 이름은 아래 문장을 그대로 씁니다.
 
-- [ ] TTL이 0이면 400과 bad_ttl을 받고 저장하지 않는다
-- [ ] TTL이 음수이면 400과 bad_ttl을 받는다
-- [ ] TTL이 숫자가 아니면 400과 bad_ttl을 받는다
-- [ ] TTL이 빈 값이면 400과 bad_ttl을 받는다
-- [ ] TTL에 숫자 뒤로 다른 문자가 붙으면 400과 bad_ttl을 받는다
-- [ ] 지금 시각에 더하면 넘치는 TTL은 400과 bad_ttl을 받는다
-- [ ] TTL 헤더가 두 번 오면 400과 bad_ttl을 받는다
-- [ ] bad_ttl 응답의 Content-Type은 application/json이다
-- [ ] GET에 붙은 TTL은 무시하고 value를 돌려준다
-- [ ] (기능) TTL 헤더를 두 번 보낸 PUT은 400과 bad_ttl을 받는다
+- [x] TTL이 0이면 400과 bad_ttl을 받고 저장하지 않는다
+- [x] TTL이 음수이면 400과 bad_ttl을 받는다
+- [x] TTL이 숫자가 아니면 400과 bad_ttl을 받는다
+- [x] TTL이 빈 값이면 400과 bad_ttl을 받는다
+- [x] TTL에 숫자 뒤로 다른 문자가 붙으면 400과 bad_ttl을 받는다
+- [x] 지금 시각에 더하면 넘치는 TTL은 400과 bad_ttl을 받는다
+- [x] TTL 헤더가 두 번 오면 400과 bad_ttl을 받는다
+- [x] bad_ttl 응답의 Content-Type은 application/json이다
+- [x] GET에 붙은 TTL은 무시하고 value를 돌려준다
+- [x] (기능) TTL 헤더를 두 번 보낸 PUT은 400과 bad_ttl을 받는다
 
 그 밖의 완료 조건:
 
-- [ ] 앞뒤 공백과 `+` 부호를 받을지 정하고, 정한 것을 테스트 이름과 `../spec.md`에 남긴다
-- [ ] `make verify`가 통과한다
+- [x] 앞뒤 공백과 `+` 부호를 받을지 정하고, 정한 것을 테스트 이름과 `../spec.md`에 남긴다
+- [x] `make verify`가 통과한다

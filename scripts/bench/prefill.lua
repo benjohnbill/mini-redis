@@ -3,7 +3,11 @@
 -- 열린 루프 시나리오(티켓 02)도 이 이름과 value로 key를 고릅니다.
 --
 -- 사용법: wrk -t<threads> -c<connections> -d<최대 초> -s prefill.lua <url> \
---             -- <count> <threads> <connections> <완료 표시 디렉터리>
+--             -- <count> <threads> <connections> <완료 표시 디렉터리> \
+--             [<key 접두사> [<TTL 초>]]
+--
+-- key 접두사를 주면 prefill- 대신 그 접두사를 씁니다. TTL 초를 주면 저장마다
+-- TTL 헤더를 붙입니다(M4 expire 측정의 "한꺼번에 만료").
 --
 -- wrk는 요청 수가 아니라 시간으로 끝납니다. 그래서 스레드마다 맡은 저장의 응답을 모두
 -- 받으면 그 스레드를 멈추고 완료 표시 디렉터리에 done-<스레드 번호> 파일을 만듭니다.
@@ -34,6 +38,8 @@ function init(args)
     -- wrk는 연결을 스레드 수로 나눈 몫만큼 스레드마다 엽니다.
     thread_connections = math.floor(tonumber(args[3]) / thread_count)
     marker_dir = args[4]
+    key_prefix = args[5] or "prefill-"
+    store_ttl = args[6]
     next_index = thread_id
     owned = 0
     for index = thread_id, key_count - 1, stride do
@@ -49,20 +55,30 @@ function init(args)
 end
 
 function request()
-    local path = "/keys/prefill-" .. next_index
+    local path = "/keys/" .. key_prefix .. next_index
     if is_verify_call_pending then
         is_verify_call_pending = false
-        return wrk.format("PUT", path, nil, VALUE)
+        return store_format(path)
     end
     request_calls = request_calls + 1
     stored_count_check()
     if next_index >= key_count then
         -- 맡은 key를 다 보냈고 남은 응답을 기다립니다. 그동안 연결은 첫 key를
         -- 조회합니다. 조회의 응답은 헤더가 있어 response()가 셉니다.
-        return wrk.format("GET", "/keys/prefill-" .. thread_id)
+        return wrk.format("GET", "/keys/" .. key_prefix .. thread_id)
     end
     next_index = next_index + stride
-    return wrk.format("PUT", path, nil, VALUE)
+    return store_format(path)
+end
+
+-- wrk.format은 받은 헤더 표에 Host와 Content-Length를 써 넣으므로 요청마다 새
+-- 표를 만듭니다.
+function store_format(path)
+    local headers = nil
+    if store_ttl then
+        headers = { ["TTL"] = store_ttl }
+    end
+    return wrk.format("PUT", path, headers, VALUE)
 end
 
 function response(status, headers, body)

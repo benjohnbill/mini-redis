@@ -5,6 +5,10 @@
 #include "acutest.h"
 #include "store.h"
 
+/* 만료와 상관없는 테스트가 넘기는 "지금"입니다. 모든 key를 만료 없이 저장하므로
+   어떤 시각이어도 결과가 같습니다. */
+#define ANY_NOW 0
+
 /* key를 조회해 찾았는지, 길이, 바이트를 차례로 확인합니다. 찾지 못하면 value가
    NULL일 수 있으므로 memcmp 전에 멈춥니다. 그러지 않으면 UBSan이 자식 프로세스를
    멈춰 acutest가 실패 메시지를 잃습니다. */
@@ -13,7 +17,8 @@ static void check_get(struct store *store, const void *key, size_t key_len,
 {
     const void *value = NULL;
     size_t value_len = SIZE_MAX;
-    if (!TEST_CHECK(store_get(store, key, key_len, &value, &value_len))) {
+    if (!TEST_CHECK(
+            store_get(store, ANY_NOW, key, key_len, &value, &value_len))) {
         TEST_MSG("못 찾은 key: \"%.*s\" (길이 %zu)", (int)key_len,
                  key_len > 0 ? (const char *)key : "", key_len);
         return;
@@ -30,7 +35,7 @@ static void set_then_get_returns_value_and_length(void)
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
 
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
 
     check_get(store, "name", 4, "jungle", 6);
 
@@ -41,11 +46,11 @@ static void get_missing_key_reports_not_found(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_CHECK(!store_get(store, "age", 3, &value, &value_len));
+    TEST_CHECK(!store_get(store, ANY_NOW, "age", 3, &value, &value_len));
 
     store_destroy(store);
 }
@@ -54,7 +59,7 @@ static void empty_value_is_found_with_length_zero(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "empty", 5, NULL, 0));
+    TEST_CHECK(store_set(store, "empty", 5, NULL, 0, STORE_NO_EXPIRY));
 
     check_get(store, "empty", 5, "", 0);
 
@@ -65,7 +70,7 @@ static void empty_key_can_be_set_and_get(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, NULL, 0, "v", 1));
+    TEST_CHECK(store_set(store, NULL, 0, "v", 1, STORE_NO_EXPIRY));
 
     check_get(store, NULL, 0, "v", 1);
 
@@ -77,7 +82,7 @@ static void value_with_inner_nul_is_not_truncated(void)
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
     const char bin[5] = {'a', '\0', 'b', '\0', 'c'};
-    TEST_CHECK(store_set(store, "bin", 3, bin, 5));
+    TEST_CHECK(store_set(store, "bin", 3, bin, 5, STORE_NO_EXPIRY));
 
     check_get(store, "bin", 3, "a\0b\0c", 5);
 
@@ -90,7 +95,7 @@ static void changing_caller_buffer_after_set_keeps_stored_value(void)
     TEST_ASSERT(store != NULL);
     char key[] = "name";
     char value_text[] = "jungle";
-    TEST_CHECK(store_set(store, key, 4, value_text, 6));
+    TEST_CHECK(store_set(store, key, 4, value_text, 6, STORE_NO_EXPIRY));
     memcpy(value_text, "XXXXXX", 6);
 
     check_get(store, "name", 4, "jungle", 6);
@@ -106,8 +111,8 @@ static void keys_sharing_prefix_with_different_length_are_distinct(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "abc", 3, "short", 5));
-    TEST_CHECK(store_set(store, "abcd", 4, "long", 4));
+    TEST_CHECK(store_set(store, "abc", 3, "short", 5, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, "abcd", 4, "long", 4, STORE_NO_EXPIRY));
 
     check_get(store, "abc", 3, "short", 5);
     check_get(store, "abcd", 4, "long", 4);
@@ -121,10 +126,12 @@ static void keys_sharing_prefix_with_different_length_are_distinct(void)
     memset(key, 'a', sizeof key);
     for (size_t len = 1; len <= sizeof key; len++) {
         unsigned char len_as_byte = (unsigned char)len;
-        TEST_ASSERT(store_set(store, key, len, &len_as_byte, 1));
+        TEST_ASSERT(
+            store_set(store, key, len, &len_as_byte, 1, STORE_NO_EXPIRY));
     }
     for (size_t len = 1; len <= sizeof key; len++) {
-        if (!TEST_CHECK(store_get(store, key, len, &value, &value_len))) {
+        if (!TEST_CHECK(
+                store_get(store, ANY_NOW, key, len, &value, &value_len))) {
             TEST_MSG("못 찾은 key 길이: %zu", len);
             break;
         }
@@ -148,7 +155,7 @@ static void all_keys_found_after_storing_thousands(void)
         int key_text_len = snprintf(key, sizeof key, "k%d", i);
         int value_text_len = snprintf(value_text, sizeof value_text, "v%d", i);
         TEST_ASSERT(store_set(store, key, (size_t)key_text_len, value_text,
-                              (size_t)value_text_len));
+                              (size_t)value_text_len, STORE_NO_EXPIRY));
     }
 
     for (int i = 0; i < MANY_KEYS; i++) {
@@ -156,8 +163,8 @@ static void all_keys_found_after_storing_thousands(void)
         int value_text_len = snprintf(value_text, sizeof value_text, "v%d", i);
         const void *value = NULL;
         size_t value_len = 0;
-        if (!TEST_CHECK(store_get(store, key, (size_t)key_text_len, &value,
-                                  &value_len))) {
+        if (!TEST_CHECK(store_get(store, ANY_NOW, key, (size_t)key_text_len,
+                                  &value, &value_len))) {
             TEST_MSG("못 찾은 key: %s", key);
             break;
         }
@@ -175,9 +182,9 @@ static void destroy_leaves_no_leak(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "a", 1, "1", 1));
-    TEST_CHECK(store_set(store, NULL, 0, NULL, 0));
-    TEST_CHECK(store_set(store, "b", 1, "22", 2));
+    TEST_CHECK(store_set(store, "a", 1, "1", 1, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, NULL, 0, NULL, 0, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, "b", 1, "22", 2, STORE_NO_EXPIRY));
     store_destroy(store);
 }
 
@@ -186,8 +193,8 @@ static void set_twice_returns_later_value(void)
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
 
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(store, "name", 4, "krafto", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, "name", 4, "krafto", 6, STORE_NO_EXPIRY));
 
     check_get(store, "name", 4, "krafto", 6);
 
@@ -199,12 +206,13 @@ static void overwrite_with_different_length_returns_new_length(void)
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
 
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(store, "name", 4, "ab", 2));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, "name", 4, "ab", 2, STORE_NO_EXPIRY));
 
     check_get(store, "name", 4, "ab", 2);
 
-    TEST_CHECK(store_set(store, "name", 4, "longer value", 12));
+    TEST_CHECK(
+        store_set(store, "name", 4, "longer value", 12, STORE_NO_EXPIRY));
     check_get(store, "name", 4, "longer value", 12);
 
     store_destroy(store);
@@ -217,9 +225,9 @@ static void overwrite_leaves_no_leak_of_old_entry(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(store, "name", 4, "krafton", 7));
-    TEST_CHECK(store_set(store, "name", 4, "x", 1));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, "name", 4, "krafton", 7, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, "name", 4, "x", 1, STORE_NO_EXPIRY));
     store_destroy(store);
 }
 
@@ -227,13 +235,13 @@ static void delete_existing_key_reports_removed_and_get_fails(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
 
-    TEST_CHECK(store_delete(store, "name", 4));
+    TEST_CHECK(store_delete(store, ANY_NOW, "name", 4));
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_CHECK(!store_get(store, "name", 4, &value, &value_len));
+    TEST_CHECK(!store_get(store, ANY_NOW, "name", 4, &value, &value_len));
 
     store_destroy(store);
 }
@@ -242,9 +250,9 @@ static void delete_missing_key_reports_nothing_removed(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
 
-    TEST_CHECK(!store_delete(store, "age", 3));
+    TEST_CHECK(!store_delete(store, ANY_NOW, "age", 3));
 
     store_destroy(store);
 }
@@ -253,10 +261,10 @@ static void delete_same_key_twice_reports_nothing_removed_second_time(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
 
-    TEST_CHECK(store_delete(store, "name", 4));
-    TEST_CHECK(!store_delete(store, "name", 4));
+    TEST_CHECK(store_delete(store, ANY_NOW, "name", 4));
+    TEST_CHECK(!store_delete(store, ANY_NOW, "name", 4));
 
     store_destroy(store);
 }
@@ -265,10 +273,10 @@ static void delete_one_key_keeps_other_keys(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(store, "age", 3, "7", 1));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, "age", 3, "7", 1, STORE_NO_EXPIRY));
 
-    TEST_CHECK(store_delete(store, "name", 4));
+    TEST_CHECK(store_delete(store, ANY_NOW, "name", 4));
 
     check_get(store, "age", 3, "7", 1);
 
@@ -281,14 +289,14 @@ static void delete_once_after_setting_twice_makes_key_not_found(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
-    TEST_CHECK(store_set(store, "name", 4, "krafto", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
+    TEST_CHECK(store_set(store, "name", 4, "krafto", 6, STORE_NO_EXPIRY));
 
-    TEST_CHECK(store_delete(store, "name", 4));
+    TEST_CHECK(store_delete(store, ANY_NOW, "name", 4));
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_CHECK(!store_get(store, "name", 4, &value, &value_len));
+    TEST_CHECK(!store_get(store, ANY_NOW, "name", 4, &value, &value_len));
 
     store_destroy(store);
 }
@@ -297,13 +305,13 @@ static void empty_key_can_be_deleted(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, NULL, 0, "v", 1));
+    TEST_CHECK(store_set(store, NULL, 0, "v", 1, STORE_NO_EXPIRY));
 
-    TEST_CHECK(store_delete(store, NULL, 0));
+    TEST_CHECK(store_delete(store, ANY_NOW, NULL, 0));
 
     const void *value = NULL;
     size_t value_len = 0;
-    TEST_CHECK(!store_get(store, NULL, 0, &value, &value_len));
+    TEST_CHECK(!store_get(store, ANY_NOW, NULL, 0, &value, &value_len));
 
     store_destroy(store);
 }
@@ -315,9 +323,9 @@ static void set_with_overflowing_length_fails_and_keeps_store(void)
 {
     struct store *store = store_create();
     TEST_ASSERT(store != NULL);
-    TEST_CHECK(store_set(store, "name", 4, "jungle", 6));
+    TEST_CHECK(store_set(store, "name", 4, "jungle", 6, STORE_NO_EXPIRY));
 
-    TEST_CHECK(!store_set(store, "name", 4, "x", SIZE_MAX));
+    TEST_CHECK(!store_set(store, "name", 4, "x", SIZE_MAX, STORE_NO_EXPIRY));
 
     check_get(store, "name", 4, "jungle", 6);
 
