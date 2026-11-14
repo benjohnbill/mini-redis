@@ -1,9 +1,13 @@
-/* mini-redis 서버입니다. 연결과 요청 해석은 mongoose가 맡고, 이 파일은
-   mongoose의 요청 이벤트에서 메서드, 경로, body를 꺼내 api 층에 넘기고
-   돌려받은 응답을 보내는 일만 합니다.
-   스레드 하나가 mg_mgr_poll을 반복해서 부르며 요청을 하나씩 처리합니다.
-   그래서 api 층이 빌려준 value를 다음 store 호출 전에 송신 버퍼로 복사할 수
-   있습니다. 이 근거는 M3 concurrency에서 다시 봅니다.
+/* mini-redis 서버입니다. 연결과 요청 해석은 mongoose가 맡고, 이 파일은 세 가지
+   일을 합니다.
+   - mongoose의 요청 이벤트에서 메서드, 경로, body를 꺼내 api 층에 넘기고
+     돌려받은 응답을 보냅니다.
+   - 동시 연결을 CONNECTION_MAX개까지만 받고, 넘친 연결은 503으로 거절합니다.
+   - IDLE_TIMEOUT_MS 동안 바이트가 오가지 않은 연결을 닫습니다.
+   스레드 하나가 mg_mgr_poll을 반복해서 부르며 연결 받기, 요청 처리, 기한
+   검사를 모두 맡습니다(ADR single-thread-event-loop). 요청을 하나씩 끝까지
+   처리하므로, api 층이 빌려준 value를 다음 store 호출 전에 송신 버퍼로 복사할
+   수 있습니다(ADR get-lends-value-until-next-change).
 
    사용법: mini-redis <port>
    SIGTERM이나 SIGINT를 받으면 루프를 빠져나와 mongoose와 store를 해제하고
