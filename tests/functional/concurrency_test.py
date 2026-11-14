@@ -120,9 +120,45 @@ def small_get_prompt_while_storing_large_value(server):
         raise AssertionError("조회한 body가 저장한 큰 body와 다릅니다")
 
 
+def read_response_head(stream):
+    """상태 줄과 헤더를 읽어 (상태 코드, Content-Length)를 돌려줍니다."""
+    status = int(stream.readline().split(b" ")[1])
+    content_length = None
+    for line in iter(stream.readline, b"\r\n"):
+        name, _, field = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            content_length = int(field)
+    return status, content_length
+
+
+def small_get_prompt_while_downloading_large_value(server):
+    value = large_value()
+    status, _, _ = server.request("PUT", "/keys/large-download", body=value, timeout=LARGE_REQUEST_TIMEOUT)
+    expect(status, 204, "큰 저장의 상태 코드")
+
+    with socket.create_connection((HOST, server.port), timeout=LARGE_REQUEST_TIMEOUT) as large:
+        large.sendall(b"GET /keys/large-download HTTP/1.1\r\nHost: x\r\n\r\n")
+        stream = large.makefile("rb")
+        status, content_length = read_response_head(stream)
+        # 조금씩 받으므로, 작은 GET이 도착할 때 서버는 아직 보내지 못한 body를 들고 있습니다.
+        received = []
+        for index in range(len(value) // LARGE_CHUNK):
+            if index % CHUNKS_PER_CHECK == 0:
+                expect_small_get_prompt(server, f"small-while-downloading-{index}")
+            received.append(stream.read(LARGE_CHUNK))
+        body = b"".join(received)
+
+    expect(status, 200, "큰 조회의 상태 코드")
+    expect(content_length, len(value), "큰 조회의 Content-Length")
+    if body != value:
+        raise AssertionError("받아 간 body가 저장한 큰 body와 다릅니다")
+
+
 TESTS = [
     ("[T14] (기능) 다른 연결이 16 MiB value를 저장하는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
      small_get_prompt_while_storing_large_value),
+    ("(기능) 다른 연결이 16 MiB value를 조회해 받아 가는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
+     small_get_prompt_while_downloading_large_value),
 ]
 
 
