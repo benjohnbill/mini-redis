@@ -20,6 +20,8 @@ DEFINED_ID = re.compile(r'"\[(T[0-9]+)\]')
 BACKTICK = re.compile(r"`([^`]+)`")
 # ADR 본문은 `| 항목 | 내용 |` 표입니다. 첫 칸이 `결정`인 행만 인용으로 읽습니다.
 ADR_DECISION_ROW = re.compile(r"^\|\s*결정\s*\|")
+# 표로 바꾸기 전의 문단 형식입니다. 이 형식의 `결정:` 줄은 위 정규식이 읽지 못하므로 실패로 알립니다.
+ADR_PARAGRAPH_LABEL = re.compile(r"^(맥락|결정|이유|버린 대안|결과):")
 
 
 def defined_test_ids(errors):
@@ -37,13 +39,15 @@ def defined_test_ids(errors):
     return ids
 
 
-def adr_citations():
+def adr_citations(errors):
     """(위치, 테스트 ID) 목록을 돌려줍니다."""
     cites = []
     for path in sorted((ROOT / "docs" / "adr").glob("*.md")):
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            where = f"{path.relative_to(ROOT)}:{lineno}"
+            if ADR_PARAGRAPH_LABEL.match(line):
+                errors.append(f"{where}: ADR 본문은 `| 항목 | 내용 |` 표로 씁니다(CONVENTION.md의 \"ADR\")")
             if ADR_DECISION_ROW.match(line):
-                where = f"{path.relative_to(ROOT)}:{lineno}"
                 cites += [(where, t) for t in TEST_ID.findall(line)]
     return cites
 
@@ -79,7 +83,7 @@ def main():
     errors = []
     ids = defined_test_ids(errors)
     req_tests, req_adrs = requirement_citations(errors)
-    for where, test_id in adr_citations() + req_tests:
+    for where, test_id in adr_citations(errors) + req_tests:
         if test_id not in ids:
             errors.append(f"{where}: 이 테스트 ID를 가진 테스트가 없습니다: {test_id}")
     for where, name in req_adrs:

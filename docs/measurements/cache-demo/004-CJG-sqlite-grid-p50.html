@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>004 cache on/off p50</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&display=swap" rel="stylesheet">
+  <!-- 원본입니다. 004-CJG-sqlite-grid.md의 "TTL 60s" 표에서 조회 전용 시나리오 6개의 p50 범위 중 큰 값을 옮겼습니다.
+       그림을 바꾸면 이 파일을 고치고 같은 이름의 .png를 다시 만듭니다. 색은 README 배너에 맞췄습니다. -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Geist', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background: #f3f1ed; color: #232a3a; padding: 3rem 2rem; word-break: keep-all; overflow-wrap: break-word; }
+    .frame { max-width: 1040px; margin: 0 auto; }
+    .eyebrow { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: #4f5a6e; margin-bottom: 0.5rem; }
+    h1 { font-family: 'Instrument Serif', 'Noto Serif KR', serif; font-size: 2rem; font-weight: 400; margin-bottom: 1.5rem; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    svg { width: 100%; min-width: 1000px; display: block; }
+    @media print { .diagram-container { overflow-x: visible; } svg { min-width: 0; } }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Dumbbell · cache-demo/004</p>
+    <h1>cache on/off p50</h1>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="004-CJG-sqlite-grid-p50-title 004-CJG-sqlite-grid-p50-desc">
+        <title id="004-CJG-sqlite-grid-p50-title">cache on/off p50</title>
+        <desc id="004-CJG-sqlite-grid-p50-desc">TTL 60초 조회 전용 시나리오 6개에서 cache off와 on의 p50(2회 중 큰 값, ms)을 비교합니다. 반복 조건의 목록만 캐시로 빨라지고, 나머지 5개는 캐시를 켜면 느려집니다.</desc>
+        <rect width="100%" height="100%" fill="#f3f1ed"/>
+        <text x="200" y="440" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">0</text>
+        <line x1="352" y1="56" x2="352" y2="408" stroke="rgba(35,42,58,0.08)" stroke-width="0.8"/>
+        <text x="352" y="440" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">10</text>
+        <line x1="504" y1="56" x2="504" y2="408" stroke="rgba(35,42,58,0.08)" stroke-width="0.8"/>
+        <text x="504" y="440" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">20</text>
+        <line x1="656" y1="56" x2="656" y2="408" stroke="rgba(35,42,58,0.08)" stroke-width="0.8"/>
+        <text x="656" y="440" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">30</text>
+        <line x1="808" y1="56" x2="808" y2="408" stroke="rgba(35,42,58,0.08)" stroke-width="0.8"/>
+        <text x="808" y="440" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">40</text>
+        <line x1="960" y1="56" x2="960" y2="408" stroke="rgba(35,42,58,0.08)" stroke-width="0.8"/>
+        <text x="960" y="440" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">50</text>
+        <line x1="200" y1="40" x2="200" y2="420" stroke="rgba(35,42,58,0.25)" stroke-width="1"/>
+        <text x="580" y="456" fill="#4f5a6e" font-size="7" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">P50 LATENCY (MS)</text>
+        <line x1="222" y1="76" x2="331" y2="76" stroke="rgba(35,42,58,0.55)" stroke-width="1"/>
+        <circle cx="222" cy="76" r="6" fill="#f3f1ed" stroke="#4f5a6e" stroke-width="1.5"/>
+        <circle cx="331" cy="76" r="6" fill="#b8322a" stroke="#232a3a" stroke-width="1"/>
+        <text x="222" y="66" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">1.48</text>
+        <text x="343" y="80" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">8.64</text>
+        <text x="188" y="80" fill="#232a3a" font-size="11" font-weight="600" font-family="'Geist', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" text-anchor="end">detail-uniform</text>
+        <line x1="220" y1="140" x2="313" y2="140" stroke="rgba(35,42,58,0.55)" stroke-width="1"/>
+        <circle cx="220" cy="140" r="6" fill="#f3f1ed" stroke="#4f5a6e" stroke-width="1.5"/>
+        <circle cx="313" cy="140" r="6" fill="#b8322a" stroke="#232a3a" stroke-width="1"/>
+        <text x="220" y="130" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">1.32</text>
+        <text x="325" y="144" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">7.41</text>
+        <text x="188" y="144" fill="#232a3a" font-size="11" font-weight="600" font-family="'Geist', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" text-anchor="end">detail-zoomed</text>
+        <line x1="289" y1="204" x2="685" y2="204" stroke="rgba(35,42,58,0.55)" stroke-width="1"/>
+        <circle cx="685" cy="204" r="6" fill="#f3f1ed" stroke="#4f5a6e" stroke-width="1.5"/>
+        <circle cx="289" cy="204" r="6" fill="#b8322a" stroke="#232a3a" stroke-width="1"/>
+        <text x="277" y="208" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">5.85</text>
+        <text x="697" y="208" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">31.89</text>
+        <text x="188" y="208" fill="#232a3a" font-size="11" font-weight="600" font-family="'Geist', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" text-anchor="end">list-repeated</text>
+        <line x1="703" y1="268" x2="784" y2="268" stroke="rgba(35,42,58,0.55)" stroke-width="1"/>
+        <circle cx="703" cy="268" r="6" fill="#f3f1ed" stroke="#4f5a6e" stroke-width="1.5"/>
+        <circle cx="784" cy="268" r="6" fill="#b8322a" stroke="#232a3a" stroke-width="1"/>
+        <text x="691" y="272" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">33.07</text>
+        <text x="796" y="272" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">38.39</text>
+        <text x="188" y="272" fill="#232a3a" font-size="11" font-weight="600" font-family="'Geist', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" text-anchor="end">list-varied</text>
+        <line x1="274" y1="332" x2="307" y2="332" stroke="rgba(35,42,58,0.55)" stroke-width="1"/>
+        <circle cx="274" cy="332" r="6" fill="#f3f1ed" stroke="#4f5a6e" stroke-width="1.5"/>
+        <circle cx="307" cy="332" r="6" fill="#b8322a" stroke="#232a3a" stroke-width="1"/>
+        <text x="262" y="336" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">4.86</text>
+        <text x="319" y="336" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">7.01</text>
+        <text x="188" y="336" fill="#232a3a" font-size="11" font-weight="600" font-family="'Geist', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" text-anchor="end">search-repeated</text>
+        <line x1="631" y1="396" x2="944" y2="396" stroke="rgba(35,42,58,0.55)" stroke-width="1"/>
+        <circle cx="631" cy="396" r="6" fill="#f3f1ed" stroke="#4f5a6e" stroke-width="1.5"/>
+        <circle cx="944" cy="396" r="6" fill="#b8322a" stroke="#232a3a" stroke-width="1"/>
+        <text x="619" y="400" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">28.35</text>
+        <text x="956" y="400" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">48.92</text>
+        <text x="188" y="400" fill="#232a3a" font-size="11" font-weight="600" font-family="'Geist', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" text-anchor="end">search-varied</text>
+        <line x1="40" y1="472" x2="960" y2="472" stroke="rgba(35,42,58,0.10)" stroke-width="0.8"/>
+        <circle cx="46" cy="493" r="5" fill="#f3f1ed" stroke="#4f5a6e" stroke-width="1.5"/>
+        <text x="58" y="497" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">cache off</text>
+        <circle cx="136" cy="493" r="5" fill="#b8322a" stroke="#232a3a" stroke-width="1"/>
+        <text x="148" y="497" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace">cache on</text>
+        <text x="960" y="497" fill="#4f5a6e" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="end">TTL 60s · read-only · max of 2 runs · rows: kind, then repeated/varied</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
