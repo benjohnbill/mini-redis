@@ -2,6 +2,10 @@
 
 CC       ?= cc
 CPPFLAGS := -Isrc -D_POSIX_C_SOURCE=200809L
+# Darwin 확장 선언은 Mongoose와 Acutest가 사용합니다. Linux 설정은 유지합니다.
+ifeq ($(shell uname -s),Darwin)
+CPPFLAGS += -D_DARWIN_C_SOURCE
+endif
 # ASan과 UBSan은 메모리 오류와 정의되지 않은 동작을 테스트 중에 바로 멈춰 세웁니다.
 CFLAGS   := -std=c11 -Wall -Wextra -Werror -g -fno-omit-frame-pointer \
             -fsanitize=address,undefined -fno-sanitize-recover=all

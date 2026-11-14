@@ -26,6 +26,13 @@ HEADER_FILTER = '(src|tests)/'
 EXCLUDE_HEADER_FILTER = '|'.join(re.escape(p) for p in sorted(IGNORED)) or '^$'
 
 COLOR = sys.stdout.isatty()
+TIDY_FLAGS = []
+if sys.platform == 'darwin':
+    # pip의 clang-tidy도 Xcode SDK와 빌드의 Darwin 선언을 사용합니다.
+    sdk = subprocess.run(['xcrun', '--show-sdk-path'], capture_output=True,
+                         text=True, check=True).stdout.strip()
+    TIDY_FLAGS = ['--extra-arg=-D_DARWIN_C_SOURCE',
+                  '--extra-arg=-isysroot' + sdk]
 
 
 def paint(code, s):
@@ -101,7 +108,8 @@ def tidy_one(path):
     proc = subprocess.run(
         ['clang-tidy', '--quiet', '--warnings-as-errors=*',
          f'--header-filter={HEADER_FILTER}',
-         f'--exclude-header-filter={EXCLUDE_HEADER_FILTER}', path],
+         f'--exclude-header-filter={EXCLUDE_HEADER_FILTER}',
+         *TIDY_FLAGS, path],
         cwd=ROOT, capture_output=True, text=True)
     return (proc.stdout + proc.stderr).splitlines()
 
