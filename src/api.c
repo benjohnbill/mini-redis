@@ -254,10 +254,10 @@ static struct api_response key_set(struct store *store, const char *key,
                                    const void *value, size_t value_len)
 {
     uint64_t expires_at = STORE_NO_EXPIRY;
+    /* 잘못된 TTL을 "만료 없음"으로 저장하면 client의 실수가 조용히 사라지므로,
+       store를 부르기 전에 거절합니다(spec Q14). */
     if (!ttl_expires_at(ttl_header, &expires_at)) {
-        /* 티켓 03이 이 자리에서 400 bad_ttl로 거절합니다. 그 전까지는 만료 없이
-           저장합니다. */
-        expires_at = STORE_NO_EXPIRY;
+        return response_error(400, ERROR_BODY("bad_ttl"));
     }
     /* store_set의 false는 메모리 부족뿐입니다. 할당 함수를 바꿔 끼울 seam이
        없어서 이 분기는 자동 테스트하지 않고 리뷰로 확인합니다. */
@@ -268,14 +268,19 @@ static struct api_response key_set(struct store *store, const char *key,
 }
 
 /* TTL 헤더를 만료 시각으로 바꿔 *expires_at에 쓰고 true를 돌려줍니다. 헤더가
-   없으면 STORE_NO_EXPIRY입니다. 값이 1 이상의 정수 초가 아니거나, ms로 바꿔
-   받은 시각에 더하면 STORE_NO_EXPIRY에 닿으면 false를 돌려줍니다. */
+   없으면 STORE_NO_EXPIRY입니다. 헤더가 두 번 이상 왔거나, 값이 1 이상의 정수
+   초가 아니거나, ms로 바꿔 받은 시각에 더하면 STORE_NO_EXPIRY에 닿으면 false를
+   돌려줍니다. */
 static bool ttl_expires_at(const struct api_ttl_header *ttl_header,
                            uint64_t *expires_at)
 {
     if (ttl_header->count == 0) {
         *expires_at = STORE_NO_EXPIRY;
         return true;
+    }
+    /* 어느 값이 쓰였는지 client가 모르는 채 204를 받지 않게 합니다(spec Q15). */
+    if (ttl_header->count > 1) {
+        return false;
     }
     uint64_t seconds = 0;
     /* 만료 시각이 STORE_NO_EXPIRY에 닿지 않게 받은 시각에 더할 수 있는 ms입니다. */

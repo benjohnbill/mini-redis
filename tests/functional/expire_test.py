@@ -58,6 +58,20 @@ class Server:
         finally:
             connection.close()
 
+    def request_with_headers(self, method, path, body, header_lines):
+        """header_lines의 (이름, 값)을 순서대로 보냅니다. 같은 이름도 두 번 보낼 수 있습니다."""
+        connection = http.client.HTTPConnection(HOST, self.port, timeout=REQUEST_TIMEOUT)
+        try:
+            connection.putrequest(method, path)
+            connection.putheader("Content-Length", str(len(body)))
+            for name, value in header_lines:
+                connection.putheader(name, value)
+            connection.endheaders(body)
+            response = connection.getresponse()
+            return response.status, response.read()
+        finally:
+            connection.close()
+
     def stop(self):
         """SIGTERM을 보내고 종료 코드를 돌려줍니다. 제때 끝나지 않으면 죽입니다."""
         if self.process.poll() is None:
@@ -121,6 +135,31 @@ def overwrite_without_ttl_clears_expiry(server):
     expect(body, b"kept", "TTL 없이 덮어쓴 key 조회의 body")
 
 
+# ── 테스트: 잘못된 TTL ────────────────────────────────────────
+
+def duplicate_ttl_header_is_rejected(server):
+    status, body = server.request_with_headers(
+        "PUT", "/keys/ttl-twice", b"value", [("TTL", "60"), ("TTL", "60")])
+    expect(status, 400, "TTL 헤더를 두 번 보낸 PUT의 상태 코드")
+    expect(body, b'{"error":"bad_ttl"}', "TTL 헤더를 두 번 보낸 PUT의 body")
+
+    status, _ = server.request("GET", "/keys/ttl-twice")
+    expect(status, 404, "거절된 PUT 뒤 조회의 상태 코드")
+
+
+def ttl_with_surrounding_spaces_is_accepted(server):
+    # 앞뒤 공백은 HTTP 헤더 문법의 일부라 mongoose가 지우고 넘깁니다(spec Q14).
+    status, _ = server.request_with_headers(
+        "PUT", "/keys/ttl-spaces", b"value", [("TTL", "  60  ")])
+    expect(status, 204, "앞뒤 공백이 있는 TTL로 저장한 PUT의 상태 코드")
+
+
+# 기다리지 않으므로 차례로 돌립니다.
+QUICK_TESTS = [
+    ("(기능) TTL 헤더를 두 번 보낸 PUT은 400과 bad_ttl을 받는다", duplicate_ttl_header_is_rejected),
+    ("(기능) TTL 값 앞뒤의 공백은 서버가 지우고 받는다", ttl_with_surrounding_spaces_is_accepted),
+]
+
 # 모두 WAIT_SECONDS를 기다리므로 스레드로 함께 돌립니다.
 WAITING_TESTS = [
     ("[T16] (기능) TTL 1로 저장한 key는 2초 뒤 404와 key_not_found를 받는다", key_with_ttl_expires),
@@ -140,7 +179,7 @@ def test_run(server, test):
 
 def tests_run_together(server, tests):
     """테스트마다 스레드 하나를 띄우고, 모두 끝나면 목록 순서대로 결과를 돌려줍니다."""
-    errors = [None] * len(tests)
+    errors: list[Exception | None] = [None] * len(tests)
 
     def run(index, test):
         errors[index] = test_run(server, test)
@@ -179,10 +218,12 @@ def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     server = Server(sys.argv[1])
-    total = len(WAITING_TESTS)
+    total = len(QUICK_TESTS) + len(WAITING_TESTS)
     failed = 0
     try:
         server.wait_until_listening()
+        quick_errors = [test_run(server, test) for _, test in QUICK_TESTS]
+        failed += results_print(QUICK_TESTS, quick_errors)
         failed += results_print(WAITING_TESTS, tests_run_together(server, WAITING_TESTS))
     except AssertionError as error:
         failed = total
