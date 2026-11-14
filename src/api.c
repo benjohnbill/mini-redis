@@ -78,11 +78,18 @@ struct api_response api_handle(struct store *store, uint64_t now,
                               body_len);
 }
 
-/* chunked 요청은 body 길이를 끝까지 받아야 알 수 있어서, 상한을 body를 받기
-   전에 검사할 수 없습니다. 그래서 Content-Length로 길이를 알리게 합니다. */
-bool api_reject_headers(bool has_transfer_encoding, size_t body_len,
-                        struct api_response *response)
+/* 서버가 상한 너머의 헤더를 읽지 못하면 그 안의 TTL, Transfer-Encoding,
+   Content-Length를 모른 채 처리하게 되므로, 헤더가 넘친 요청을 가장 먼저
+   거절합니다. chunked 요청은 body 길이를 끝까지 받아야 알 수 있어서, 상한을
+   body를 받기 전에 검사할 수 없습니다. 그래서 Content-Length로 길이를 알리게
+   합니다. */
+bool api_reject_headers(bool has_too_many_headers, bool has_transfer_encoding,
+                        size_t body_len, struct api_response *response)
 {
+    if (has_too_many_headers) {
+        *response = response_error(431, ERROR_BODY("too_many_headers"));
+        return true;
+    }
     if (has_transfer_encoding) {
         *response = response_error(411, ERROR_BODY("length_required"));
         return true;

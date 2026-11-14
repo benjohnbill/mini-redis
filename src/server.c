@@ -54,6 +54,8 @@
    최대 MG_MAX_RECV_SIZE(약 16 MiB)까지 크므로, 128개면 최악 약 2 GiB입니다. */
 #define CONNECTION_MAX 128
 #define TTL_HEADER_NAME "TTL"
+/* mongoose의 head에서 헤더가 아닌 줄: 요청 줄과 헤더 끝의 빈 줄입니다. */
+#define HEAD_NON_HEADER_LINES 2
 
 /* mongoose가 연결마다 비워 둔 data 칸(MG_DATA_SIZE바이트)에 두는 값들입니다.
    data는 char 배열이라 uint64_t의 정렬에 맞지 않을 수 있으므로, 이 구조체를
@@ -99,6 +101,8 @@ static void headers_received_at_set(struct mg_connection *connection,
                                     bool is_noted, uint64_t millis);
 static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message);
+static bool message_has_too_many_headers(const struct mg_http_message *message);
+static size_t head_lines_count(struct mg_str head);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
 static struct api_ttl_header
@@ -321,6 +325,8 @@ static const char *status_reason(int status)
         return "Length Required";
     case 413:
         return "Content Too Large";
+    case 431:
+        return "Request Header Fields Too Large";
     case 500:
         return "Internal Server Error";
     case 503:
@@ -378,26 +384,62 @@ static void headers_received_at_set(struct mg_connection *connection,
     connection_state_set(connection, &state);
 }
 
-/* body가 오기 전에 chunked 요청인지, Content-Length가 상한을 넘는지 봅니다(spec
-   Q10, "오류의 우선순위"). 걸리면 411이나 413을 보내고, 송신 버퍼가 빈 뒤
+/* body가 오기 전에 헤더가 상한보다 많은지, Transfer-Encoding이 있는지,
+   Content-Length가 상한을 넘는지 봅니다(spec Q10, "오류의 우선순위"). 걸리면
+   431, 411, 413 중 하나를 보내고, 송신 버퍼가 빈 뒤
    mongoose가 연결을 닫게 합니다(is_draining). mongoose는 body를 기다리는 동안
    데이터가 올 때마다 이 이벤트를 다시 부르므로, 이미 닫는 중인 연결에는 응답을
    다시 보내지 않습니다. */
 static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message)
 {
+    bool has_too_many_headers = message_has_too_many_headers(message);
     bool has_transfer_encoding =
         mg_http_get_header(message, "Transfer-Encoding") != NULL;
     struct api_response response;
     if (connection->is_draining ||
-        !api_reject_headers(has_transfer_encoding, message->body.len,
-                            &response)) {
+        !api_reject_headers(has_too_many_headers, has_transfer_encoding,
+                            message->body.len, &response)) {
         return;
     }
     response_send_and_close(connection, &response);
+    /* 받은 바이트를 버리면 mongoose가 이 연결의 HTTP 해석을 멈춥니다(mongoose.c
+       "User manipulated received data"). 거절한 요청은 모두 더 해석할 것이
+       없으므로 431, 411, 413에 똑같이 적용합니다. 멈추지 않으면 chunked가 아닌
+       Transfer-Encoding에서 mongoose가 오류로 보고 응답을 보내기 전에 연결을
+       닫습니다. */
+    connection->recv.len = 0;
 }
 
-/* 이미 오류 응답(408, 411, 413, 503)을 보내고 닫는 중인 연결의 요청은 처리하지
+/* mongoose는 헤더를 MG_MAX_HTTP_HEADERS개까지만 읽고, 나머지는 오류 없이
+   건너뜁니다. 그래서 배열이 다 찼을 때만 원본 헤더 줄을 직접 셉니다. 배열이
+   다 찼으면 head에 요청 줄과 끝의 빈 줄이 있으므로 뺄셈이 0 아래로 내려가지
+   않습니다. */
+static bool message_has_too_many_headers(const struct mg_http_message *message)
+{
+    size_t header_max = sizeof message->headers / sizeof message->headers[0];
+    if (message->headers[header_max - 1].name.len == 0) {
+        return false;
+    }
+    size_t header_count =
+        head_lines_count(message->head) - HEAD_NON_HEADER_LINES;
+
+    return header_count > header_max;
+}
+
+static size_t head_lines_count(struct mg_str head)
+{
+    size_t line_count = 0;
+    for (size_t i = 0; i < head.len; i++) {
+        if (head.buf[i] == '\n') {
+            line_count++;
+        }
+    }
+
+    return line_count;
+}
+
+/* 이미 오류 응답(408, 411, 413, 431, 503)을 보내고 닫는 중인 연결의 요청은 처리하지
    않습니다. mongoose는 연결을 닫을 때 받다 만 요청도 받은 데까지를 body로 삼아
    이 이벤트를 부르므로, 거르지 않으면 잘린 body가 저장됩니다. */
 static void request_handle(struct mg_connection *connection,

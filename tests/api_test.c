@@ -344,7 +344,7 @@ static void body_one_byte_over_limit_returns_413_body_too_large(void)
     struct api_response response = {0};
 
     /* 상한 16 MiB(16,777,216바이트)보다 1바이트 큽니다. */
-    bool rejected = api_reject_headers(false, 16777217, &response);
+    bool rejected = api_reject_headers(false, false, 16777217, &response);
 
     TEST_CHECK(rejected);
     expect_error(response, 413, "{\"error\":\"body_too_large\"}");
@@ -355,7 +355,7 @@ static void body_at_limit_is_accepted(void)
     /* 거절하지 않으면 response를 건드리지 않으므로, 표시값이 남아야 합니다. */
     struct api_response response = {.status = -1};
 
-    bool rejected = api_reject_headers(false, 16777216, &response);
+    bool rejected = api_reject_headers(false, false, 16777216, &response);
 
     TEST_CHECK(!rejected);
     TEST_CHECK(response.status == -1);
@@ -366,10 +366,32 @@ static void transfer_encoding_returns_411_length_required(void)
 {
     struct api_response response = {0};
 
-    bool rejected = api_reject_headers(true, 0, &response);
+    bool rejected = api_reject_headers(false, true, 0, &response);
 
     TEST_CHECK(rejected);
     expect_error(response, 411, "{\"error\":\"length_required\"}");
+}
+
+static void too_many_headers_returns_431_too_many_headers(void)
+{
+    struct api_response response = {0};
+
+    bool rejected = api_reject_headers(true, false, 0, &response);
+
+    TEST_CHECK(rejected);
+    expect_error(response, 431, "{\"error\":\"too_many_headers\"}");
+}
+
+static void too_many_headers_wins_over_transfer_encoding_and_size(void)
+{
+    struct api_response response = {0};
+
+    /* 넘친 헤더 뒤에 Transfer-Encoding과 Content-Length가 숨어 있을 수 있어서,
+       411과 413보다 먼저 판정합니다. */
+    bool rejected = api_reject_headers(true, true, 16777217, &response);
+
+    TEST_CHECK(rejected);
+    expect_error(response, 431, "{\"error\":\"too_many_headers\"}");
 }
 
 TEST_LIST = {
@@ -428,5 +450,11 @@ TEST_LIST = {
     {"Transfer-Encoding으로 body 길이를 알리면 411과 "
      "{\"error\":\"length_required\"}를 돌려준다",
      transfer_encoding_returns_411_length_required},
+    {"헤더가 상한보다 많으면 431과 {\"error\":\"too_many_headers\"}를 "
+     "돌려준다",
+     too_many_headers_returns_431_too_many_headers},
+    {"헤더가 상한보다 많으면 Transfer-Encoding이나 큰 Content-Length가 있어도 "
+     "431을 돌려준다",
+     too_many_headers_wins_over_transfer_encoding_and_size},
     {NULL, NULL},
 };

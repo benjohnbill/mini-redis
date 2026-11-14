@@ -59,10 +59,11 @@ key 인코딩, `TTL` 헤더의 규칙, body와 연결의 상한, 모든 상태 �
 
 ## 응답 캐시 데모
 
-M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파일 `cache-demo`를 만들었습니다. 같은 조건을 반복하는 목록 조회는 캐시를 켜면 p50이 10.2 ms에서 2.7 ms로 줄었고, 상세 조회는 mini-redis 왕복을 기다리느라 1.2 ms에서 3.6~4.0 ms로 늘었습니다.
+M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파일 `cache-demo`를 만들었습니다. macOS에서 잰 값으로, 같은 조건을 반복하는 목록 조회는 캐시를 켜면 p50이 10.2 ms에서 2.7 ms로 줄었고, 상세 조회는 mini-redis 왕복을 기다리느라 1.2 ms에서 3.6~4.0 ms로 늘었습니다.
 
 - 실행 방법과 HTTP 계약: [`demo/README.md`](demo/README.md)
-- 측정 조건과 전체 결과: [`docs/milestones/cache/spec.md`의 "측정 결과"](docs/milestones/cache/spec.md#측정-결과)
+- 측정 결론: [`docs/milestones/cache/spec.md`의 "측정 결과"](docs/milestones/cache/spec.md#측정-결과)
+- 측정 조건과 전체 결과: [`docs/measurements/cache-demo/`](docs/measurements/cache-demo/)(WSL2에서 잰 전체 시나리오는 [004](docs/measurements/cache-demo/004-CJG-sqlite-grid.md))
 
 ## 마일스톤
 
@@ -101,6 +102,7 @@ mini-redis/
 │  ├─ api.md            HTTP 계약 전체
 │  ├─ requirements.md   LMS 요구사항과 우리 해석
 │  ├─ milestones/       마일스톤마다 overview.md, spec.md, issues/
+│  ├─ measurements/     측정 기록(server/, cache-demo/)
 │  ├─ adr/              큰 설계 결정
 │  └─ agents/           AI 스킬 설정
 └─ .github/workflows/ci.yml

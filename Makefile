@@ -1,7 +1,10 @@
 # make verify: CI와 같은 명령입니다. 빌드, 테스트, ID 검사, 코드 규칙 검사를 차례로 실행합니다.
 
 CC       ?= cc
-CPPFLAGS := -Isrc -D_POSIX_C_SOURCE=200809L
+# MG_MAX_HTTP_HEADERS는 mongoose가 읽는 헤더 수의 상한입니다(기본 30). 넘으면 서버가
+# 431로 거절합니다(api spec). 이 값은 struct mg_http_message의 크기를 바꾸므로,
+# mongoose.c와 mongoose.h를 읽는 모든 파일이 같은 값으로 컴파일되도록 여기에 둡니다.
+CPPFLAGS := -Isrc -D_POSIX_C_SOURCE=200809L -DMG_MAX_HTTP_HEADERS=64
 # Darwin 확장 선언은 Mongoose와 Acutest가 사용합니다. Linux 설정은 유지합니다.
 ifeq ($(shell uname -s),Darwin)
 CPPFLAGS += -D_DARWIN_C_SOURCE
