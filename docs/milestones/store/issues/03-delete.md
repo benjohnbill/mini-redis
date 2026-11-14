@@ -13,7 +13,7 @@
 - [x] 같은 key를 두 번 삭제하면 두 번째는 지운 것이 없다고 알린다
 - [x] 한 key를 삭제해도 다른 key는 그대로 조회된다
 - [x] 같은 key에 두 번 저장한 뒤 한 번 삭제하면 조회되지 않는다
-- [x] T1~T4를 `docs/requirements.md` L13의 `근거` 칸에 인용하고 `충족`을 갱신한다
+- [x] T1\~T4를 `docs/requirements.md` L13의 `근거` 칸에 인용하고 `충족`을 갱신한다
 - [x] `make verify`가 통과한다
 
 ## Comments

@@ -20,7 +20,7 @@ data: none
 
 ## 결론
 
-- 방해가 없을 때 작은 GET의 p99는 0.45~0.49 ms로, 목표([M3 spec](../../milestones/concurrency/spec.md) Q10, 10 ms)의 약 1/20입니다.
+- 방해가 없을 때 작은 GET의 p99는 0.45\~0.49 ms로, 목표([M3 spec](../../milestones/concurrency/spec.md) Q10, 10 ms)의 약 1/20입니다.
 - key 4,194,304개를 14.8초에 저장했습니다(초당 약 283,000개).
 
 ## 실험실 기준선 (티켓 01)

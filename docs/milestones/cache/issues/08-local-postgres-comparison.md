@@ -21,7 +21,7 @@ Status: ready-for-agent
 ## 구현과 검증
 
 - `demo/origin.h`로 상품 조회·목록·수정·삭제·준비를 나누고, SQLite 구현을 `demo/sqlite_origin.c`로 옮겼습니다. `demo/product_demo.c`는 HTTP와 캐시만 다룹니다. 기본 `make cache-demo`와 `make verify`는 계속 SQLite만 링크합니다.
-- `demo/postgres_origin.c`는 libpq로 연결을 재사용하고 `statement_timeout = 1000ms`를 설정합니다. `--db`가 `postgresql://` 연결 문자열이면 이 원본을 씁니다. 스키마는 같은 `id` key, `(price,id)` 인덱스, 1~120바이트 이름, 0~1,000,000,000 가격이고 `--seed`가 표를 만들고 기존 행을 지웁니다.
+- `demo/postgres_origin.c`는 libpq로 연결을 재사용하고 `statement_timeout = 1000ms`를 설정합니다. `--db`가 `postgresql://` 연결 문자열이면 이 원본을 씁니다. 스키마는 같은 `id` key, `(price,id)` 인덱스, 1\~120바이트 이름, 0\~1,000,000,000 가격이고 `--seed`가 표를 만들고 기존 행을 지웁니다.
 - 선택 빌드·실행은 `make cache-demo-postgres`, `make cache-functional-postgres POSTGRES_URL=...`, `make cache-bench-postgres POSTGRES_URL=...`입니다. 기본 빌드·CI·make verify는 libpq나 실행 중인 DB를 요구하지 않습니다.
 - 실제 PostgreSQL 16.15(Homebrew, 같은 컴퓨터, DB는 별도 프로세스)에서 `make cache-functional-postgres`로 상세 캐시·목록·검색·수정·삭제 무효화 3개 테스트가 통과했습니다.
 - 조회 전용 측정: 상품 10,000개 seed 1, 연결 32, 초당 500요청, 준비 3초, 측정 10초, 1회, TTL 60초, `python3 -B scripts/bench/cache_bench.py build/bench/cache-demo-postgres build/bench/mini-redis --db 'postgresql://127.0.0.1/mini_redis_bench' --warmup 3 --measure 10 --runs 1 --ttl 60 --scenario ...`. 상세 균등 p50 4.69→6.88ms(적중률 35.9%, 원본 5,024→3,220), 목록 반복 7.07→2.83ms(100%, 5,024→0), 검색 다양 25.23→36.46ms(0%, 5,024→5,024)입니다.
