@@ -125,9 +125,10 @@ CACHE_DEMO := $(BUILD)/cache-demo
 .PHONY: cache-demo cache-functional
 cache-demo: $(CACHE_DEMO)
 
-$(CACHE_DEMO): demo/product_demo.c $(MONGOOSE_OBJ) | $(BUILD)
-	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) $< $(MONGOOSE_OBJ) \
+$(CACHE_DEMO): demo/product_demo.c demo/cache_client.c demo/cache_client.h $(MONGOOSE_OBJ) | $(BUILD)
+	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) demo/product_demo.c demo/cache_client.c $(MONGOOSE_OBJ) \
 	    $(LDFLAGS) -lsqlite3 -o $@
 
-cache-functional: $(CACHE_DEMO)
+cache-functional: $(CACHE_DEMO) $(SERVER)
 	python3 -B tests/functional/cache_test.py $(CACHE_DEMO)
+	python3 -B tests/functional/detail_cache_test.py $(CACHE_DEMO) $(SERVER)

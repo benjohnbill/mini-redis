@@ -1,4 +1,5 @@
 #include "mongoose.h"
+#include "cache_client.h"
 #include <signal.h>
 #include <sqlite3.h>
 #include <stdbool.h>
@@ -17,16 +18,23 @@
 #define SQLITE_WAIT_MS 1000
 #define POLL_INTERVAL_MS 10
 #define LISTEN_URL_MAX 64
+#define CACHE_TTL_DEFAULT 60
+#define CACHE_TIMEOUT_DEFAULT 100
 
 struct options {
     const char *database;
     int port;
     int seed;
     int count;
+    const char *cache_mode;
+    const char *cache_url;
+    int ttl_seconds;
+    int cache_timeout_ms;
 };
 
 struct demo {
     sqlite3 *database;
+    struct cache_client cache;
     uint64_t product_gets;
     uint64_t origin_queries;
     uint64_t origin_failures;
@@ -34,6 +42,7 @@ struct demo {
 
 static volatile sig_atomic_t stop_requested;
 static bool options_parse(int argc, char **argv, struct options *options);
+static bool cache_url_is_valid(const char *url);
 static bool integer_parse(const char *text, size_t text_len, int maximum,
                           int *value);
 static bool database_open(const struct options *options, sqlite3 **database);
@@ -58,10 +67,11 @@ int main(int argc, char **argv)
 {
     struct options options = {.count = PRODUCT_COUNT_DEFAULT};
     if (!options_parse(argc, argv, &options)) {
-        fprintf(stderr,
-                "usage: %s --db PATH --port N --cache off\n"
-                "       %s --db PATH --seed N [--count N]\n",
-                argv[0], argv[0]);
+        fprintf(
+            stderr,
+            "usage: %s --db PATH --port N --cache on|off [--cache-url URL]\n"
+            "       %s --db PATH --seed N [--count N]\n",
+            argv[0], argv[0]);
         return 2;
     }
     struct demo demo = {0};
@@ -73,7 +83,12 @@ int main(int argc, char **argv)
     if (options.seed != 0) {
         exit_code = database_seed(demo.database, &options) ? 0 : 1;
     } else {
-        exit_code = server_run(&demo, options.port);
+        bool initialized = cache_client_init(
+            &demo.cache,
+            strcmp(options.cache_mode, "on") == 0 ? options.cache_url : NULL,
+            options.ttl_seconds, options.cache_timeout_ms);
+        exit_code = initialized ? server_run(&demo, options.port) : 1;
+        cache_client_destroy(&demo.cache);
     }
     sqlite3_close(demo.database);
 
@@ -82,7 +97,7 @@ int main(int argc, char **argv)
 
 static bool options_parse(int argc, char **argv, struct options *options)
 {
-    bool cache_off = false;
+
     bool has_count = false;
     for (int i = 1; i < argc; i += 2) {
         if (i + 1 == argc) {
@@ -112,18 +127,84 @@ static bool options_parse(int argc, char **argv, struct options *options)
                 options->count == 0) {
                 return false;
             }
-        } else if (strcmp(name, "--cache") == 0 && !cache_off &&
-                   strcmp(value, "off") == 0) {
-            cache_off = true;
+        } else if (strcmp(name, "--cache") == 0 &&
+                   options->cache_mode == NULL &&
+                   (strcmp(value, "off") == 0 || strcmp(value, "on") == 0)) {
+            options->cache_mode = value;
+        } else if (strcmp(name, "--cache-url") == 0 &&
+                   options->cache_url == NULL) {
+            if (!cache_url_is_valid(value)) {
+                return false;
+            }
+            options->cache_url = value;
+        } else if (strcmp(name, "--ttl-seconds") == 0 &&
+                   options->ttl_seconds == 0) {
+            if (!integer_parse(value, strlen(value), PRODUCT_ID_MAX,
+                               &options->ttl_seconds) ||
+                options->ttl_seconds == 0) {
+                return false;
+            }
+        } else if (strcmp(name, "--cache-timeout-ms") == 0 &&
+                   options->cache_timeout_ms == 0) {
+            if (!integer_parse(value, strlen(value), PRODUCT_ID_MAX,
+                               &options->cache_timeout_ms) ||
+                options->cache_timeout_ms == 0) {
+                return false;
+            }
         } else {
             return false;
         }
     }
 
+    bool cache_options = options->cache_url != NULL ||
+                         options->ttl_seconds != 0 ||
+                         options->cache_timeout_ms != 0;
+    if (options->ttl_seconds == 0) {
+        options->ttl_seconds = CACHE_TTL_DEFAULT;
+    }
+    if (options->cache_timeout_ms == 0) {
+        options->cache_timeout_ms = CACHE_TIMEOUT_DEFAULT;
+    }
+    if (options->cache_url == NULL) {
+        options->cache_url = "http://127.0.0.1:8000";
+    }
+
     return options->database != NULL &&
-           ((options->seed != 0 && options->port == 0 && !cache_off) ||
-            (options->seed == 0 && options->port != 0 && cache_off &&
-             !has_count));
+           ((options->seed != 0 && options->port == 0 &&
+             options->cache_mode == NULL && !cache_options) ||
+            (options->seed == 0 && options->port != 0 &&
+             options->cache_mode != NULL && !has_count));
+}
+
+static bool cache_url_is_valid(const char *url)
+{
+    if (strncmp(url, "http://", 7) != 0 || strcmp(mg_url_uri(url), "/") != 0 ||
+        strpbrk(url, "\r\n\t @?#\\") != NULL) {
+        return false;
+    }
+    const char *authority = url + 7;
+    const char *end = strchr(authority, '/');
+    if (end == NULL) {
+        end = authority + strlen(authority);
+    }
+    const char *port = memchr(authority, ':', (size_t)(end - authority));
+    const char *host_end = port == NULL ? end : port;
+    if (host_end == authority) {
+        return false;
+    }
+    for (const char *letter = authority; letter < host_end; letter++) {
+        if (!((*letter >= 'a' && *letter <= 'z') ||
+              (*letter >= 'A' && *letter <= 'Z') ||
+              (*letter >= '0' && *letter <= '9') || *letter == '.' ||
+              *letter == '-')) {
+            return false;
+        }
+    }
+    int number = 0;
+
+    return port == NULL || (integer_parse(port + 1, (size_t)(end - port - 1),
+                                          PORT_MAX, &number) &&
+                            number > 0);
 }
 
 static bool integer_parse(const char *text, size_t text_len, int maximum,
@@ -248,7 +329,7 @@ static void stop_signal_handle(int signum)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
-    if (event == MG_EV_HTTP_MSG) {
+    if (event == MG_EV_HTTP_MSG && !connection->is_draining) {
         request_handle(connection, event_data);
     }
 }
@@ -304,19 +385,41 @@ static void error_send(struct mg_connection *connection, int status,
 static void stats_send(struct mg_connection *connection,
                        const struct demo *demo)
 {
-    mg_http_reply(connection, 200, "Content-Type: application/json\r\n",
-                  "{\"product_gets\":%llu,\"origin_queries\":%llu,"
-                  "\"origin_failures\":%llu,\"cache_bypasses\":%llu,"
-                  "\"cache_state\":\"off\"}",
-                  (unsigned long long)demo->product_gets,
-                  (unsigned long long)demo->origin_queries,
-                  (unsigned long long)demo->origin_failures,
-                  (unsigned long long)demo->product_gets);
+    const struct cache_client *cache = &demo->cache;
+    mg_http_reply(
+        connection, 200, "Content-Type: application/json\r\n",
+        "{\"product_gets\":%llu,\"origin_queries\":%llu,"
+        "\"origin_failures\":%llu,\"cache_bypasses\":%llu,"
+        "\"cache_gets\":%llu,\"cache_hits\":%llu,\"cache_misses\":%llu,"
+        "\"cache_get_errors\":%llu,\"cache_errors\":%llu,"
+        "\"cache_puts\":%llu,\"cache_put_failures\":%llu,"
+        "\"cache_state\":\"%s\"}",
+        (unsigned long long)demo->product_gets,
+        (unsigned long long)demo->origin_queries,
+        (unsigned long long)demo->origin_failures,
+        (unsigned long long)cache->bypasses, (unsigned long long)cache->gets,
+        (unsigned long long)cache->hits, (unsigned long long)cache->misses,
+        (unsigned long long)cache->get_errors,
+        (unsigned long long)(cache->get_errors + cache->put_failures),
+        (unsigned long long)cache->puts,
+        (unsigned long long)cache->put_failures,
+        !cache->enabled ? "off"
+        : cache->active ? "active"
+                        : "suspended");
 }
 
 static void product_send(struct mg_connection *connection, struct demo *demo,
                          int product_id)
 {
+    char key[64];
+    snprintf(key, sizeof key, "detail:%d", product_id);
+    char *cached = cache_client_get(&demo->cache, key);
+    if (cached != NULL) {
+        mg_http_reply(connection, 200, "Content-Type: application/json\r\n",
+                      "%s", cached);
+        free(cached);
+        return;
+    }
     demo->origin_queries++;
     sqlite3_stmt *statement = NULL;
     int result = sqlite3_prepare_v2(
@@ -332,10 +435,19 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
         result = SQLITE_MISMATCH;
     }
     if (result == SQLITE_ROW) {
-        mg_http_reply(connection, 200, "Content-Type: application/json\r\n",
-                      "{\"id\":%d,\"name\":%m,\"price\":%lld}", product_id,
-                      MG_ESC((const char *)sqlite3_column_text(statement, 1)),
-                      (long long)sqlite3_column_int64(statement, 2));
+        char *body =
+            mg_mprintf("{\"id\":%d,\"name\":%m,\"price\":%lld}", product_id,
+                       MG_ESC((const char *)sqlite3_column_text(statement, 1)),
+                       (long long)sqlite3_column_int64(statement, 2));
+        if (body == NULL) {
+            error_send(connection, 503, "origin_unavailable");
+            demo->origin_failures++;
+        } else {
+            cache_client_set(&demo->cache, key, body);
+            mg_http_reply(connection, 200, "Content-Type: application/json\r\n",
+                          "%s", body);
+            free(body);
+        }
     } else if (result == SQLITE_DONE) {
         error_send(connection, 404, "product_not_found");
     } else {

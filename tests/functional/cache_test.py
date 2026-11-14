@@ -12,13 +12,14 @@ from api_test import Server, free_port, expect, SANITIZER_MARKS
 
 
 class Demo(Server):
-    def __init__(self, binary, database):
+    def __init__(self, binary, database, cache_arguments=None):
         self.binary = binary
         self.database = database
         self.port = free_port()
         self.log = tempfile.TemporaryFile()
         self.process = subprocess.Popen(
-            [binary, '--db', database, '--port', str(self.port), '--cache', 'off'],
+            [binary, '--db', database, '--port', str(self.port),
+             *(cache_arguments or ['--cache', 'off'])],
             stdout=self.log, stderr=self.log)
 
 
@@ -154,7 +155,7 @@ def lifecycle_and_cli(server):
                           ['--db', database, '--seed', '1', '--count', '0'],
                           ['--db', database, '--seed', '2147483647'],
                           ['--db', database, '--port', '65536', '--cache', 'off'],
-                          ['--db', database, '--port', '8080', '--cache', 'on'],
+                          ['--db', database, '--port', '8080', '--cache', 'invalid'],
                           ['--db', database, '--port', '8080', '--cache', 'off', '--port', '8081']]:
             command_check(binary, arguments, 2)
         command_check(binary, ['--db', database, '--seed', '1', '--count', '3'], 0)
