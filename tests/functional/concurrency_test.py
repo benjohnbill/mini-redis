@@ -275,6 +275,34 @@ def open_connections_served_while_rejecting(server):
         close_all(connections)
 
 
+# ── 테스트: 헤더만 보고 거절한 요청 ───────────────────────────
+
+def wait_until_closed(connection):
+    """서버가 연결을 닫을 때까지 기다립니다. 받은 바이트는 확인하지 않습니다.
+    서버가 읽지 않은 데이터를 남긴 채 닫으면 커널이 연결을 리셋해 응답이 오지 않을
+    수 있으므로, 리셋도 닫힌 것으로 봅니다."""
+    try:
+        while connection.recv(RECV_SIZE):
+            pass
+    except ConnectionResetError:
+        pass
+    except socket.timeout:
+        raise AssertionError(f"서버가 {REQUEST_TIMEOUT:.0f}초 동안 거절한 연결을 닫지 않습니다") from None
+
+
+def body_sent_with_rejected_headers_is_not_stored(server):
+    head = f"PUT /keys/rejected-body HTTP/1.1\r\nHost: x\r\nContent-Length: {BODY_MAX + 1}\r\n\r\n"
+    with server.connect() as rejected:
+        # 헤더와 body 앞 10바이트를 한 번에 보내, 서버가 413을 정할 때 body 조각을 이미 받아 두게 합니다.
+        rejected.sendall(head.encode("ascii") + b"0123456789")
+        # 서버가 연결을 닫을 때 받아 둔 body 조각을 저장하지 않는지 보려고, 닫힌 뒤에 조회합니다.
+        wait_until_closed(rejected)
+
+    status, _, body = server.request("GET", "/keys/rejected-body")
+    expect(status, 404, "거절한 저장 뒤 조회의 상태 코드")
+    expect(body, b'{"error":"key_not_found"}', "거절한 저장 뒤 조회의 body")
+
+
 # ── 테스트: 쉬는 시간 기한 ────────────────────────────────────
 
 def read_until_closed(connection):
@@ -344,6 +372,15 @@ def idle_after_response_closes_silently(server):
 
     expect(status_line.split(b" ")[1:2], [b"404"], "첫 응답의 상태 코드")
     expect_not_early(elapsed, "쉬는 연결")
+    expect(received, b"", "닫히기 전에 받은 바이트")
+
+
+def connection_sending_nothing_closes_silently(server):
+    # 연결만 열고 요청은 한 바이트도 보내지 않습니다.
+    with server.connect() as silent:
+        received, elapsed = read_until_closed(silent)
+
+    expect_not_early(elapsed, "아무것도 보내지 않은 연결")
     expect(received, b"", "닫히기 전에 받은 바이트")
 
 
@@ -424,6 +461,8 @@ TESTS = [
      freed_slot_accepts_new_connection),
     ("(기능) 129번째 연결이 거절되는 동안에도 이미 열린 연결의 요청은 정상 응답을 받는다",
      open_connections_served_while_rejecting),
+    ("(기능) 413으로 거절한 연결이 함께 보낸 body는 저장되지 않는다",
+     body_sent_with_rejected_headers_is_not_stored),
 ]
 
 # 모두 기한만큼 기다리므로 스레드로 함께 돌립니다.
@@ -433,6 +472,7 @@ WAITING_TESTS = [
     ("(기능) body를 보내다 10초 동안 멈춘 연결은 408과 request_timeout을 받고 닫힌다",
      stalled_body_gets_408_and_close),
     ("(기능) 응답을 받은 뒤 10초 동안 쉬는 연결은 응답 없이 닫힌다", idle_after_response_closes_silently),
+    ("(기능) 아무것도 보내지 않은 연결은 10초 뒤 응답 없이 닫힌다", connection_sending_nothing_closes_silently),
     ("(기능) body를 10초보다 오래 걸려 꾸준히 보내는 연결은 끊기지 않고 저장된다", steady_slow_body_is_stored),
     ("(기능) 16 MiB 응답을 10초보다 오래 걸려 천천히 받아 가는 연결은 끊기지 않는다",
      slow_reader_of_large_response_is_kept),
