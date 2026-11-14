@@ -25,6 +25,10 @@ struct cache_client {
     uint64_t put_failures;
     uint64_t deletes;
     uint64_t delete_failures;
+    uint64_t probes;
+    uint64_t probe_failures;
+    uint64_t recoveries;
+    uint64_t probe_ms;
 };
 
 bool cache_client_init(struct cache_client *cache, const char *url,
@@ -36,5 +40,7 @@ void cache_client_set(struct cache_client *cache, const char *key,
                       const char *body);
 /* A missing key is a successful invalidation; other failures suspend the cache. */
 void cache_client_delete(struct cache_client *cache, const char *key);
+/* Probes at most once per second while suspended; true means a new namespace. */
+bool cache_client_recover(struct cache_client *cache);
 
 #endif

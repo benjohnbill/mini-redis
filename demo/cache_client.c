@@ -5,6 +5,7 @@
 #define CACHE_POLL_MS 5
 #define CACHE_KEY_MAX 4096
 #define NAMESPACE_BYTES 16
+#define RECOVER_INTERVAL_MS 1000
 
 static void cache_event_handle(struct mg_connection *connection, int event,
                                void *event_data);
@@ -12,7 +13,9 @@ static int cache_request(struct cache_client *cache, const char *method,
                          const char *key, const char *body);
 static bool request_send(struct cache_client *cache, const char *method,
                          const char *key, const char *body);
+static bool namespace_new(struct cache_client *cache);
 static void cache_suspend(struct cache_client *cache);
+static void cache_connection_close(struct cache_client *cache);
 
 bool cache_client_init(struct cache_client *cache, const char *url,
                        int ttl_seconds, int timeout_ms)
@@ -23,13 +26,8 @@ bool cache_client_init(struct cache_client *cache, const char *url,
     cache->active = cache->enabled;
     cache->ttl_seconds = ttl_seconds;
     cache->timeout_ms = timeout_ms;
-    if (cache->enabled) {
-        unsigned char random[NAMESPACE_BYTES];
-        if (!mg_random(random, sizeof random)) {
-            return false;
-        }
-        mg_snprintf(cache->namespace, sizeof cache->namespace, "%M",
-                    mg_print_hex, (int)sizeof random, random);
+    if (cache->enabled && !namespace_new(cache)) {
+        return false;
     }
 
     return true;
@@ -89,6 +87,32 @@ void cache_client_delete(struct cache_client *cache, const char *key)
         cache->delete_failures++;
         cache_suspend(cache);
     }
+}
+
+bool cache_client_recover(struct cache_client *cache)
+{
+    if (!cache->enabled || cache->active) {
+        return false;
+    }
+    uint64_t now = mg_millis();
+    if (cache->probe_ms != 0 && now - cache->probe_ms < RECOVER_INTERVAL_MS) {
+        return false;
+    }
+    cache->probe_ms = now;
+    cache->probes++;
+    if (cache_request(cache, "GET", "probe", NULL) != 404) {
+        cache->probe_failures++;
+        cache_connection_close(cache);
+        return false;
+    }
+    if (!namespace_new(cache)) {
+        cache_connection_close(cache);
+        return false;
+    }
+    cache->recoveries++;
+    cache->active = true;
+
+    return true;
 }
 
 static int cache_request(struct cache_client *cache, const char *method,
@@ -187,13 +211,31 @@ static bool request_send(struct cache_client *cache, const char *method,
     return body_len == 0 || mg_send(cache->connection, body, body_len);
 }
 
+static bool namespace_new(struct cache_client *cache)
+{
+    unsigned char random[NAMESPACE_BYTES];
+    if (!mg_random(random, sizeof random)) {
+        return false;
+    }
+    mg_snprintf(cache->namespace, sizeof cache->namespace, "%M", mg_print_hex,
+                (int)sizeof random, random);
+
+    return true;
+}
+
 static void cache_suspend(struct cache_client *cache)
 {
     cache->active = false;
+    cache_connection_close(cache);
+}
+
+static void cache_connection_close(struct cache_client *cache)
+{
     if (cache->connection != NULL) {
         cache->connection->is_closing = 1;
         /* The request callback has returned; release its socket and buffers. */
         mg_mgr_poll(&cache->manager, 0);
+        cache->connection = NULL;
     }
     free(cache->body);
     cache->body = NULL;

@@ -48,30 +48,35 @@ class ScriptedCache:
             except OSError:
                 continue
             with connection:
-                connection.settimeout(2)
-                try:
-                    data = b''
-                    while b'\r\n\r\n' not in data:
-                        part = connection.recv(4096)
-                        if not part:
-                            break
-                        data += part
-                    head = data.split(b'\r\n\r\n', 1)[0].decode()
-                    method, path = head.split(' ')[:2]
-                    length = 0
-                    for line in head.split('\r\n')[1:]:
-                        if line.lower().startswith('content-length:'):
-                            length = int(line.split(':')[1])
-                    body = data.split(b'\r\n\r\n', 1)[1] if b'\r\n\r\n' in data else b''
-                    while len(body) < length:
-                        body += connection.recv(length - len(body))
-                    self.requests.append((method, path))
-                    status, payload = self.answers[method]
-                    head = (f'HTTP/1.1 {status} X\r\n'
+                self.handle(connection)
+
+    def handle(self, connection):
+        connection.settimeout(2)
+        data = b''
+        try:
+            while not self.stopped:
+                while b'\r\n\r\n' not in data:
+                    part = connection.recv(4096)
+                    if not part:
+                        return
+                    data += part
+                head, data = data.split(b'\r\n\r\n', 1)
+                head = head.decode()
+                method, path = head.split(' ')[:2]
+                length = 0
+                for line in head.split('\r\n')[1:]:
+                    if line.lower().startswith('content-length:'):
+                        length = int(line.split(':')[1])
+                while len(data) < length:
+                    data += connection.recv(length - len(data))
+                data = data[length:]
+                self.requests.append((method, path))
+                status, payload = self.answers[method]
+                response = (f'HTTP/1.1 {status} X\r\n'
                             f'Content-Length: {len(payload)}\r\n\r\n')
-                    connection.sendall(head.encode() + payload)
-                except (OSError, ValueError):
-                    pass
+                connection.sendall(response.encode() + payload)
+        except (OSError, ValueError):
+            pass
 
     def stop(self):
         self.stopped = True

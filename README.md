@@ -54,9 +54,11 @@ make cache-functional  # 임시 DB와 실제 HTTP 서버를 사용하는 sanitiz
 
 원본 변경이 성공하면 해당 상세 key를 DELETE하고 목록 세대를 하나 올립니다. 목록·검색 key에 세대가 들어 있으므로 이전 세대의 응답은 다시 읽히지 않고 TTL과 주기 청소로 회수됩니다. 다른 상품의 상세 key는 지우지 않습니다. 이 넓은 무효화는 변경과 무관한 목록·검색 응답도 버리므로 수정이 잦으면 적중률이 떨어집니다. 상세 DELETE가 204나 404 `key_not_found`가 아니면 캐시 사용을 중단하고 수정은 성공으로 응답합니다. 서버는 상품 요청 하나를 원본·캐시 처리까지 끝낸 뒤 다음 요청을 처리하므로 수정과 조회가 중간에 섞이지 않습니다.
 
-`GET /stats`는 이 실행의 `product_gets`(유효한 상품 GET), `origin_queries`(404와 실패를 포함한 원본 조회 시도), `origin_failures`(원본 조회·변경 실패), `origin_changes`(원본 변경 성공), `invalidations`(목록 세대를 올린 논리적 무효화 수), `cache_bypasses`(캐시 미사용 조회), `cache_state`(`off`, `active`, `suspended`)를 반환합니다. 통계 요청과 준비 작업은 원본 조회로 세지 않습니다. 추가 카운터는 `cache_gets`(GET 시도), `cache_hits`(200), `cache_misses`(404), `cache_get_errors`(그 외 상태·통신 오류), `cache_puts`(PUT 시도), `cache_put_failures`(PUT 실패), `cache_deletes`(무효화 DELETE 시도), `cache_delete_failures`(204·404가 아닌 DELETE), `cache_errors`(GET 오류 + PUT 실패 + DELETE 실패)입니다. 적중률 분모는 `cache_gets = cache_hits + cache_misses + cache_get_errors`이며, off 또는 중단 상태의 조회는 `cache_bypasses`로만 셉니다.
+`GET /stats`는 이 실행의 `product_gets`(유효한 상품 GET), `origin_queries`(404와 실패를 포함한 원본 조회 시도), `origin_failures`(원본 조회·변경 실패), `origin_changes`(원본 변경 성공), `invalidations`(목록 세대를 올린 논리적 무효화 수), `cache_bypasses`(캐시 미사용 조회), `cache_state`(`off`, `active`, `suspended`)를 반환합니다. 통계 요청과 준비 작업은 원본 조회로 세지 않습니다. 추가 카운터는 `cache_gets`(GET 시도), `cache_hits`(200), `cache_misses`(404), `cache_get_errors`(그 외 상태·통신 오류), `cache_puts`(PUT 시도), `cache_put_failures`(PUT 실패), `cache_deletes`(무효화 DELETE 시도), `cache_delete_failures`(204·404가 아닌 DELETE), `cache_probes`(상태 확인 시도), `cache_probe_failures`(상태 확인 실패), `cache_recoveries`(재개 횟수), `cache_errors`(GET 오류 + PUT 실패 + DELETE 실패)입니다. 적중률 분모는 `cache_gets = cache_hits + cache_misses + cache_get_errors`이며, off 또는 중단 상태의 조회는 `cache_bypasses`로만 셉니다.
 
-정상 200 body만 TTL 헤더를 붙여 저장하며, 적중 시 TTL을 늘리지 않습니다. 실행마다 새 식별자로 이전 캐시와 격리합니다. 캐시 GET·PUT 오류 뒤에는 `suspended` 상태로 원본만 사용합니다. 자동 재연결과 재개는 아직 구현하지 않았습니다.
+정상 200 body만 TTL 헤더를 붙여 저장하며, 적중 시 TTL을 늘리지 않습니다. 실행마다 새 식별자로 이전 캐시와 격리합니다.
+
+캐시 GET·PUT·DELETE의 연결 실패, 기한 초과, 응답 중 연결 종료, 오류 상태는 캐시 오류로 보고 `suspended`로 바꿉니다. 오류 뒤 연결을 닫고, 그 응답은 원본에서 만든 것을 그대로 돌려줍니다. 중단 중 실제 상품 요청이 오면 1초에 한 번만 전용 key GET으로 상태를 확인합니다. 정상적인 404 `key_not_found`를 받으면 새 실행 식별자와 초기 목록 세대로 재개하고, 실패하면 원본만 사용합니다. 이전 식별자의 key는 읽지 않고 TTL과 주기 청소로 회수되므로, 늦게 도착한 이전 PUT이나 재시작 전 값은 새 실행에서 재사용되지 않습니다. 유휴 중 배경 작업은 없습니다. 재현: `./build/mini-redis 8080`을 띄우고 데모를 `--cache on`으로 시작해 `/products/1`을 두 번 조회한 뒤, mini-redis를 끄고 다시 조회하면 `/stats`의 `cache_get_errors`가 늘고 `cache_state`가 `suspended`가 됩니다. mini-redis를 다시 띄우고 1초 뒤 조회하면 `cache_recoveries`가 늘고 첫 조회는 원본을, 다음 조회는 새 key를 사용합니다. 한계: 단일 프로세스만 같은 캐시를 쓰며, 재개 판정은 지연된 이전 PUT의 도착이 아니라 새 식별자로 격리합니다.
 
 ## API
 

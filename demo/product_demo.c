@@ -115,6 +115,7 @@ static bool update_parse(struct mg_str body, char *name, size_t *name_len,
 static int product_change(struct demo *demo, const char *sql, int product_id,
                           const char *name, size_t name_len, int price);
 static void cache_invalidate(struct demo *demo, int product_id);
+static void cache_recover(struct demo *demo);
 static void body_send(struct mg_connection *connection, const char *body);
 static char *product_read(struct demo *demo, int product_id, int *status);
 static bool product_is_valid(sqlite3_stmt *statement);
@@ -480,7 +481,8 @@ static void stats_send(struct mg_connection *connection,
         "\"cache_get_errors\":%llu,\"cache_errors\":%llu,"
         "\"cache_puts\":%llu,\"cache_put_failures\":%llu,"
         "\"cache_deletes\":%llu,\"cache_delete_failures\":%llu,"
-        "\"cache_state\":\"%s\"}",
+        "\"cache_probes\":%llu,\"cache_probe_failures\":%llu,"
+        "\"cache_recoveries\":%llu,\"cache_state\":\"%s\"}",
         (unsigned long long)demo->product_gets,
         (unsigned long long)demo->origin_queries,
         (unsigned long long)demo->origin_failures,
@@ -495,6 +497,9 @@ static void stats_send(struct mg_connection *connection,
         (unsigned long long)cache->put_failures,
         (unsigned long long)cache->deletes,
         (unsigned long long)cache->delete_failures,
+        (unsigned long long)cache->probes,
+        (unsigned long long)cache->probe_failures,
+        (unsigned long long)cache->recoveries,
         !cache->enabled ? "off"
         : cache->active ? "active"
                         : "suspended");
@@ -509,6 +514,7 @@ static void list_send(struct mg_connection *connection, struct demo *demo,
         return;
     }
     demo->product_gets++;
+    cache_recover(demo);
     char key[LIST_KEY_MAX];
     list_key(demo, &list, key, sizeof key);
     char *cached = cache_client_get(&demo->cache, key);
@@ -728,6 +734,7 @@ static bool text_append(struct text *text, const char *piece)
 static void product_send(struct mg_connection *connection, struct demo *demo,
                          int product_id)
 {
+    cache_recover(demo);
     char key[64];
     snprintf(key, sizeof key, "detail:%d", product_id);
     char *cached = cache_client_get(&demo->cache, key);
@@ -873,6 +880,13 @@ static int product_change(struct demo *demo, const char *sql, int product_id,
     sqlite3_finalize(statement);
 
     return !committed ? 503 : changes > 0 ? 204 : 404;
+}
+
+static void cache_recover(struct demo *demo)
+{
+    if (cache_client_recover(&demo->cache)) {
+        demo->list_generation = 0;
+    }
 }
 
 static void cache_invalidate(struct demo *demo, int product_id)
