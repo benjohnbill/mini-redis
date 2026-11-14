@@ -78,35 +78,6 @@ void cache_client_set(struct cache_client *cache, const char *key,
     }
 }
 
-static void cache_event_handle(struct mg_connection *connection, int event,
-                               void *event_data)
-{
-    struct cache_client *cache = connection->fn_data;
-    if (event == MG_EV_HTTP_MSG && cache->pending) {
-        struct mg_http_message *message = event_data;
-        cache->status = mg_http_status(message);
-        if (cache->status == 200) {
-            cache->body = malloc(message->body.len + 1);
-            if (cache->body == NULL) {
-                cache->status = 0;
-            } else {
-                memcpy(cache->body, message->body.buf, message->body.len);
-                cache->body[message->body.len] = '\0';
-            }
-        }
-        cache->done = true;
-    } else if (event == MG_EV_ERROR) {
-        cache->status = 0;
-        cache->done = true;
-    } else if (event == MG_EV_CLOSE) {
-        cache->connection = NULL;
-        if (cache->pending && !cache->done) {
-            cache->status = 0;
-            cache->done = true;
-        }
-    }
-}
-
 static int cache_request(struct cache_client *cache, const char *method,
                          const char *key, const char *body)
 {
@@ -137,6 +108,42 @@ static int cache_request(struct cache_client *cache, const char *method,
     cache->pending = false;
 
     return cache->status;
+}
+
+static void cache_event_handle(struct mg_connection *connection, int event,
+                               void *event_data)
+{
+    struct cache_client *cache = connection->fn_data;
+    if (event == MG_EV_HTTP_MSG && cache->pending) {
+        struct mg_http_message *message = event_data;
+        cache->status = mg_http_status(message);
+        if (cache->status == 404) {
+            char *reason = mg_json_get_str(message->body, "$.error");
+            if (reason == NULL || strcmp(reason, "key_not_found") != 0) {
+                cache->status = 0;
+            }
+            free(reason);
+        }
+        if (cache->status == 200) {
+            cache->body = malloc(message->body.len + 1);
+            if (cache->body == NULL) {
+                cache->status = 0;
+            } else {
+                memcpy(cache->body, message->body.buf, message->body.len);
+                cache->body[message->body.len] = '\0';
+            }
+        }
+        cache->done = true;
+    } else if (event == MG_EV_ERROR) {
+        cache->status = 0;
+        cache->done = true;
+    } else if (event == MG_EV_CLOSE) {
+        cache->connection = NULL;
+        if (cache->pending && !cache->done) {
+            cache->status = 0;
+            cache->done = true;
+        }
+    }
 }
 
 static bool request_send(struct cache_client *cache, const char *method,
@@ -172,6 +179,8 @@ static void cache_suspend(struct cache_client *cache)
     cache->active = false;
     if (cache->connection != NULL) {
         cache->connection->is_closing = 1;
+        /* The request callback has returned; release its socket and buffers. */
+        mg_mgr_poll(&cache->manager, 0);
     }
     free(cache->body);
     cache->body = NULL;

@@ -42,6 +42,7 @@ struct demo {
 
 static volatile sig_atomic_t stop_requested;
 static bool options_parse(int argc, char **argv, struct options *options);
+static bool positive_integer_parse(const char *text, int maximum, int *value);
 static bool cache_url_is_valid(const char *url);
 static bool integer_parse(const char *text, size_t text_len, int maximum,
                           int *value);
@@ -58,6 +59,8 @@ static void error_send(struct mg_connection *connection, int status,
                        const char *reason);
 static void stats_send(struct mg_connection *connection,
                        const struct demo *demo);
+static void body_send(struct mg_connection *connection, const char *body);
+static char *product_read(struct demo *demo, int product_id, int *status);
 static bool product_is_valid(sqlite3_stmt *statement);
 static bool name_is_valid(const unsigned char *name, int name_len);
 static void product_send(struct mg_connection *connection, struct demo *demo,
@@ -109,22 +112,17 @@ static bool options_parse(int argc, char **argv, struct options *options)
             value[0] != '\0') {
             options->database = value;
         } else if (strcmp(name, "--port") == 0 && options->port == 0) {
-            if (!integer_parse(value, strlen(value), PORT_MAX,
-                               &options->port) ||
-                options->port == 0) {
+            if (!positive_integer_parse(value, PORT_MAX, &options->port)) {
                 return false;
             }
         } else if (strcmp(name, "--seed") == 0 && options->seed == 0) {
-            if (!integer_parse(value, strlen(value), SEED_MAX,
-                               &options->seed) ||
-                options->seed == 0) {
+            if (!positive_integer_parse(value, SEED_MAX, &options->seed)) {
                 return false;
             }
         } else if (strcmp(name, "--count") == 0 && !has_count) {
             has_count = true;
-            if (!integer_parse(value, strlen(value), PRODUCT_ID_MAX,
-                               &options->count) ||
-                options->count == 0) {
+            if (!positive_integer_parse(value, PRODUCT_ID_MAX,
+                                        &options->count)) {
                 return false;
             }
         } else if (strcmp(name, "--cache") == 0 &&
@@ -139,16 +137,14 @@ static bool options_parse(int argc, char **argv, struct options *options)
             options->cache_url = value;
         } else if (strcmp(name, "--ttl-seconds") == 0 &&
                    options->ttl_seconds == 0) {
-            if (!integer_parse(value, strlen(value), PRODUCT_ID_MAX,
-                               &options->ttl_seconds) ||
-                options->ttl_seconds == 0) {
+            if (!positive_integer_parse(value, PRODUCT_ID_MAX,
+                                        &options->ttl_seconds)) {
                 return false;
             }
         } else if (strcmp(name, "--cache-timeout-ms") == 0 &&
                    options->cache_timeout_ms == 0) {
-            if (!integer_parse(value, strlen(value), PRODUCT_ID_MAX,
-                               &options->cache_timeout_ms) ||
-                options->cache_timeout_ms == 0) {
+            if (!positive_integer_parse(value, PRODUCT_ID_MAX,
+                                        &options->cache_timeout_ms)) {
                 return false;
             }
         } else {
@@ -174,6 +170,11 @@ static bool options_parse(int argc, char **argv, struct options *options)
              options->cache_mode == NULL && !cache_options) ||
             (options->seed == 0 && options->port != 0 &&
              options->cache_mode != NULL && !has_count));
+}
+
+static bool positive_integer_parse(const char *text, int maximum, int *value)
+{
+    return integer_parse(text, strlen(text), maximum, value) && *value > 0;
 }
 
 static bool cache_url_is_valid(const char *url)
@@ -415,11 +416,30 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
     snprintf(key, sizeof key, "detail:%d", product_id);
     char *cached = cache_client_get(&demo->cache, key);
     if (cached != NULL) {
-        mg_http_reply(connection, 200, "Content-Type: application/json\r\n",
-                      "%s", cached);
+        body_send(connection, cached);
         free(cached);
         return;
     }
+    int status = 0;
+    char *body = product_read(demo, product_id, &status);
+    if (body == NULL) {
+        error_send(connection, status,
+                   status == 404 ? "product_not_found" : "origin_unavailable");
+        return;
+    }
+    cache_client_set(&demo->cache, key, body);
+    body_send(connection, body);
+    free(body);
+}
+
+static void body_send(struct mg_connection *connection, const char *body)
+{
+    mg_http_reply(connection, 200, "Content-Type: application/json\r\n", "%s",
+                  body);
+}
+
+static char *product_read(struct demo *demo, int product_id, int *status)
+{
     demo->origin_queries++;
     sqlite3_stmt *statement = NULL;
     int result = sqlite3_prepare_v2(
@@ -434,27 +454,20 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
     if (result == SQLITE_ROW && !product_is_valid(statement)) {
         result = SQLITE_MISMATCH;
     }
+    char *body = NULL;
     if (result == SQLITE_ROW) {
-        char *body =
+        body =
             mg_mprintf("{\"id\":%d,\"name\":%m,\"price\":%lld}", product_id,
                        MG_ESC((const char *)sqlite3_column_text(statement, 1)),
                        (long long)sqlite3_column_int64(statement, 2));
-        if (body == NULL) {
-            error_send(connection, 503, "origin_unavailable");
-            demo->origin_failures++;
-        } else {
-            cache_client_set(&demo->cache, key, body);
-            mg_http_reply(connection, 200, "Content-Type: application/json\r\n",
-                          "%s", body);
-            free(body);
-        }
-    } else if (result == SQLITE_DONE) {
-        error_send(connection, 404, "product_not_found");
-    } else {
+    }
+    *status = result == SQLITE_DONE ? 404 : body == NULL ? 503 : 200;
+    if (*status == 503) {
         demo->origin_failures++;
-        error_send(connection, 503, "origin_unavailable");
     }
     sqlite3_finalize(statement);
+
+    return body;
 }
 
 static bool product_is_valid(sqlite3_stmt *statement)

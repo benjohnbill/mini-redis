@@ -5,6 +5,8 @@ import sys
 import tempfile
 import sqlite3
 import time
+import socket
+import threading
 from api_test import Server, expect
 from cache_test import Demo, command_check, read_json, stopped_check
 
@@ -125,6 +127,77 @@ def off_skips_cache(binary, database, arguments):
     finally:
         stopped_check(off)
 
+class CachePeer:
+    """외부 HTTP 오류/무응답과 상대 연결 종료만 관찰합니다."""
+    def __init__(self, response):
+        self.listener = socket.socket()
+        self.listener.bind(('127.0.0.1', 0))
+        self.listener.listen()
+        self.listener.settimeout(5)
+        self.port = self.listener.getsockname()[1]
+        self.response = response
+        self.closed = False
+        self.extra = b''
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def serve(self):
+        try:
+            connection, _ = self.listener.accept()
+            with connection:
+                connection.settimeout(1)
+                request = b''
+                while b'\r\n\r\n' not in request:
+                    part = connection.recv(4096)
+                    if not part:
+                        return
+                    request += part
+                if self.response is not None:
+                    connection.sendall(self.response)
+                while True:
+                    part = connection.recv(4096)
+                    if not part:
+                        self.closed = True
+                        return
+                    self.extra += part
+        except socket.timeout:
+            pass
+
+    def stop(self):
+        self.thread.join(timeout=6)
+        self.listener.close()
+        expect(self.thread.is_alive(), False, '캐시 상대 종료')
+
+
+def failed_cache_uses_origin(binary, database, response, check_close=False):
+    peer = CachePeer(response)
+    demo = Demo(binary, database, ['--cache', 'on', '--cache-url',
+                                  f'http://127.0.0.1:{peer.port}'])
+    try:
+        demo.wait_until_listening()
+        for _ in range(2):
+            expect(read_json(demo, '/products/1'),
+                   (200, {'id': 1, 'name': '상품 1', 'price': 48271}), '장애 중 원본 응답')
+        _, stats = read_json(demo, '/stats')
+        expect((stats['cache_get_errors'], stats['cache_misses'],
+                stats['cache_puts'], stats['cache_bypasses'], stats['cache_state']),
+               (1, 0, 0, 1, 'suspended'), '오류 404/기한 초과는 미적중이 아님')
+        if check_close:
+            peer.thread.join(timeout=2)
+            expect(peer.closed, True, '데모 실행 중 기한 초과 연결을 닫음')
+    finally:
+        stopped_check(demo)
+        peer.stop()
+        expect(peer.extra, b'', 'GET 오류 뒤 PUT을 보내지 않음')
+
+
+def wrong_404_suspends(binary, database):
+    for body in [b'{"error":"route_not_found"}', b'<html>not found</html>']:
+        response = (b'HTTP/1.1 404 Not Found\r\nContent-Length: ' +
+                    str(len(body)).encode() + b'\r\n\r\n' + body)
+        failed_cache_uses_origin(binary, database, response)
+
+
 def main():
     binary, redis_binary = map(os.path.abspath, sys.argv[1:])
     with tempfile.TemporaryDirectory() as directory:
@@ -133,6 +206,11 @@ def main():
         redis = Server(redis_binary)
         demo = None
         try:
+            redis.wait_until_listening()
+            wrong_404_suspends(binary, database)
+            print('PASS: key 미존재가 아닌 404는 캐시 오류로 중단한다')
+            failed_cache_uses_origin(binary, database, None, check_close=True)
+            print('PASS: 캐시 기한 초과 뒤 원본으로 응답하고 연결을 즉시 닫는다')
             cache_cli_rejects_invalid_options(binary, database)
             print('PASS: 캐시 실행 옵션의 범위와 중복을 검사한다')
             redis.wait_until_listening()
