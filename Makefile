@@ -34,12 +34,18 @@ MONGOOSE_FLAGS := -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752
 
 .PHONY: all test functional verify lint format clean bench
 
+# 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_INTERVAL_MS, SWEEP_INTERVAL_MS,
+# SWEEP_MAX_COUNT를 빌드할 때 바꿉니다(spec Q19). 예:
+#   make -B build/mini-redis SERVER_FLAGS='-DSWEEP_INTERVAL_MS=50 -DSWEEP_MAX_COUNT=5'
+# 플래그만 바꾸면 make가 다시 빌드하지 않으므로 -B를 함께 씁니다.
+SERVER_FLAGS ?=
+
 SERVER   := $(BUILD)/mini-redis
 
 all: $(SERVER) $(TEST_BINS)
 
 $(SERVER): src/server.c $(LIB_OBJS) $(MONGOOSE_OBJ) | $(BUILD)
-	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) $< $(LIB_OBJS) $(MONGOOSE_OBJ) \
+	$(CC) $(CPPFLAGS) $(SERVER_FLAGS) -I$(MONGOOSE_DIR) $(CFLAGS) $< $(LIB_OBJS) $(MONGOOSE_OBJ) \
 	    $(LDFLAGS) -o $@
 
 # Makefile도 의존합니다. MONGOOSE_FLAGS를 바꾸면 이전 빌드의 mongoose.o를 다시 만듭니다.
@@ -96,7 +102,7 @@ bench: $(BENCH_SERVER)
 	python3 -B scripts/bench/bench.py $(BENCH_SERVER)
 
 $(BENCH_SERVER): src/server.c $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) | $(BENCH_BUILD)
-	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) $< $(BENCH_LIB_OBJS) \
+	$(CC) $(CPPFLAGS) $(SERVER_FLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) $< $(BENCH_LIB_OBJS) \
 	    $(BENCH_MONGOOSE) -o $@
 
 $(BENCH_MONGOOSE): $(MONGOOSE_DIR)/mongoose.c $(MONGOOSE_DIR)/mongoose.h Makefile | $(BENCH_BUILD)
