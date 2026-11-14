@@ -176,13 +176,15 @@ mini-redis/
 | M2 | [`api`](docs/milestones/api/overview.md) | 외부에서 부르기 | L3 L10 L14 | 진행 중 | |
 | M3 | [`concurrency`](docs/milestones/concurrency/overview.md) | 동시성 | L8 | 진행 중 | [대조](docs/milestones/concurrency/spec.md#redis와-대조) |
 | M4 | [`expire`](docs/milestones/expire/overview.md) | 보관 기간 | L9 | 진행 중 | [대조](docs/milestones/expire/spec.md#redis와-대조) |
-| M5 | `cache` | API 응답 캐시, 무효화, 성능 비교 | L15 L11 L17 | 진행 전 | |
+| M5 | [`cache`](docs/milestones/cache/spec.md) | API 응답 캐시, 무효화, 성능 비교 | L15 L11 L17 | 진행 중 | [대조](docs/milestones/cache/spec.md#redis와-대조) |
 | M6 | `persist` | 서버가 꺼져도 데이터 유지 (선택) | L12 | 진행 전 | |
 
 요구사항 ID는 [`docs/requirements.md`](docs/requirements.md)에 있습니다. L16(엣지 케이스)은 모든 마일스톤의 테스트에 들어갑니다. 마일스톤이 끝나면 `Redis와 대조` 칸에 그 `spec.md`의 `Redis와 대조` 절을 링크합니다.
 
 ## 알려진 한계
 
+- **M5의 응답 캐시 데모는 백엔드 한 프로세스로 제한합니다.** 여러 백엔드 프로세스가 같은 원본과 캐시를 공유할 때의 조회·수정 순서 보장은 구현하지 않습니다. 원본 변경은 데모 API를 통해서만 하며, DB나 파일을 직접 수정하는 경우의 캐시 무효화는 보장하지 않습니다.
+- **M5는 상품 수정 시 해당 상품의 상세 캐시와 목록·검색 캐시 전체를 무효화하는 방식으로 설계합니다.** 검색 조건별 영향을 추적하지 않으므로, 변경과 무관한 목록·검색 응답도 함께 무효화합니다. 수정이 잦으면 캐시 적중률이 낮아지고 원본 조회와 캐시 재생성이 늘어날 수 있습니다. 다른 상품의 상세 캐시는 유지합니다.
 - eviction(메모리가 가득 찰 때 key를 내보내는 정책)은 LMS에 없어 구현하지 않습니다.
 - **key 수가 2배로 늘어나는 순간 서버가 한 번 멈춥니다.** 해시 테이블은 버킷 수를 늘릴 때 entry 전부를 한 번에 옮기고, 그동안 서버는 어떤 요청에도 답하지 않습니다. 버킷은 entry가 버킷의 4배를 넘을 때 2배로 늘어나므로, 이 멈춤은 key 수가 2배가 될 때마다 한 번 생깁니다. store가 약 13만 개를 넘으면 한 번의 멈춤이 M3의 목표(방해 요청이 있어도 작은 GET의 p99 10 ms 이하)를 넘고, 400만 개에서는 약 310~350 ms입니다. 같은 경계에서 저장과 삭제를 반복해도 rehash가 반복되지는 않습니다(전에는 요청마다 300 ms 넘게 멈췄음). 삭제나 주기 청소로 entry 수가 버킷 수 아래로 줄 때도 버킷을 줄이는 rehash가 한 번 일어나고, 남은 entry가 약 13만 개를 넘으면 그 한 번도 목표를 넘습니다. Redis처럼 나눠 옮기면 없앨 수 있지만, Pintos 해시 테이블의 구조를 지키려고 하지 않았습니다(`docs/milestones/concurrency/spec.md`의 "측정 결과").
 - **16 MiB value를 저장하는 동안 서버가 약 12 ms 멈춥니다.** 상한 크기의 value를 초당 5번 저장하면 작은 GET의 p99가 10.7~11.0 ms로 목표를 약 1 ms 넘습니다. store가 value를 새 메모리로 복사하는 시간입니다. 줄이려면 body 상한이나 store의 인터페이스를 바꿔야 해서 줄이지 않습니다.
