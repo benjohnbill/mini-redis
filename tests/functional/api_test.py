@@ -23,7 +23,7 @@ START_TIMEOUT = 10.0
 STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
 BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), spec Q10
-HEADER_MAX = 64  # 서버가 읽는 헤더 수의 상한, 넘으면 431
+HEADER_MAX = 64  # 서버가 읽는 헤더 수의 상한, 넘으면 431. Makefile의 MG_MAX_HTTP_HEADERS와 같아야 합니다
 LARGE_REQUEST_TIMEOUT = 15.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
 PROMPT_TIMEOUT = 0.5  # 느린 연결이 있어도 다른 요청이 이 시간 안에 응답을 받아야 합니다
 SLOW_BODY_CHUNK = 64 * 1024
@@ -227,6 +227,12 @@ def put_with_header_count(server, key, count):
     fixed = ["Host: x", "Content-Length: 0"]
     fillers = [f"X-Filler-{index}: v" for index in range(count - len(fixed) - 1)]
     lines = [f"PUT /keys/{key} HTTP/1.1"] + fixed + fillers + ["TTL: abc"]
+
+    return raw_head_request(server, lines)
+
+
+def raw_head_request(server, lines):
+    """요청 줄과 헤더 줄을 그대로 보내고, 응답의 상태 코드와 body를 돌려줍니다."""
     with socket.create_connection((HOST, server.port), timeout=REQUEST_TIMEOUT) as raw:
         raw.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
         response = http.client.HTTPResponse(raw)
@@ -263,11 +269,8 @@ def new_connection_after_431_is_served(server):
 def too_many_headers_wins_over_transfer_encoding(server):
     fillers = [f"X-Filler-{index}: v" for index in range(HEADER_MAX)]
     lines = ["PUT /keys/both HTTP/1.1", "Host: x", "Transfer-Encoding: chunked"] + fillers
-    with socket.create_connection((HOST, server.port), timeout=REQUEST_TIMEOUT) as raw:
-        raw.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
-        response = http.client.HTTPResponse(raw)
-        response.begin()
-        status, body = response.status, response.read()
+
+    status, body = raw_head_request(server, lines)
 
     expect(status, 431, "상태 코드")
     expect(body, b'{"error":"too_many_headers"}', "body")
