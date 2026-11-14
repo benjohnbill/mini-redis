@@ -53,7 +53,7 @@ make format   # 모양 위반을 고치고, 바꾼 줄을 보여 줍니다
                             : right_entry->key_len;
    ```
 
-2. **다른 파일에서 부르는 함수는 `모듈_동사`로 짓습니다.** 이름만 보고 어느 파일에 있는지 알 수 있습니다(`store_set`, `hash_find`). 파일 안의 `static` 함수는 다루는 대상을 앞에 둡니다(`entry_create`, `entry_free`).
+2. **다른 파일에서 부르는 함수는 `모듈_동사`로 짓습니다.** 이름만 보고 어느 파일에 있는지 알 수 있습니다(`store_set`, `hash_find`). 파일 안의 `static` 함수는 다루는 대상을 앞에 둡니다(`entry_create`, `entry_destroy`).
 3. **동사의 뜻은 하나로 고정합니다.**
 
    | 동사 | 뜻 | 예 |
