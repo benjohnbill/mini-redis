@@ -106,7 +106,7 @@ ttl_header_read(const struct mg_connection *connection,
                 const struct mg_http_message *message);
 static size_t target_len(const struct mg_http_message *message);
 static void connection_close_if_idle(struct mg_connection *connection);
-static uint64_t sweep_if_due(struct store *store, uint64_t deadline);
+static void sweep_run_if_due(struct store *store, uint64_t *deadline);
 static void sweep_trace(size_t deleted_count);
 
 int main(int argc, char **argv)
@@ -165,12 +165,13 @@ static int server_run(struct store *store, int port)
     struct mg_mgr manager;
     mg_mgr_init(&manager);
     int exit_code = listener_open(&manager, store, port) ? 0 : 1;
-    uint64_t sweep_deadline = mg_millis() + SWEEP_INTERVAL_MS;
+    /* 0이면 첫 sweep_run_if_due가 "지금 + S"로 정합니다. */
+    uint64_t sweep_deadline = 0;
     while (exit_code == 0 && !stop_requested) {
         mg_mgr_poll(&manager, POLL_INTERVAL_MS);
         /* handler가 모두 끝난 뒤라, 빌려준 value를 가진 handler가 없습니다
            (spec "빌린 value"). */
-        sweep_deadline = sweep_if_due(store, sweep_deadline);
+        sweep_run_if_due(store, &sweep_deadline);
     }
     mg_mgr_free(&manager);
 
@@ -483,19 +484,19 @@ static void connection_close_if_idle(struct mg_connection *connection)
     last_activity_set(connection, mg_millis());
 }
 
-/* 기한이 지났으면 주기 청소를 한 번 하고 다음 기한 "기한 + S"를 돌려줍니다.
-   기한에서 많이 늦었어도 한 번만 청소합니다. 다음 기한을 지금이 아니라 기한에서
-   세어 간격의 격자를 지킵니다(spec Q17). */
-static uint64_t sweep_if_due(struct store *store, uint64_t deadline)
+/* *deadline이 지났으면 주기 청소를 한 번 하고 *deadline을 다음 기한으로
+   옮깁니다. 기한에서 많이 늦었어도 한 번만 청소합니다. 다음 기한은 보통 "기한 +
+   S"로 잡아 간격의 격자를 지키고, S보다 더 늦었으면 "지금 + S"로 잡아 밀린
+   청소를 몰아서 하지 않습니다(spec Q17). 이 규칙은 mongoose의
+   mg_timer_expired와 같으므로 그 함수를 씁니다. */
+static void sweep_run_if_due(struct store *store, uint64_t *deadline)
 {
     uint64_t now = mg_millis();
-    if (now < deadline) {
-        return deadline;
+    if (!mg_timer_expired(deadline, SWEEP_INTERVAL_MS, now)) {
+        return;
     }
     size_t deleted_count = store_delete_expired(store, now, SWEEP_MAX_COUNT);
     sweep_trace(deleted_count);
-
-    return deadline + SWEEP_INTERVAL_MS;
 }
 
 /* 측정 빌드(make bench)만 SWEEP_TRACE를 켭니다. 청소가 key를 지웠으면 끝난
