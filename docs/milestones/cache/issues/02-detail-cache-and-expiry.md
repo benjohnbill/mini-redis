@@ -28,3 +28,11 @@ Status: ready-for-agent
 - `/stats`의 GET 시도는 `cache_gets = cache_hits + cache_misses + cache_get_errors`입니다. `cache_puts`, `cache_put_failures`, `cache_errors`(GET 오류와 PUT 실패 합), `cache_bypasses`, `cache_state`(`off`/`active`/`suspended`)를 구분합니다. off와 중단 조회는 GET 시도에 섞지 않습니다.
 - TDD 첫 상세 캐시 테스트가 캐시 on 미지원 종료 코드 2로 실패한 뒤 구현하여 통과했습니다. 외부 기능 테스트 9개로 실제 mini-redis GET/PUT, 상품 분리, 404·원본 오류 미저장, 2초 TTL과 적중 비연장, 데모 종료 후 새 실행, 실제 mini-redis 중단, off 연결 생략, CLI 경계를 확인했습니다. 기존 데모 기능 테스트 8개도 유지했습니다.
 - `make verify`에서 기존 C·외부 HTTP 테스트, 데모·상세 캐시 기능 테스트, ID 검사와 lint가 통과했습니다. 메모리 부족, 재개, PUT만 실패시키는 fault 주입은 이 티켓에서 검사하지 않았습니다. 장애 재개는 05에서 확장합니다.
+
+
+### 리뷰 보완 검증 (2026-11-14)
+
+- 404 응답의 `error`가 `key_not_found`일 때만 미적중으로 셉니다. `route_not_found`와 HTML 404는 GET 오류로 세고 캐시를 중단하며 PUT을 생략합니다. 요청 기한이 지나면 중단 처리에서 client manager를 즉시 poll하여 TCP 연결과 송수신 버퍼를 해제합니다. 이벤트 콜백이 반환한 뒤 별도 client manager만 poll하므로 상품 요청에 재진입하지 않습니다.
+- 상품 상세 처리에서 원본 조회·검증·JSON 생성과 정상 응답 전송을 분리했습니다. SQLite statement 해제와 원본 실패 집계는 유지했습니다. 양의 정수 옵션 검사를 공유하고 cache helper 정의를 첫 호출 순서에 맞췄습니다.
+- 허용된 외부 HTTP·공개 통계 경계에 회귀 시나리오 2개를 추가했습니다. 잘못된 404가 이전에는 미적중 1회와 PUT 1회로 집계되는 RED, 기한 초과 뒤 실행 중인 데모가 상대 TCP 연결을 닫지 않는 RED를 각각 확인한 뒤 수정하여 GREEN을 확인했습니다.
+- `PATH=/private/tmp/mini-redis-m5-tools/bin:$PATH make verify` 통과: 기존 테스트 108개, 상품 원본 8개, 상세 캐시 11개로 합계 127개입니다. ASan/UBSan, ID 17개 검사, lint도 통과했습니다. localhost HTTP는 sandbox 밖에서 실행했습니다. 자동 재개와 03 이후 기능, 메모리 부족 검증은 추가하지 않았습니다.
