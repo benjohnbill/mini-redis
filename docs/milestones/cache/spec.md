@@ -235,6 +235,7 @@ Redis 공식 문서의 [cache-aside](https://redis.io/docs/latest/develop/use-ca
 - **조회 전용 (로컬 PostgreSQL):** 목록 반복은 빨라지고 상세 균등과 다양한 조건의 검색은 느려졌습니다. SQLite와 다른 원본 환경이므로 차이를 네트워크 비용 하나로 해석하지 않습니다([002](../../measurements/cache-demo/002-LMH-local-postgres-read-only.md)).
 - **수정과 만료가 섞인 조건 (SQLite):** 수정이 섞여도 상세 집중 조회는 원본 조회가 절반 이하로 줄었고, TTL 2초에서는 적중률이 절반 이하로 떨어졌습니다([003](../../measurements/cache-demo/003-LMH-sqlite-mixed.md)).
 - **전체 시나리오 (SQLite, WSL2):** 시나리오 18개를 TTL 60초와 2초로 모두 잰 결과는 [004](../../measurements/cache-demo/004-CJG-sqlite-grid.md)에 있습니다. 적중률과 원본 조회 횟수는 003과 같았고, 반복 조건의 목록만 캐시로 빨라졌습니다.
+- **요청이 고르게 도착할 때 (SQLite, WSL2):** 001\~004는 요청이 64 ms마다 32개씩 한꺼번에 도착하는 조건이었습니다. 2 ms마다 하나씩 보내 다시 재니, 상세 균등의 cache on p50이 약 8.7 ms에서 약 0.5 ms로 줄었습니다. 그래도 상세 조회는 캐시를 켜면 cache off(약 0.2 ms)보다 느렸고, 반복 조건의 목록은 약 1.0 ms에서 약 0.3 ms로 빨라졌습니다([005](../../measurements/cache-demo/005-CJG-even-grid.md)).
 - 이 수치는 합격 기준이 아니며, 장비·부하·데이터가 다르면 달라집니다.
 
 ### 원격 PostgreSQL 비교 (미실행)

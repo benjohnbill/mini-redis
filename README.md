@@ -80,7 +80,7 @@ key 인코딩, `TTL` 헤더의 규칙, body와 연결의 상한, 모든 상태 �
 
 ## 응답 캐시 데모
 
-M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파일 `cache-demo`를 만들었습니다. 같은 조건을 반복하는 목록 조회는 적중률 100%로 원본 조회가 10초에 5,024번에서 0번이 되었습니다. 상세 조회는 적중률 36\~53%만큼 원본 조회가 줄었지만, 데모가 mini-redis 왕복을 기다리느라 더 느려졌습니다. WSL2에서 잰 p50은 반복 목록이 약 28\~32 ms에서 약 6 ms로 줄고, 상세 균등이 약 1.4 ms에서 약 8.6 ms로 늘었습니다([004](docs/measurements/cache-demo/004-CJG-sqlite-grid.md)).
+M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파일 `cache-demo`를 만들었습니다. 같은 조건을 반복하는 목록 조회는 적중률 100%로 원본 조회가 10초에 5,000번에서 0번이 되었습니다. 상세 조회는 적중률 36\~53%만큼 원본 조회가 줄었지만, 같은 프로세스 안의 SQLite 조회보다 mini-redis 왕복이 비싸서 캐시를 켜면 조금 느려졌습니다. WSL2에서 요청을 고르게 보내 잰 p50은 반복 목록이 약 1.0 ms에서 약 0.3 ms로 줄고, 상세 균등이 약 0.2 ms에서 약 0.5 ms로 늘었습니다([005](docs/measurements/cache-demo/005-CJG-even-grid.md)). 앞선 [004](docs/measurements/cache-demo/004-CJG-sqlite-grid.md)에서 상세 균등이 약 8.6 ms로 보였던 것은 요청이 32개씩 한꺼번에 도착하는 측정 조건 때문입니다.
 
 - 실행 방법과 HTTP 계약: [`demo/README.md`](demo/README.md)
 - 측정 결론: [`docs/milestones/cache/spec.md`의 "측정 결과"](docs/milestones/cache/spec.md#측정-결과). 측정 기록은 아래 마일스톤 표의 `측정` 칸에 있습니다.
@@ -94,7 +94,7 @@ M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파�
 | M2 | [`api`](docs/milestones/api/overview.md) | 외부에서 부르기 | L3 L10 L14 | 진행 중 | | |
 | M3 | [`concurrency`](docs/milestones/concurrency/overview.md) | 동시성 | L8 | 진행 중 | [server/001\~003](docs/measurements/server/) | [대조](docs/milestones/concurrency/spec.md#redis와-대조) |
 | M4 | [`expire`](docs/milestones/expire/overview.md) | 보관 기간 | L9 | 진행 중 | [server/004](docs/measurements/server/004-CJG-expire-sweep.md) | [대조](docs/milestones/expire/spec.md#redis와-대조) |
-| M5 | [`cache`](docs/milestones/cache/spec.md) | API 응답 캐시, 무효화, 성능 비교 | L15 L11 L17 | 진행 중 | [cache-demo/001\~004](docs/measurements/cache-demo/) | [대조](docs/milestones/cache/spec.md#redis와-대조) |
+| M5 | [`cache`](docs/milestones/cache/spec.md) | API 응답 캐시, 무효화, 성능 비교 | L15 L11 L17 | 진행 중 | [cache-demo/001\~005](docs/measurements/cache-demo/) | [대조](docs/milestones/cache/spec.md#redis와-대조) |
 | M6 | `persist` | 서버가 꺼져도 데이터 유지 (선택) | L12 | 진행 전 | | |
 | M7 | [`perf`](docs/milestones/perf/overview.md) | 측정된 증상을 원인별로 줄이는 성능 개선 | L8 L17 | 진행 중 | [server/005](docs/measurements/server/005-CJG-baseline.md) | |
 
