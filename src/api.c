@@ -83,12 +83,12 @@ bool api_reject_headers(bool has_transfer_encoding, size_t body_len,
     return false;
 }
 
-struct api_response api_request_timeout(void)
+struct api_response api_reject_timeout(void)
 {
     return response_error(408, ERROR_BODY("request_timeout"));
 }
 
-struct api_response api_too_many_connections(void)
+struct api_response api_reject_connection(void)
 {
     return response_error(503, ERROR_BODY("too_many_connections"));
 }

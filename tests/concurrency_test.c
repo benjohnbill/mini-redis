@@ -18,14 +18,14 @@ static void expect_error(struct api_response response, int status,
 
 static void request_timeout_returns_408_request_timeout(void)
 {
-    struct api_response response = api_request_timeout();
+    struct api_response response = api_reject_timeout();
 
     expect_error(response, 408, "{\"error\":\"request_timeout\"}");
 }
 
 static void too_many_connections_returns_503_json(void)
 {
-    struct api_response response = api_too_many_connections();
+    struct api_response response = api_reject_connection();
 
     expect_error(response, 503, "{\"error\":\"too_many_connections\"}");
 }

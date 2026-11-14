@@ -170,7 +170,7 @@ static void connection_limit_check(struct mg_connection *connection)
     if (open_connections_count(connection->mgr) <= CONNECTION_MAX) {
         return;
     }
-    struct api_response response = api_too_many_connections();
+    struct api_response response = api_reject_connection();
     response_send(connection, &response);
     connection->is_draining = 1;
 }
@@ -337,7 +337,7 @@ static void idle_connection_close(struct mg_connection *connection)
         connection->is_closing = 1;
         return;
     }
-    struct api_response response = api_request_timeout();
+    struct api_response response = api_reject_timeout();
     response_send(connection, &response);
     connection->is_draining = 1;
     activity_mark(connection);
