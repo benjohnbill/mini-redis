@@ -11,8 +11,10 @@
 
 #include <signal.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "api.h"
 #include "mongoose.h"
@@ -21,6 +23,8 @@
 #define PORT_MAX 65535
 #define LISTEN_URL_MAX 64
 #define POLL_INTERVAL_MS 100
+/* 연결에서 이 시간 동안 바이트가 오가지 않으면 닫습니다(spec Q4). */
+#define IDLE_TIMEOUT_MS 10000
 
 static volatile sig_atomic_t stop_requested = 0;
 
@@ -32,6 +36,7 @@ static bool listener_open(struct mg_mgr *manager, struct store *store,
                           int port);
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
+static void activity_mark(struct mg_connection *connection);
 static void receive_buffer_grow(struct mg_connection *connection);
 static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message);
@@ -41,6 +46,7 @@ static size_t target_len(const struct mg_http_message *message);
 static void response_send(struct mg_connection *connection,
                           const struct api_response *response);
 static const char *status_reason(int status);
+static void idle_connection_close(struct mg_connection *connection);
 
 int main(int argc, char **argv)
 {
@@ -125,13 +131,27 @@ static bool listener_open(struct mg_mgr *manager, struct store *store, int port)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
+    if (event == MG_EV_OPEN || event == MG_EV_READ || event == MG_EV_WRITE) {
+        activity_mark(connection);
+    }
     if (event == MG_EV_READ) {
         receive_buffer_grow(connection);
     } else if (event == MG_EV_HTTP_HDRS) {
         headers_check(connection, event_data);
     } else if (event == MG_EV_HTTP_MSG) {
         request_handle(connection, event_data);
+    } else if (event == MG_EV_POLL) {
+        idle_connection_close(connection);
     }
+}
+
+/* 바이트를 받거나 보낸 시각을 연결의 data 칸 맨 앞에 적습니다. 받기만 세면
+   느린 client가 16 MiB 응답을 끝까지 받지 못하므로 보내기도 셉니다(spec Q4).
+   연결이 열릴 때도 적어, 아무것도 보내지 않는 연결도 기한을 받게 합니다. */
+static void activity_mark(struct mg_connection *connection)
+{
+    uint64_t now = mg_millis();
+    memcpy(connection->data, &now, sizeof now);
 }
 
 /* mongoose는 수신 버퍼가 차면 MG_IO_SIZE(16 KiB)만큼만 늘리고, 늘릴 때마다 새
@@ -179,9 +199,15 @@ static void headers_check(struct mg_connection *connection,
     connection->is_draining = 1;
 }
 
+/* 이미 오류 응답(408, 411, 413)을 보내고 닫는 중인 연결의 요청은 처리하지
+   않습니다. mongoose는 연결을 닫을 때 받다 만 요청도 받은 데까지를 body로 삼아
+   이 이벤트를 부르므로, 거르지 않으면 잘린 body가 저장됩니다. */
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message)
 {
+    if (connection->is_draining) {
+        return;
+    }
     struct store *store = connection->fn_data;
     struct api_response response = api_handle(
         store, message->method.buf, message->method.len, message->uri.buf,
@@ -237,6 +263,8 @@ static const char *status_reason(int status)
         return "Not Found";
     case 405:
         return "Method Not Allowed";
+    case 408:
+        return "Request Timeout";
     case 411:
         return "Length Required";
     case 413:
@@ -246,4 +274,28 @@ static const char *status_reason(int status)
     default:
         return "Unknown";
     }
+}
+
+/* mongoose가 루프를 돌 때마다(POLL_INTERVAL_MS 이내) 연결마다 부릅니다. 기한이
+   지났고 요청을 받는 중이면(수신 버퍼에 요청 조각이 남아 있으면) 408을 보내고,
+   송신 버퍼가 빈 뒤 mongoose가 닫게 합니다. 이때 시각을 다시 적어 408을 보낼
+   시간을 한 번 더 줍니다. 응답 뒤에 쉬는 연결, 응답을 받아 가지 않는 연결, 이미
+   닫는 중인 연결은 응답 없이 바로 닫습니다. 스레드를 더하지 않고 같은 루프에서
+   검사합니다(ADR single-thread-event-loop). */
+static void idle_connection_close(struct mg_connection *connection)
+{
+    uint64_t last_activity = 0;
+    memcpy(&last_activity, connection->data, sizeof last_activity);
+    if (connection->is_listening ||
+        mg_millis() - last_activity < IDLE_TIMEOUT_MS) {
+        return;
+    }
+    if (connection->is_draining || connection->recv.len == 0) {
+        connection->is_closing = 1;
+        return;
+    }
+    struct api_response response = api_request_timeout();
+    response_send(connection, &response);
+    connection->is_draining = 1;
+    activity_mark(connection);
 }
