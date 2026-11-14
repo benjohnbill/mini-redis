@@ -99,7 +99,7 @@ bool origin_seed(struct origin *origin, int seed, int count)
         "BEGIN;"
         "CREATE TABLE IF NOT EXISTS products ("
         "id integer PRIMARY KEY CHECK(id BETWEEN 1 AND 2147483647),"
-        "name text NOT NULL CHECK(char_length(name) BETWEEN 1 AND 120),"
+        "name text NOT NULL CHECK(octet_length(name) BETWEEN 1 AND 120),"
         "price integer NOT NULL CHECK(price BETWEEN 0 AND 1000000000));"
         "CREATE INDEX IF NOT EXISTS products_price_id ON products(price,id);"
         "DELETE FROM products;";
