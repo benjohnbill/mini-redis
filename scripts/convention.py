@@ -2,8 +2,10 @@
 """Team convention checks (CONVENTION.md). Called by `make lint` and `make format`.
 
   lint    report layout violations (one entry per line, carets under each
-          spot) and naming, length, and brace violations; exit 1 if any
-  format  rewrite the files in the team style and print what changed
+          spot), naming, length, and brace violations, and bare `~` in
+          Markdown; exit 1 if any
+  format  rewrite the files in the team style, escape bare `~` in Markdown,
+          and print what changed
 """
 import difflib
 import os
@@ -167,12 +169,78 @@ def check_names(files):
     return count
 
 
+# ── lint: Markdown tilde ──────────────────────────────────────
+
+# GitHub draws text between two single `~` as strikethrough, even across lines
+# of one paragraph, so a range such as `1.2~1.5 / 2.0~2.4` hides its middle.
+# Every `~` outside code and link targets must be written as `\~`.
+TILDE_RE = re.compile(r'(?<![\\~])~(?!~)')
+SKIP_RE = re.compile(r'`[^`]*`|\]\([^)]*\)')
+
+
+def tilde_spots(line):
+    """Return the indexes of the bare `~` characters in one Markdown line."""
+    skipped = [m.span() for m in SKIP_RE.finditer(line)]
+
+    return [m.start() for m in TILDE_RE.finditer(line)
+            if not any(start <= m.start() < end for start, end in skipped)]
+
+
+def markdown_lines(path):
+    """Yield (line number, line) for the lines outside fenced code blocks."""
+    in_fence = False
+    with open(os.path.join(ROOT, path), encoding='utf-8') as f:
+        for ln, line in enumerate(f, 1):
+            if line.lstrip().startswith('```'):
+                in_fence = not in_fence
+            elif not in_fence:
+                yield ln, line.rstrip('\n')
+
+
+def check_tildes(files):
+    """Return the number of Markdown lines with a bare `~`."""
+    count = 0
+    for path in files:
+        for ln, line in markdown_lines(path):
+            spots = tilde_spots(line)
+            if not spots:
+                continue
+            count += 1
+            marks = [' '] * (width(line) + 1)
+            for at in spots:
+                marks[width(line[:at])] = '^'
+            print(f'{path}:{ln}: {paint("33", "tilde")}: make format이 \\~로 고칩니다')
+            print(f'{ln:6} | {line}')
+            print(f'       | {paint("32", "".join(marks).rstrip())}')
+    return count
+
+
+def escape_tildes(path):
+    """Rewrite bare `~` as `\\~` in one Markdown file; return True if changed."""
+    full = os.path.join(ROOT, path)
+    with open(full, encoding='utf-8') as f:
+        lines = f.read().split('\n')
+    fixes = dict(markdown_lines(path))
+    changed = False
+    for ln in fixes:
+        spots = tilde_spots(lines[ln - 1])
+        for at in reversed(spots):
+            lines[ln - 1] = lines[ln - 1][:at] + '\\' + lines[ln - 1][at:]
+        changed = changed or bool(spots)
+    if changed:
+        with open(full, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+
+    return changed
+
+
 def lint():
     layout = check_layout(format_files())
     names = check_names(lint_files())
-    if layout or names:
+    tildes = check_tildes(git_files('*.md'))
+    if layout or names or tildes:
         print()
-        print(f'모양 {layout}줄: make format 으로 자동 수정 | '
+        print(f'모양 {layout}줄, 물결표 {tildes}줄: make format 으로 자동 수정 | '
               f'이름·길이·중괄호 {names}건: 직접 수정 (CONVENTION.md)')
         return 1
     print('lint: 위반 없음')
@@ -203,6 +271,10 @@ def fmt():
                 print(paint('32', d))
         with open(full, 'w', encoding='utf-8', errors='surrogateescape') as f:
             f.write(after)
+    for path in git_files('*.md'):
+        if escape_tildes(path):
+            changed += 1
+            print(paint('1', path) + ': ~ → \\~')
     print(f'format: {changed}개 파일 수정' if changed else 'format: 바꿀 것 없음')
     return 0
 
