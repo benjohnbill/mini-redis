@@ -9,7 +9,16 @@
 
   lab      key 100,000개를 채운 뒤 작은 GET만 100연결로 보내 p50, p99, 초당
            처리량을 출력합니다(wrk 실험실). 방해가 없을 때의 기준선입니다.
-  prefill  key 4,194,304개(2²²)를 채우고 표본 key를 조회해 확인합니다(spec Q9).
+
+아래 네 시나리오는 python 열린 루프(open_loop.py)로 작은 GET을 100연결에 걸쳐 초당
+SMALL_GET_RATE개씩 정해진 시각마다 보내고, 작은 GET과 방해 요청의 지연(예정 시각부터
+응답까지)을 따로 출력합니다(spec Q3, 티켓 02).
+
+  a-quiet       방해 없음. key 100,000개. python 기준선을 wrk 실험실과 견줍니다.
+  b-big-store   16 MiB value를 새 key에 저장하는 요청을 BIG_INTERVAL마다 보냅니다.
+  c-rehash      key 4,194,304개(2²²)를 채우고 하나를 지운 뒤, 새 key 저장과 삭제를
+                REHASH_INTERVAL마다 번갈아 보냅니다. 요청마다 rehash가 일어납니다(Q9).
+  d-big-delete  16 MiB value를 미리 넣어 둔 key를 BIG_INTERVAL마다 하나씩 지웁니다.
 
 새 시나리오는 SCENARIOS에 함수를 더합니다. 함수는 띄운 서버 하나를 받습니다.
 측정은 make verify와 CI에 넣지 않습니다. wrk는 측정하는 팀원에게만 필요합니다.
@@ -25,6 +34,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+import open_loop
 
 HOST = "127.0.0.1"
 START_TIMEOUT = 10.0
@@ -45,6 +56,16 @@ REHASH_KEY_COUNT = 4_194_304  # 2²², spec Q9
 PREFILL_MAX_SECONDS = 600  # 미리 채우기가 이 시간 안에 끝나지 않으면 실패입니다
 PREFILL_POLL_INTERVAL = 0.2
 SAMPLE_COUNT = 8  # 미리 채운 뒤 무작위로 골라 조회하는 key 수
+
+# 열린 루프 시나리오(티켓 02)
+NS_PER_SECOND = 1_000_000_000
+OPEN_LOOP_SECONDS = 10
+SMALL_GET_RATE = 5_000  # 초당 작은 GET 수. 연결 하나는 20 ms마다 하나를 보냅니다
+BIG_VALUE = b"b" * 16_777_216  # 상한 크기 value, API_BODY_MAX
+BIG_INTERVAL = 0.2  # 초. 16 MiB 저장과 삭제를 이 간격으로 보냅니다
+BIG_KEY_COUNT = round(OPEN_LOOP_SECONDS / BIG_INTERVAL)  # 50개, 합쳐서 800 MiB
+REHASH_INTERVAL = 1.0  # 초. rehash 하나(약 0.3초)가 끝나고 서버가 쉬는 틈을 둡니다
+SMALL_GET = "작은 GET"
 
 
 class Server:
@@ -178,13 +199,92 @@ def lab(server):
         raise BenchError("실험실: wrk가 오류를 보고했습니다")
 
 
-def rehash_prefill(server):
+def quiet(server):
+    prefill(server, LAB_KEY_COUNT)
+    open_loop_measure(server, LAB_KEY_COUNT)
+
+
+def big_store(server):
+    prefill(server, LAB_KEY_COUNT)
+
+    def big_store_request(index):
+        return open_loop.Request("16 MiB 저장", "PUT", f"/keys/big-{index}",
+                                 BIG_VALUE, expect_status=204)
+
+    open_loop_measure(server, LAB_KEY_COUNT, BIG_INTERVAL, big_store_request)
+
+
+def rehash(server):
+    """hash.c는 버킷 수를 "entry 수 ÷ 2보다 작거나 같은 가장 큰 2의 거듭제곱"으로
+    맞춥니다. entry가 2²²개면 버킷 2²¹개, 2²² - 1개면 2²⁰개입니다. 그래서 하나를
+    지워 2²² - 1개로 만든 뒤 새 key를 저장하고 지우기를 번갈아 하면, 요청마다 entry
+    전부를 옮깁니다."""
     prefill(server, REHASH_KEY_COUNT)
+    last_key = f"/keys/{KEY_PREFIX}{REHASH_KEY_COUNT - 1}"
+    status, _ = server.request("DELETE", last_key)
+    if status != 204:
+        raise BenchError(f"rehash: {last_key} 삭제가 {status}입니다")
+
+    def rehash_request(index):
+        if index % 2 == 0:
+            return open_loop.Request("rehash 저장", "PUT", "/keys/rehash-new",
+                                     VALUE, expect_status=204)
+        return open_loop.Request("rehash 삭제", "DELETE", "/keys/rehash-new",
+                                 expect_status=204)
+
+    open_loop_measure(server, REHASH_KEY_COUNT - 1, REHASH_INTERVAL, rehash_request)
+
+
+def big_delete(server):
+    prefill(server, LAB_KEY_COUNT)
+    for index in range(BIG_KEY_COUNT):
+        status, _ = server.request("PUT", f"/keys/big-{index}", BIG_VALUE)
+        if status != 204:
+            raise BenchError(f"16 MiB 삭제: big-{index} 저장이 {status}입니다")
+    print(f"16 MiB value {BIG_KEY_COUNT}개를 저장했습니다", flush=True)
+
+    def big_delete_request(index):
+        if index >= BIG_KEY_COUNT:
+            return None
+        return open_loop.Request("16 MiB 삭제", "DELETE", f"/keys/big-{index}",
+                                 expect_status=204)
+
+    open_loop_measure(server, LAB_KEY_COUNT, BIG_INTERVAL, big_delete_request)
+
+
+def open_loop_measure(server, key_count, disturb_interval=None, disturb_request=None):
+    """작은 GET을 CONNECTIONS개 연결에 걸쳐 초당 SMALL_GET_RATE개씩 보내고, 방해
+    요청이 있으면 연결 하나로 disturb_interval초마다 보냅니다. 끝나면 요청 종류별로
+    p50, p99, max를 출력합니다."""
+    run = open_loop.Run(server.port, OPEN_LOOP_SECONDS * NS_PER_SECOND)
+    picker = random.Random(key_count)
+
+    def small_get_request(index):
+        path = f"/keys/{KEY_PREFIX}{picker.randrange(key_count)}"
+        return open_loop.Request(SMALL_GET, "GET", path, expect_body=VALUE)
+
+    run.stream_add(run.connections_open(CONNECTIONS), NS_PER_SECOND // SMALL_GET_RATE,
+                   small_get_request)
+    if disturb_request is not None:
+        run.stream_add(run.connections_open(1), round(disturb_interval * NS_PER_SECOND),
+                       disturb_request)
+    print(f"열린 루프: 작은 GET 초당 {SMALL_GET_RATE:,}개를 {CONNECTIONS}연결로 "
+          f"{OPEN_LOOP_SECONDS}초 동안 보냅니다", flush=True)
+    try:
+        latencies = run.run()
+    except (OSError, open_loop.OpenLoopError) as error:
+        raise BenchError(f"열린 루프: {error}") from error
+    kinds = [SMALL_GET] + sorted(set(latencies) - {SMALL_GET, open_loop.CLIENT_LATE})
+    for kind in kinds + [open_loop.CLIENT_LATE]:
+        print(open_loop.summary_line(kind, latencies[kind]), flush=True)
 
 
 SCENARIOS = {
     "lab": lab,
-    "prefill": rehash_prefill,
+    "a-quiet": quiet,
+    "b-big-store": big_store,
+    "c-rehash": rehash,
+    "d-big-delete": big_delete,
 }
 
 
