@@ -47,4 +47,11 @@ bool store_get(struct store *store, uint64_t now, const void *key,
 bool store_delete(struct store *store, uint64_t now, const void *key,
                   size_t key_len);
 
+/* 주기 청소 한 번입니다. now 시각에 만료된 entry를 만료 시각이 이른 것부터
+   최대 max_count개 빼서 해제하고, 지운 개수를 돌려줍니다. 남은 만료된 entry는
+   다음 호출이 지웁니다. 기간이 없는 entry와 만료 전인 entry는 건드리지
+   않습니다. store_delete처럼 store_get이 빌려준 value를 무효로 만듭니다. */
+size_t store_delete_expired(struct store *store, uint64_t now,
+                            size_t max_count);
+
 #endif /* STORE_H */
