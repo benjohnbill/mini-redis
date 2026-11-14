@@ -134,7 +134,7 @@ mini-redis/
 | M1 | [`store`](docs/milestones/store/overview.md) | 저장, 조회, 삭제 | L2 L4 L13 | 완료 | [대조](docs/milestones/store/spec.md#redis와-대조) |
 | M2 | [`api`](docs/milestones/api/overview.md) | 외부에서 부르기 | L3 L10 L14 | 진행 중 | |
 | M3 | [`concurrency`](docs/milestones/concurrency/overview.md) | 동시성 | L8 | 진행 중 | [대조](docs/milestones/concurrency/spec.md#redis와-대조) |
-| M4 | `expire` | 보관 기간 | L9 | 진행 전 | |
+| M4 | [`expire`](docs/milestones/expire/overview.md) | 보관 기간 | L9 | 진행 전 | |
 | M5 | `cache` | API 응답 캐시, 무효화, 성능 비교 | L15 L11 L17 | 진행 전 | |
 | M6 | `persist` | 서버가 꺼져도 데이터 유지 (선택) | L12 | 진행 전 | |
 
