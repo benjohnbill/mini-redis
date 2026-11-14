@@ -78,6 +78,19 @@ void cache_client_set(struct cache_client *cache, const char *key,
     }
 }
 
+void cache_client_delete(struct cache_client *cache, const char *key)
+{
+    if (!cache->active) {
+        return;
+    }
+    cache->deletes++;
+    int status = cache_request(cache, "DELETE", key, NULL);
+    if (status != 204 && status != 404) {
+        cache->delete_failures++;
+        cache_suspend(cache);
+    }
+}
+
 static int cache_request(struct cache_client *cache, const char *method,
                          const char *key, const char *body)
 {

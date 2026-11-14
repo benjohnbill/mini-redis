@@ -23,6 +23,8 @@ struct cache_client {
     uint64_t bypasses;
     uint64_t puts;
     uint64_t put_failures;
+    uint64_t deletes;
+    uint64_t delete_failures;
 };
 
 bool cache_client_init(struct cache_client *cache, const char *url,
@@ -32,5 +34,7 @@ void cache_client_destroy(struct cache_client *cache);
 char *cache_client_get(struct cache_client *cache, const char *key);
 void cache_client_set(struct cache_client *cache, const char *key,
                       const char *body);
+/* A missing key is a successful invalidation; other failures suspend the cache. */
+void cache_client_delete(struct cache_client *cache, const char *key);
 
 #endif

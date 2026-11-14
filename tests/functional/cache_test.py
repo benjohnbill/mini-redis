@@ -58,11 +58,12 @@ def errors_follow_contract(server):
     expect((status, json.loads(body)), (400, {'error': 'invalid_request'}), 'GET body')
     connection = http.client.HTTPConnection('127.0.0.1', server.port, timeout=5)
     try:
-        for path in ['/products/1', '/stats']:
+        for path, allow in [('/products/1', 'GET, PUT, DELETE'),
+                            ('/stats', 'GET'), ('/products', 'GET')]:
             connection.request('POST', path)
             response = connection.getresponse()
             expect((response.status, response.getheader('Allow'), json.loads(response.read())),
-                   (405, 'GET', {'error': 'method_not_allowed'}), '미지원 메서드')
+                   (405, allow, {'error': 'method_not_allowed'}), '미지원 메서드')
     finally:
         connection.close()
 

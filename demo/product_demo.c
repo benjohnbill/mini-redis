@@ -24,6 +24,7 @@
 #define LIST_LIMIT_MAX 100
 #define LIST_OFFSET_MAX 1000000
 #define LIST_KEY_MAX 512
+#define UPDATE_BODY_MAX 4096
 #define LIST_VALUE_RAW_MAX (NAME_MAX_BYTES * 3)
 #define LIST_VALUE_SIZE (LIST_VALUE_RAW_MAX + 2)
 
@@ -63,6 +64,8 @@ struct demo {
     uint64_t product_gets;
     uint64_t origin_queries;
     uint64_t origin_failures;
+    uint64_t origin_changes;
+    uint64_t invalidations;
 };
 
 static volatile sig_atomic_t stop_requested;
@@ -82,6 +85,8 @@ static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
 static bool method_is(const struct mg_http_message *message,
                       const char *method);
+static void method_not_allowed(struct mg_connection *connection,
+                               const char *allow);
 static void error_send(struct mg_connection *connection, int status,
                        const char *reason);
 static void stats_send(struct mg_connection *connection,
@@ -100,6 +105,16 @@ static char *list_read(struct demo *demo, const struct list_query *list,
 static bool text_append(struct text *text, const char *piece);
 static void product_send(struct mg_connection *connection, struct demo *demo,
                          int product_id);
+static void product_update(struct mg_connection *connection, struct demo *demo,
+                           int product_id, struct mg_http_message *message);
+static void product_delete(struct mg_connection *connection, struct demo *demo,
+                           int product_id);
+static bool content_type_is_json(struct mg_http_message *message);
+static bool update_parse(struct mg_str body, char *name, size_t *name_len,
+                         int *price);
+static int product_change(struct demo *demo, const char *sql, int product_id,
+                          const char *name, size_t name_len, int price);
+static void cache_invalidate(struct demo *demo, int product_id);
 static void body_send(struct mg_connection *connection, const char *body);
 static char *product_read(struct demo *demo, int product_id, int *status);
 static bool product_is_valid(sqlite3_stmt *statement);
@@ -387,43 +402,62 @@ static void request_handle(struct mg_connection *connection,
         error_send(connection, 404, "route_not_found");
         return;
     }
-    if (!method_is(message, "GET")) {
-        mg_http_reply(connection, 405,
-                      "Content-Type: application/json\r\nAllow: GET\r\n",
-                      "{\"error\":\"method_not_allowed\"}");
+    if (stats || list) {
+        if (!method_is(message, "GET")) {
+            method_not_allowed(connection, "GET");
+        } else if (message->body.len != 0 ||
+                   (stats && message->query.len != 0)) {
+            error_send(connection, 400, "invalid_request");
+        } else if (stats) {
+            stats_send(connection, demo);
+        } else {
+            list_send(connection, demo, message->query);
+        }
         return;
     }
     int product_id = 0;
     char decoded[32];
-    int decoded_len =
-        product ? mg_url_decode(message->uri.buf + strlen("/products/"),
-                                message->uri.len - strlen("/products/"),
-                                decoded, sizeof decoded, 0)
-                : 0;
-    if (message->body.len != 0 ||
-        ((stats || product) && message->query.len != 0) ||
-        (product && (decoded_len < 0 ||
-                     !integer_parse(decoded, (size_t)decoded_len,
-                                    PRODUCT_ID_MAX, &product_id) ||
-                     product_id == 0))) {
+    int decoded_len = mg_url_decode(message->uri.buf + strlen("/products/"),
+                                    message->uri.len - strlen("/products/"),
+                                    decoded, sizeof decoded, 0);
+    if (message->query.len != 0 || decoded_len < 0 ||
+        !integer_parse(decoded, (size_t)decoded_len, PRODUCT_ID_MAX,
+                       &product_id) ||
+        product_id == 0) {
         error_send(connection, 400, "invalid_request");
-        return;
-    }
-    if (stats) {
-        stats_send(connection, demo);
-        return;
-    }
-    if (list) {
-        list_send(connection, demo, message->query);
+    } else if (method_is(message, "GET")) {
+        if (message->body.len != 0) {
+            error_send(connection, 400, "invalid_request");
+        } else {
+            demo->product_gets++;
+            product_send(connection, demo, product_id);
+        }
+    } else if (method_is(message, "PUT")) {
+        product_update(connection, demo, product_id, message);
+    } else if (method_is(message, "DELETE")) {
+        if (message->body.len != 0) {
+            error_send(connection, 400, "invalid_request");
+        } else {
+            product_delete(connection, demo, product_id);
+        }
     } else {
-        demo->product_gets++;
-        product_send(connection, demo, product_id);
+        method_not_allowed(connection, "GET, PUT, DELETE");
     }
 }
 
 static bool method_is(const struct mg_http_message *message, const char *method)
 {
     return mg_match(message->method, mg_str(method), NULL);
+}
+
+static void method_not_allowed(struct mg_connection *connection,
+                               const char *allow)
+{
+    char headers[64];
+    snprintf(headers, sizeof headers,
+             "Content-Type: application/json\r\nAllow: %s\r\n", allow);
+    mg_http_reply(connection, 405, headers,
+                  "{\"error\":\"method_not_allowed\"}");
 }
 
 static void error_send(struct mg_connection *connection, int status,
@@ -440,20 +474,27 @@ static void stats_send(struct mg_connection *connection,
     mg_http_reply(
         connection, 200, "Content-Type: application/json\r\n",
         "{\"product_gets\":%llu,\"origin_queries\":%llu,"
-        "\"origin_failures\":%llu,\"cache_bypasses\":%llu,"
+        "\"origin_failures\":%llu,\"origin_changes\":%llu,"
+        "\"invalidations\":%llu,\"cache_bypasses\":%llu,"
         "\"cache_gets\":%llu,\"cache_hits\":%llu,\"cache_misses\":%llu,"
         "\"cache_get_errors\":%llu,\"cache_errors\":%llu,"
         "\"cache_puts\":%llu,\"cache_put_failures\":%llu,"
+        "\"cache_deletes\":%llu,\"cache_delete_failures\":%llu,"
         "\"cache_state\":\"%s\"}",
         (unsigned long long)demo->product_gets,
         (unsigned long long)demo->origin_queries,
         (unsigned long long)demo->origin_failures,
+        (unsigned long long)demo->origin_changes,
+        (unsigned long long)demo->invalidations,
         (unsigned long long)cache->bypasses, (unsigned long long)cache->gets,
         (unsigned long long)cache->hits, (unsigned long long)cache->misses,
         (unsigned long long)cache->get_errors,
-        (unsigned long long)(cache->get_errors + cache->put_failures),
+        (unsigned long long)(cache->get_errors + cache->put_failures +
+                             cache->delete_failures),
         (unsigned long long)cache->puts,
         (unsigned long long)cache->put_failures,
+        (unsigned long long)cache->deletes,
+        (unsigned long long)cache->delete_failures,
         !cache->enabled ? "off"
         : cache->active ? "active"
                         : "suspended");
@@ -705,6 +746,144 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
     cache_client_set(&demo->cache, key, body);
     body_send(connection, body);
     free(body);
+}
+
+static void product_update(struct mg_connection *connection, struct demo *demo,
+                           int product_id, struct mg_http_message *message)
+{
+    char name[NAME_MAX_BYTES + 1];
+    size_t name_len = 0;
+    int price = 0;
+    if (message->body.len > UPDATE_BODY_MAX) {
+        error_send(connection, 413, "body_too_large");
+        return;
+    }
+    if (!content_type_is_json(message)) {
+        error_send(connection, 415, "unsupported_media_type");
+        return;
+    }
+    if (!update_parse(message->body, name, &name_len, &price)) {
+        error_send(connection, 400, "invalid_request");
+        return;
+    }
+    int status =
+        product_change(demo, "UPDATE products SET name=?2,price=?3 WHERE id=?1",
+                       product_id, name, name_len, price);
+    if (status != 204) {
+        error_send(connection, status,
+                   status == 404 ? "product_not_found" : "origin_unavailable");
+        return;
+    }
+    demo->origin_changes++;
+    cache_invalidate(demo, product_id);
+    mg_http_reply(connection, 204, "Content-Type: application/json\r\n", "");
+}
+
+static void product_delete(struct mg_connection *connection, struct demo *demo,
+                           int product_id)
+{
+    int status = product_change(demo, "DELETE FROM products WHERE id=?1",
+                                product_id, NULL, 0, 0);
+    if (status != 204) {
+        error_send(connection, status,
+                   status == 404 ? "product_not_found" : "origin_unavailable");
+        return;
+    }
+    demo->origin_changes++;
+    cache_invalidate(demo, product_id);
+    mg_http_reply(connection, 204, "Content-Type: application/json\r\n", "");
+}
+
+static bool content_type_is_json(struct mg_http_message *message)
+{
+    struct mg_str *type = mg_http_get_header(message, "Content-Type");
+    struct mg_str json_type = mg_str("application/json");
+
+    return type != NULL && type->len >= json_type.len &&
+           mg_strcasecmp(mg_str_n(type->buf, json_type.len), json_type) == 0;
+}
+
+static bool update_parse(struct mg_str body, char *name, size_t *name_len,
+                         int *price)
+{
+    int root_len = 0;
+    if (mg_json_get(body, "$", &root_len) != 0 ||
+        (size_t)root_len != body.len) {
+        return false;
+    }
+    bool has_name = false;
+    bool has_price = false;
+    struct mg_str key;
+    struct mg_str value;
+    size_t offset = 0;
+    while ((offset = mg_json_next(body, offset, &key, &value)) != 0) {
+        if (key.len == 6 && memcmp(key.buf, "\"name\"", 6) == 0 && !has_name) {
+            has_name = true;
+            size_t length =
+                mg_json_unescape(body, "$.name", name, NAME_MAX_BYTES + 1);
+            if (length == 0 ||
+                !name_is_valid((const unsigned char *)name, (int)length)) {
+                return false;
+            }
+            *name_len = length;
+        } else if (key.len == 7 && memcmp(key.buf, "\"price\"", 7) == 0 &&
+                   !has_price) {
+            has_price = integer_parse(value.buf, value.len, PRICE_MAX, price);
+            if (!has_price) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    return has_name && has_price;
+}
+
+static int product_change(struct demo *demo, const char *sql, int product_id,
+                          const char *name, size_t name_len, int price)
+{
+    int result =
+        sqlite3_exec(demo->database, "BEGIN IMMEDIATE", NULL, NULL, NULL);
+    sqlite3_stmt *statement = NULL;
+    if (result == SQLITE_OK) {
+        result = sqlite3_prepare_v2(demo->database, sql, -1, &statement, NULL);
+    }
+    if (result == SQLITE_OK) {
+        result = sqlite3_bind_int(statement, 1, product_id);
+    }
+    if (result == SQLITE_OK && name != NULL) {
+        result = sqlite3_bind_text(statement, 2, name, (int)name_len,
+                                   SQLITE_TRANSIENT);
+    }
+    if (result == SQLITE_OK && name != NULL) {
+        result = sqlite3_bind_int(statement, 3, price);
+    }
+    bool applied =
+        result == SQLITE_OK && sqlite3_step(statement) == SQLITE_DONE;
+    bool committed = applied && sqlite3_exec(demo->database, "COMMIT", NULL,
+                                             NULL, NULL) == SQLITE_OK;
+    int changes = applied ? sqlite3_changes(demo->database) : 0;
+    if (!applied) {
+        sqlite3_exec(demo->database, "ROLLBACK", NULL, NULL, NULL);
+    }
+    if (!committed) {
+        demo->origin_failures++;
+    }
+    sqlite3_finalize(statement);
+
+    return !committed ? 503 : changes > 0 ? 204 : 404;
+}
+
+static void cache_invalidate(struct demo *demo, int product_id)
+{
+    char key[64];
+    snprintf(key, sizeof key, "detail:%d", product_id);
+    demo->list_generation++;
+    if (demo->cache.enabled) {
+        demo->invalidations++;
+    }
+    cache_client_delete(&demo->cache, key);
 }
 
 static void body_send(struct mg_connection *connection, const char *body)
