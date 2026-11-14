@@ -21,6 +21,9 @@
 #define PORT_MAX 65535
 #define LISTEN_URL_MAX 64
 #define POLL_INTERVAL_MS 100
+/* 동시 연결의 상한입니다(spec Q8). 리스너는 세지 않습니다. 연결마다 수신 버퍼가
+   최대 MG_MAX_RECV_SIZE(약 16 MiB)까지 크므로, 128개면 최악 약 2 GiB입니다. */
+#define CONNECTION_MAX 128
 
 static volatile sig_atomic_t stop_requested = 0;
 
@@ -32,6 +35,8 @@ static bool listener_open(struct mg_mgr *manager, struct store *store,
                           int port);
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
+static void connection_limit_check(struct mg_connection *connection);
+static size_t open_connections_count(const struct mg_mgr *manager);
 static void receive_buffer_grow(struct mg_connection *connection);
 static void headers_check(struct mg_connection *connection,
                           struct mg_http_message *message);
@@ -125,13 +130,44 @@ static bool listener_open(struct mg_mgr *manager, struct store *store, int port)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
-    if (event == MG_EV_READ) {
+    if (event == MG_EV_ACCEPT) {
+        connection_limit_check(connection);
+    } else if (event == MG_EV_READ) {
         receive_buffer_grow(connection);
     } else if (event == MG_EV_HTTP_HDRS) {
         headers_check(connection, event_data);
     } else if (event == MG_EV_HTTP_MSG) {
         request_handle(connection, event_data);
     }
+}
+
+/* 새 연결을 받은 직후에 열린 연결을 셉니다. 새 연결까지 세어 CONNECTION_MAX를
+   넘으면 503을 보내고, 송신 버퍼가 빈 뒤 mongoose가 연결을 닫게 합니다
+   (is_draining). 받지 않고 두면 client에게 서버가 멈춘 것처럼 보이고, 응답 없이
+   닫으면 네트워크 오류와 구분할 수 없기 때문입니다(spec Q8). */
+static void connection_limit_check(struct mg_connection *connection)
+{
+    if (open_connections_count(connection->mgr) <= CONNECTION_MAX) {
+        return;
+    }
+    struct api_response response = api_too_many_connections();
+    response_send(connection, &response);
+    connection->is_draining = 1;
+}
+
+/* 리스너와 이미 닫기로 한 연결(is_closing)은 세지 않습니다. 응답을 보내고 닫는
+   중인 연결(is_draining)은 아직 fd와 버퍼를 쥐고 있으므로 셉니다. */
+static size_t open_connections_count(const struct mg_mgr *manager)
+{
+    size_t count = 0;
+    for (const struct mg_connection *connection = manager->conns;
+         connection != NULL; connection = connection->next) {
+        if (!connection->is_listening && !connection->is_closing) {
+            count++;
+        }
+    }
+
+    return count;
 }
 
 /* mongoose는 수신 버퍼가 차면 MG_IO_SIZE(16 KiB)만큼만 늘리고, 늘릴 때마다 새
@@ -182,6 +218,11 @@ static void headers_check(struct mg_connection *connection,
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message)
 {
+    /* 503으로 거절한 연결도 닫히기 전에 client가 보낸 요청을 읽을 수 있습니다.
+       그 요청에 두 번째 응답을 보내지 않습니다. */
+    if (connection->is_draining) {
+        return;
+    }
     struct store *store = connection->fn_data;
     struct api_response response = api_handle(
         store, message->method.buf, message->method.len, message->uri.buf,
@@ -243,6 +284,8 @@ static const char *status_reason(int status)
         return "Content Too Large";
     case 500:
         return "Internal Server Error";
+    case 503:
+        return "Service Unavailable";
     default:
         return "Unknown";
     }
