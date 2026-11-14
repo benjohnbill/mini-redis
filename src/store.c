@@ -51,6 +51,7 @@ static struct entry *entry_create(const void *key, size_t key_len,
 static const unsigned char *bytes_or_empty(const void *bytes, size_t len);
 static void entry_init(struct entry *entry, size_t key_len, size_t value_len,
                        uint64_t expires_at);
+static bool entry_needs_heap_slot(struct store *store, struct entry *entry);
 static bool entry_has_expiry(const struct entry *entry);
 static bool heap_reserve(struct heap *heap);
 static void entry_discard(struct store *store, struct entry *entry);
@@ -102,9 +103,11 @@ bool store_set(struct store *store, const void *key, size_t key_len,
     if (entry == NULL) {
         return false;
     }
-    /* heap의 칸도 테이블을 바꾸기 전에 확보합니다. 옛 entry를 heap에서 먼저
-       빼므로, 덮어쓰기에도 칸 하나면 충분합니다. */
-    if (entry_has_expiry(entry) && !heap_reserve(&store->heap)) {
+    /* heap의 칸도 테이블을 바꾸기 전에 확보합니다. heap이 한 칸 늘어날 때만
+       확보하므로, 늘 필요가 없는 heap의 realloc 실패로 저장이 실패하지
+       않습니다. 할당 함수를 바꿔 끼울 seam이 없어서 이 차이는 자동 테스트하지
+       않고 리뷰로 확인합니다. */
+    if (entry_needs_heap_slot(store, entry) && !heap_reserve(&store->heap)) {
         entry_free(&entry->elem, NULL);
         return false;
     }
@@ -254,6 +257,20 @@ static void entry_init(struct entry *entry, size_t key_len, size_t value_len,
     entry->value = entry->bytes + key_len;
     entry->value_len = value_len;
     entry->expires_at = expires_at;
+}
+
+/* entry를 store에 넣으면 heap이 한 칸 늘어나는지 돌려줍니다. 기간이 있는 새
+   key이거나, 기간이 없던 key를 기간과 함께 덮어쓸 때입니다. 기간이 있던 key를
+   덮어쓰면 옛 entry가 heap에서 빠진 칸을 새 entry가 쓰므로 늘지 않습니다. */
+static bool entry_needs_heap_slot(struct store *store, struct entry *entry)
+{
+    if (!entry_has_expiry(entry)) {
+        return false;
+    }
+    struct hash_elem *found = hash_find(&store->table, &entry->elem);
+
+    return found == NULL ||
+           !entry_has_expiry(hash_entry(found, struct entry, elem));
 }
 
 static bool entry_has_expiry(const struct entry *entry)
