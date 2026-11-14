@@ -3,7 +3,7 @@
 
 규칙(CONVENTION.md의 "테스트"):
 - 테스트 ID는 테스트 이름 문자열의 맨 앞에 "[T1] ..."처럼 적습니다. ID는 레포 전체에서 하나뿐입니다.
-- ID를 인용하는 곳은 두 곳뿐입니다: docs/adr/*.md 의 `결정:` 줄과
+- ID를 인용하는 곳은 두 곳뿐입니다: docs/adr/*.md 표의 `결정` 행과
   docs/requirements.md 표의 `근거` 칸입니다.
 - `근거` 칸에서 백틱으로 감싼 이름 중 테스트 ID가 아닌 것은 ADR 이름입니다.
   docs/adr/<이름>.md 파일이 있어야 합니다.
@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parent.parent
 TEST_ID = re.compile(r"(?<![A-Za-z0-9_])T[0-9]+(?![A-Za-z0-9_])")
 DEFINED_ID = re.compile(r'"\[(T[0-9]+)\]')
 BACKTICK = re.compile(r"`([^`]+)`")
+# ADR 본문은 `| 항목 | 내용 |` 표입니다. 첫 칸이 `결정`인 행만 인용으로 읽습니다.
+ADR_DECISION_ROW = re.compile(r"^\|\s*결정\s*\|")
 
 
 def defined_test_ids(errors):
@@ -40,7 +42,7 @@ def adr_citations():
     cites = []
     for path in sorted((ROOT / "docs" / "adr").glob("*.md")):
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if "결정:" in line:
+            if ADR_DECISION_ROW.match(line):
                 where = f"{path.relative_to(ROOT)}:{lineno}"
                 cites += [(where, t) for t in TEST_ID.findall(line)]
     return cites
