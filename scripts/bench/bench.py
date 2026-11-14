@@ -65,6 +65,7 @@ LARGE_VALUE = b"b" * 16_777_216  # 상한 크기 value, API_BODY_MAX
 LARGE_INTERVAL = 0.2  # 초. 16 MiB 저장과 삭제를 이 간격으로 보냅니다
 LARGE_KEY_COUNT = round(OPEN_LOOP_SECONDS / LARGE_INTERVAL)  # 50개, 합쳐서 800 MiB
 REHASH_INTERVAL = 1.0  # 초. rehash 하나(약 0.3초)가 끝나고 서버가 쉬는 틈을 둡니다
+GROW_DELAY = OPEN_LOOP_SECONDS / 2  # 초. 버킷을 늘리는 저장 한 번을 보내는 간격입니다
 SMALL_GET = "작은 GET"
 
 
@@ -215,10 +216,11 @@ def large_store(server):
 
 
 def rehash(server):
-    """hash.c는 버킷 수를 "entry 수 ÷ 2보다 작거나 같은 가장 큰 2의 거듭제곱"으로
-    맞춥니다. entry가 2²²개면 버킷 2²¹개, 2²² - 1개면 2²⁰개입니다. 그래서 하나를
-    지워 2²² - 1개로 만든 뒤 새 key를 저장하고 지우기를 번갈아 하면, 요청마다 entry
-    전부를 옮깁니다."""
+    """M3 전의 hash.c는 넣고 지울 때마다 버킷 수를 "entry 수 ÷ 2보다 작거나 같은
+    가장 큰 2의 거듭제곱"으로 다시 맞췄습니다. entry가 2²²개면 버킷 2²¹개, 2²² - 1개면
+    2²⁰개라서, 하나를 지워 2²² - 1개로 만든 뒤 새 key를 저장하고 지우기를 번갈아 하면
+    요청마다 entry 전부를 옮겼습니다. 지금의 hash.c는 버킷당 entry가 1~4개인 동안
+    버킷 수를 바꾸지 않으므로, 이 시나리오는 그 반복이 다시 생기지 않는지 봅니다."""
     prefill(server, REHASH_KEY_COUNT)
     last_key = f"/keys/{KEY_PREFIX}{REHASH_KEY_COUNT - 1}"
     status, _ = server.request("DELETE", last_key)
@@ -233,6 +235,22 @@ def rehash(server):
                                  expect_status=204)
 
     open_loop_measure(server, REHASH_KEY_COUNT - 1, REHASH_INTERVAL, rehash_request)
+
+
+def grow_once(server):
+    """지금의 hash.c는 버킷당 entry가 4개를 넘을 때 버킷을 늘립니다. 2²²개를 채우면
+    버킷 2²⁰개에 entry가 꼭 4개씩이라서, 새 key 하나를 저장하는 순간 버킷이 2²¹개로
+    늘며 entry 전부를 한 번 옮깁니다. key 수가 2배로 늘 때마다 한 번 생기는 이 멈춤을
+    봅니다. 방해 요청은 측정 동안 저장 한 번뿐입니다."""
+    prefill(server, REHASH_KEY_COUNT)
+
+    def grow_request(index):
+        if index > 0:
+            return None
+        return open_loop.Request("버킷을 늘리는 저장", "PUT", "/keys/grow-new",
+                                 VALUE, expect_status=204)
+
+    open_loop_measure(server, REHASH_KEY_COUNT, GROW_DELAY, grow_request)
 
 
 def large_delete(server):
@@ -285,6 +303,7 @@ SCENARIOS = {
     "b-big-store": large_store,
     "c-rehash": rehash,
     "d-big-delete": large_delete,
+    "e-grow-once": grow_once,
 }
 
 
