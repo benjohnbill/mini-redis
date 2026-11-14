@@ -48,6 +48,8 @@ static void headers_check(struct mg_connection *connection,
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
 static size_t target_len(const struct mg_http_message *message);
+static void response_send_and_close(struct mg_connection *connection,
+                                    const struct api_response *response);
 static void response_send(struct mg_connection *connection,
                           const struct api_response *response);
 static const char *status_reason(int status);
@@ -171,8 +173,7 @@ static void connection_limit_check(struct mg_connection *connection)
         return;
     }
     struct api_response response = api_reject_connection();
-    response_send(connection, &response);
-    connection->is_draining = 1;
+    response_send_and_close(connection, &response);
 }
 
 /* 리스너와 이미 닫기로 한 연결(is_closing)은 세지 않습니다. 응답을 보내고 닫는
@@ -231,8 +232,7 @@ static void headers_check(struct mg_connection *connection,
                             &response)) {
         return;
     }
-    response_send(connection, &response);
-    connection->is_draining = 1;
+    response_send_and_close(connection, &response);
 }
 
 /* 이미 오류 응답(408, 411, 413, 503)을 보내고 닫는 중인 연결의 요청은 처리하지
@@ -267,6 +267,15 @@ static size_t target_len(const struct mg_http_message *message)
     }
 
     return (size_t)(message->query.buf + message->query.len - message->uri.buf);
+}
+
+/* 오류 응답을 보내고, 송신 버퍼가 빈 뒤 mongoose가 연결을 닫게 합니다
+   (is_draining). 바로 닫으면(is_closing) 보내지 못한 응답이 버려집니다. */
+static void response_send_and_close(struct mg_connection *connection,
+                                    const struct api_response *response)
+{
+    response_send(connection, response);
+    connection->is_draining = 1;
 }
 
 /* body는 mg_send로 보냅니다. mg_http_reply는 printf 형식이라 '\0'에서
@@ -338,7 +347,6 @@ static void idle_connection_close(struct mg_connection *connection)
         return;
     }
     struct api_response response = api_reject_timeout();
-    response_send(connection, &response);
-    connection->is_draining = 1;
+    response_send_and_close(connection, &response);
     activity_mark(connection);
 }
