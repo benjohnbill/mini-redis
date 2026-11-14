@@ -78,6 +78,10 @@ make format   # 모양 위반을 고치고, 바꾼 줄을 보여 줍니다
    | 메서드와 그 바이트 길이 | `method`, `method_len` | `m`, `mlen` |
    | 경로와 그 바이트 길이 | `path`, `path_len` | `p`, `plen` |
    | 파일 디스크립터 | `fd` | `file_descriptor` |
+   | 지금 시각 (ms) | `now` | `time`, `current_time`, `now_ms` |
+   | 만료 시각 | `expires_at` | `ts`, `t`, `expire_time` |
+   | 만료 없음 | `STORE_NO_EXPIRY` | `0`, `NO_TTL` |
+   | api 층이 받는 TTL 헤더 | `struct api_ttl_header *ttl_header` | `ttl`, `header` |
 
 5. **구조체에는 `typedef`를 붙이지 않고, 숫자 상수에는 이름을 붙입니다**(`REQUEST_MAX`). `struct`가 보여야 값인지 구조체인지 바로 알 수 있기 때문입니다.
 
