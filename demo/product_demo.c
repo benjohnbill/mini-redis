@@ -705,8 +705,13 @@ static bool content_type_is_json(struct mg_http_message *message)
     struct mg_str *type = mg_http_get_header(message, "Content-Type");
     struct mg_str json_type = mg_str("application/json");
 
-    return type != NULL && type->len >= json_type.len &&
-           mg_strcasecmp(mg_str_n(type->buf, json_type.len), json_type) == 0;
+    if (type == NULL || type->len < json_type.len ||
+        mg_strcasecmp(mg_str_n(type->buf, json_type.len), json_type) != 0) {
+        return false;
+    }
+
+    return type->len == json_type.len || type->buf[json_type.len] == ';' ||
+           type->buf[json_type.len] == ' ' || type->buf[json_type.len] == '\t';
 }
 
 static bool update_parse(struct mg_str body, char *name, size_t *name_len,

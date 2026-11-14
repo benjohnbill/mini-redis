@@ -174,19 +174,23 @@ def failed_update_keeps_cache(demo):
 
 def rejected_updates(demo):
     _, before = read_json(demo, '/stats')
-    cases = [(b'{"name":"a","price":1,"extra":2}', 400),
-             (b'{"name":"a"}', 400), (b'{"price":1}', 400),
-             (b'{"name":"a","name":"b","price":1}', 400),
-             (b'{"name":"a","price":1,"price":2}', 400),
-             (b'{"name":"","price":1}', 400), (b'{"name":"a","price":-1}', 400),
-             (b'{"name":"a","price":1000000001}', 400),
-             (b'{"name":"a","price":1.5}', 400), (b'{"name":"a","price":"1"}', 400),
-             (b'{"name":"a","price":1}extra', 400), (b'[{"name":"a","price":1}]', 400),
-             (b'{"name":"\\xff","price":1}', 400),
-             (b'{"name":"' + b'x' * 121 + b'","price":1}', 400),
-             (b'{"name":"a","price":1}', 415)]
-    for body, status in cases:
-        content_type = 'text/plain' if status == 415 else 'application/json'
+    cases = [('application/json', b'{"name":"a","price":1,"extra":2}', 400),
+             ('application/json', b'{"name":"a"}', 400),
+             ('application/json', b'{"price":1}', 400),
+             ('application/json', b'{"name":"a","name":"b","price":1}', 400),
+             ('application/json', b'{"name":"a","price":1,"price":2}', 400),
+             ('application/json', b'{"name":"","price":1}', 400),
+             ('application/json', b'{"name":"a","price":-1}', 400),
+             ('application/json', b'{"name":"a","price":1000000001}', 400),
+             ('application/json', b'{"name":"a","price":1.5}', 400),
+             ('application/json', b'{"name":"a","price":"1"}', 400),
+             ('application/json', b'{"name":"a","price":1}extra', 400),
+             ('application/json', b'[{"name":"a","price":1}]', 400),
+             ('application/json', b'{"name":"\xff","price":1}', 400),
+             ('application/json', b'{"name":"' + b'x' * 121 + b'","price":1}', 400),
+             ('text/plain', b'{"name":"a","price":1}', 415),
+             ('application/jsonx', b'{"name":"a","price":1}', 415)]
+    for content_type, body, status in cases:
         got, _ = update_request(demo, 1, body, content_type)
         expect(got, status, '잘못된 수정: ' + repr(body[:24]))
     expect(update_request(demo, 1, b'x' * 4097)[:2], (413, {'error': 'body_too_large'}),
