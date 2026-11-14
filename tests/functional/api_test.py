@@ -31,8 +31,8 @@ SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime e
 
 
 class Server:
-    def __init__(self, binary):
-        self.port = free_port()
+    def __init__(self, binary, port=None):
+        self.port = port or free_port()
         self.log = tempfile.TemporaryFile()
         self.process = subprocess.Popen([binary, str(self.port)],
                                         stdout=self.log, stderr=self.log)

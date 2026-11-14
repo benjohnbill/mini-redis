@@ -41,7 +41,7 @@ class Request:
     """보낼 요청 하나와 기대하는 응답입니다. kind는 지연을 모으는 이름입니다."""
 
     def __init__(self, kind, method, path, body=None, expect_status=200,
-                 expect_body=None, headers=()):
+                 expect_body=None, headers=(), expect_json=False):
         self.kind = kind
         self.method = method
         self.path = path
@@ -49,6 +49,7 @@ class Request:
         self.expect_status = expect_status
         self.expect_body = expect_body
         self.headers = headers  # (이름, 값) 쌍들, 예: (("TTL", "2"),)
+        self.expect_json = expect_json  # body가 JSON 객체로 시작하는지 확인합니다
         self.scheduled_ns = 0
         self.sent_ns = 0  # 첫 바이트를 보내기 시작한 시각(perf_counter_ns)
 
@@ -94,10 +95,16 @@ class Connection:
 
 
 class Run:
-    """streams를 duration_ns 동안 돌리고 요청 종류별 지연(ns) 목록을 모읍니다."""
+    """streams를 duration_ns 동안 돌리고 요청 종류별 지연(ns) 목록을 모읍니다.
 
-    def __init__(self, port, duration_ns):
+    strict가 거짓이면 기대와 다른 응답이나 끝나지 않은 요청을 오류·timeout으로
+    세고 계속합니다. 캐시 실험은 503과 timeout도 결과로 남겨야 하기 때문입니다."""
+
+    def __init__(self, port, duration_ns, strict=True):
         self.port = port
+        self.strict = strict
+        self.errors = collections.Counter()
+        self.timeouts = 0
         self.duration_ns = duration_ns
         self.selector = selectors.DefaultSelector()
         self.connections = []
@@ -140,7 +147,11 @@ class Run:
             if next_ns is None and self.pending == 0:
                 return
             if next_ns is None and now - end > DRAIN_TIMEOUT_NS:
-                raise OpenLoopError(f"시간표가 끝난 뒤 응답 {self.pending}개가 오지 않습니다")
+                if self.strict:
+                    raise OpenLoopError(f"시간표가 끝난 뒤 응답 {self.pending}개가 오지 않습니다")
+                self.timeouts = self.pending
+                self.pending = 0
+                return
             self.events_handle(self.wait_seconds(now, next_ns))
 
     def streams_release(self, now, end):
@@ -227,7 +238,12 @@ class Run:
         request = connection.current
         if request is None:
             raise OpenLoopError(f"보내지 않은 요청의 응답이 왔습니다: {status}")
-        response_check(request, status, body)
+        try:
+            response_check(request, status, body)
+        except OpenLoopError:
+            if self.strict:
+                raise
+            self.errors[request.kind] += 1
         self.latencies[request.kind].append(now - request.scheduled_ns)
         self.pending -= 1
         connection.current = None
@@ -258,6 +274,8 @@ def response_check(request, status, body):
             request.expect_body is not None and body != request.expect_body):
         raise OpenLoopError(f"{request.method} {request.path}: 기대 {request.expect_status}, "
                             f"받은 {status}, body {len(body)}바이트")
+    if request.expect_json and not body.startswith(b"{"):
+        raise OpenLoopError(f"{request.method} {request.path}: JSON body가 아닙니다")
 
 
 def percentile(sorted_values, percent):

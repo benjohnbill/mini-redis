@@ -22,10 +22,34 @@ with open(os.path.join(ROOT, '.clang-format-ignore'), encoding='utf-8') as f:
     IGNORED = {line.strip() for line in f
                if line.strip() and not line.startswith('#')}
 # Headers we wrote: warnings inside them are shown; the rest are not.
-HEADER_FILTER = '(src|tests)/'
+HEADER_FILTER = '(src|tests|demo)/'
 EXCLUDE_HEADER_FILTER = '|'.join(re.escape(p) for p in sorted(IGNORED)) or '^$'
 
 COLOR = sys.stdout.isatty()
+TIDY_FLAGS = []
+if sys.platform == 'darwin':
+    # pip의 clang-tidy도 Xcode SDK와 빌드의 Darwin 선언을 사용합니다.
+    sdk = subprocess.run(['xcrun', '--show-sdk-path'], capture_output=True,
+                         text=True, check=True).stdout.strip()
+    TIDY_FLAGS = ['--extra-arg=-D_DARWIN_C_SOURCE',
+                  '--extra-arg=-isysroot' + sdk]
+
+
+def pg_include_flag():
+    try:
+        proc = subprocess.run(['pg_config', '--includedir'],
+                              capture_output=True, text=True)
+    except OSError:
+        return None
+    path = proc.stdout.strip()
+    return '-I' + path if proc.returncode == 0 and path else None
+
+
+# 선택 PostgreSQL 원본은 libpq 헤더가 있을 때만 이름 검사를 합니다. 기본 CI는
+# PostgreSQL 개발 파일을 요구하지 않기 때문입니다(M5 spec).
+PG_INCLUDE = pg_include_flag()
+if PG_INCLUDE:
+    TIDY_FLAGS.append('--extra-arg=' + PG_INCLUDE)
 
 
 def paint(code, s):
@@ -39,11 +63,15 @@ def git_files(*patterns):
 
 
 def format_files():
-    return git_files('src/*.c', 'src/*.h', 'tests/*.c', 'tests/*.h')
+    return git_files('src/*.c', 'src/*.h', 'tests/*.c', 'tests/*.h',
+                     'demo/*.c', 'demo/*.h')
 
 
 def lint_files():
-    return git_files('src/*.c', 'tests/*.c')
+    files = git_files('src/*.c', 'tests/*.c', 'demo/*.c')
+
+    return files if PG_INCLUDE else [p for p in files
+                                     if p != 'demo/postgres_origin.c']
 
 
 def formatted(path):
@@ -101,7 +129,8 @@ def tidy_one(path):
     proc = subprocess.run(
         ['clang-tidy', '--quiet', '--warnings-as-errors=*',
          f'--header-filter={HEADER_FILTER}',
-         f'--exclude-header-filter={EXCLUDE_HEADER_FILTER}', path],
+         f'--exclude-header-filter={EXCLUDE_HEADER_FILTER}',
+         *TIDY_FLAGS, path],
         cwd=ROOT, capture_output=True, text=True)
     return (proc.stdout + proc.stderr).splitlines()
 
