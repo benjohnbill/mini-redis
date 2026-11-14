@@ -22,7 +22,8 @@ mini-redis의 HTTP 계약 전체입니다. 요약은 [`README.md`](../README.md)
 - **body 상한:** 16 MiB(16,777,216바이트)입니다. `Content-Length`가 이 값을 넘으면 서버는 body를 받기 전에 `413`을 보내고 연결을 닫습니다.
 - **연결:** 서버는 동시 연결을 128개까지 받습니다. 128개가 열려 있을 때 새로 연 연결은 `503`을 받고 닫히며, 열린 연결이 닫혀 자리가 나면 다시 받습니다. 연결 하나로 요청을 여러 번 보낼 수 있습니다.
 - **쉬는 시간 기한:** 연결에서 10초 동안 바이트가 오가지 않으면(받기와 보내기 모두) 서버가 연결을 닫습니다. 요청을 보내다 멈춘 연결은 `408`을 받고 닫히고, 응답을 받은 뒤 쉬는 연결과 아무것도 보내지 않은 연결은 응답 없이 닫힙니다. 큰 body를 천천히 보내거나 큰 응답을 천천히 받아 가는 동안에는 바이트가 오가므로 닫히지 않습니다. 반대로 응답을 받다가 10초 동안 전혀 읽지 않으면, 응답 중간이라도 응답 없이 닫힙니다.
-- **body 길이:** `Content-Length`로만 알립니다. `Transfer-Encoding: chunked`로 보내면 서버는 body를 받기 전에 `411`을 보내고 연결을 닫습니다. chunked body는 끝까지 받아야 길이를 알 수 있어서 상한을 먼저 검사할 수 없기 때문입니다.
+- **헤더 수:** 서버는 헤더를 64개까지 읽습니다. 64개를 넘으면 body를 받기 전에 `431`을 보내고 연결을 닫으며, 저장하지 않습니다. 상한 너머의 헤더를 읽지 못한 채 처리하면 그 안의 `TTL`이 조용히 빠지기 때문입니다. 연결을 닫는 것은 숨은 `Content-Length` 때문에 다음 요청이 어디서 시작하는지 알 수 없어서입니다. 새 연결의 요청은 정상으로 처리합니다.
+- **body 길이:** `Content-Length`로만 알립니다. `Transfer-Encoding` 헤더가 있으면 값(`chunked` 등)과 상관없이 서버는 body를 받기 전에 `411`을 보내고 연결을 닫습니다. chunked body는 끝까지 받아야 길이를 알 수 있어서 상한을 먼저 검사할 수 없기 때문입니다.
 
 ## 응답
 
@@ -38,23 +39,25 @@ mini-redis의 HTTP 계약 전체입니다. 요약은 [`README.md`](../README.md)
 | `PUT`의 `TTL`이 1 이상의 정수가 아니거나, 너무 크거나, 두 번 옴 | `400` | `{"error":"bad_ttl"}` |
 | `PUT`, `GET`, `DELETE`가 아닌 메서드 | `405` | `{"error":"method_not_allowed"}`, 헤더 `Allow: GET, PUT, DELETE` |
 | 요청을 보내다 10초 동안 멈춤 | `408` | `{"error":"request_timeout"}`, 보낸 뒤 연결을 닫음 |
-| `Transfer-Encoding: chunked` 요청 | `411` | `{"error":"length_required"}` |
+| `Transfer-Encoding`이 있는 요청 (`chunked` 포함) | `411` | `{"error":"length_required"}` |
 | `Content-Length`가 16 MiB를 넘음 | `413` | `{"error":"body_too_large"}` |
+| 헤더가 64개를 넘음 | `431` | `{"error":"too_many_headers"}`, 보낸 뒤 연결을 닫음 |
 | 서버의 메모리 부족 | `500` | `{"error":"out_of_memory"}` |
 | 동시 연결이 128개일 때 새 연결 | `503` | `{"error":"too_many_connections"}`, 보낸 뒤 연결을 닫음 |
 
 오류 응답의 `Content-Type`은 `application/json`입니다. 상태 코드가 같은 오류도 body의 오류 이유로 나눌 수 있습니다.
 
-**오류 이유:** `key_not_found`, `route_not_found`, `empty_key`, `bad_key_encoding`, `bad_ttl`, `method_not_allowed`, `request_timeout`, `length_required`, `body_too_large`, `out_of_memory`, `too_many_connections`.
+**오류 이유:** `key_not_found`, `route_not_found`, `empty_key`, `bad_key_encoding`, `bad_ttl`, `method_not_allowed`, `request_timeout`, `length_required`, `body_too_large`, `too_many_headers`, `out_of_memory`, `too_many_connections`.
 
 **오류의 우선순위:** 한 요청에 오류가 여럿이면 처음 걸린 하나로 답합니다.
 
-1. `Transfer-Encoding`이 있으면, 경로와 메서드를 보기 전에 `411`입니다. 헤더가 도착하자마자 검사하기 때문입니다.
-2. `Content-Length`가 16 MiB를 넘으면, 같은 이유로 경로와 메서드를 보기 전에 `413`입니다.
-3. 경로가 `/keys/`로 시작하지 않으면 `404 route_not_found`입니다.
-4. 메서드가 `PUT`, `GET`, `DELETE`가 아니면 `405`입니다.
-5. key의 인코딩이 깨졌거나 인코딩하지 않은 `?`가 있으면 `400 bad_key_encoding`, key가 비었으면 `400 empty_key`입니다.
-6. `PUT`의 `TTL`이 잘못됐으면 `400 bad_ttl`입니다.
+1. 헤더가 64개를 넘으면, 다른 무엇보다 먼저 `431`입니다. 상한 너머에 `Transfer-Encoding`이나 `Content-Length`가 숨어 있을 수 있어서, `411`과 `413`을 판정할 근거가 없기 때문입니다.
+2. `Transfer-Encoding`이 있으면, 경로와 메서드를 보기 전에 `411`입니다. 헤더가 도착하자마자 검사하기 때문입니다.
+3. `Content-Length`가 16 MiB를 넘으면, 같은 이유로 경로와 메서드를 보기 전에 `413`입니다.
+4. 경로가 `/keys/`로 시작하지 않으면 `404 route_not_found`입니다.
+5. 메서드가 `PUT`, `GET`, `DELETE`가 아니면 `405`입니다.
+6. key의 인코딩이 깨졌거나 인코딩하지 않은 `?`가 있으면 `400 bad_key_encoding`, key가 비었으면 `400 empty_key`입니다.
+7. `PUT`의 `TTL`이 잘못됐으면 `400 bad_ttl`입니다.
 
 예를 들어 `POST /nope`는 `404 route_not_found`이고, `POST /keys/`는 `405`입니다.
 
@@ -135,4 +138,4 @@ client가 알아야 하는 동작의 한계입니다.
 - **key는 요청이 서버에 닿는 데 걸린 시간만큼 늦게 만료됩니다.** 보관 기간은 서버가 헤더를 받은 순간부터 세므로, client가 보낸 순간보다 편도 전송 지연만큼 늦게 끝납니다. 일찍 만료되는 일은 없습니다.
 - 바이트를 아주 조금씩 계속 보내거나 받아 가는 연결은 쉬는 시간 기한(10초)에 걸리지 않습니다. 이런 연결이 차지할 수 있는 자리는 연결 상한 128개로 묶입니다.
 - 연결 상한에 걸린 연결은 `503`을 보낸 뒤 곧바로 닫힙니다. client가 그 사이에 요청을 보내면(특히 큰 body), 서버가 읽지 않은 데이터를 남긴 채 닫으므로 커널이 연결을 리셋해서 client가 `503` 대신 연결 리셋 오류를 받을 수 있습니다.
-- client가 body를 보내다 스스로 연결을 끊으면, 그때까지 받은 body가 value로 저장될 수 있습니다. mongoose가 닫히는 연결의 받다 만 요청을 요청으로 넘기기 때문입니다. 서버가 먼저 닫는 경우(`408`, `411`, `413`, `503`)에는 저장하지 않습니다.
+- client가 body를 보내다 스스로 연결을 끊으면, 그때까지 받은 body가 value로 저장될 수 있습니다. mongoose가 닫히는 연결의 받다 만 요청을 요청으로 넘기기 때문입니다. 서버가 먼저 닫는 경우(`408`, `411`, `413`, `431`, `503`)에는 저장하지 않습니다.

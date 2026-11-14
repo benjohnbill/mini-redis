@@ -23,6 +23,7 @@ START_TIMEOUT = 10.0
 STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
 BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), spec Q10
+HEADER_MAX = 64  # 서버가 읽는 헤더 수의 상한, 넘으면 431
 LARGE_REQUEST_TIMEOUT = 15.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
 PROMPT_TIMEOUT = 0.5  # 느린 연결이 있어도 다른 요청이 이 시간 안에 응답을 받아야 합니다
 SLOW_BODY_CHUNK = 64 * 1024
@@ -208,6 +209,70 @@ def headers_only_chunked_returns_411(server):
     expect(body, b'{"error":"length_required"}', "body")
 
 
+def headers_only_other_transfer_encoding_returns_411(server):
+    # mongoose는 chunked가 아닌 Transfer-Encoding이면 응답 없이 연결을 닫으므로,
+    # 서버가 그보다 먼저 411을 보내야 합니다.
+    status, content_type, body = headers_only_request(
+        server, "/keys/gzip", "Transfer-Encoding", "gzip")
+
+    expect(status, 411, "상태 코드")
+    expect(content_type, "application/json", "Content-Type")
+    expect(body, b'{"error":"length_required"}', "body")
+
+
+def put_with_header_count(server, key, count):
+    """헤더를 정확히 count개 보낸 PUT의 상태 코드와 body를 돌려줍니다. 마지막
+    헤더는 TTL: abc라서, 서버가 그 헤더까지 읽으면 400 bad_ttl이 나옵니다.
+    http.client는 헤더를 스스로 더하므로 소켓으로 직접 보냅니다."""
+    fixed = ["Host: x", "Content-Length: 0"]
+    fillers = [f"X-Filler-{index}: v" for index in range(count - len(fixed) - 1)]
+    lines = [f"PUT /keys/{key} HTTP/1.1"] + fixed + fillers + ["TTL: abc"]
+    with socket.create_connection((HOST, server.port), timeout=REQUEST_TIMEOUT) as raw:
+        raw.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
+        response = http.client.HTTPResponse(raw)
+        response.begin()
+        return response.status, response.read()
+
+
+def header_over_limit_returns_431_and_stores_nothing(server):
+    status, body = put_with_header_count(server, "too-many-headers", HEADER_MAX + 1)
+
+    expect(status, 431, "상태 코드")
+    expect(body, b'{"error":"too_many_headers"}', "body")
+    status, _, _ = server.request("GET", "/keys/too-many-headers")
+    expect(status, 404, "거절 뒤 조회의 상태 코드")
+
+
+def header_at_limit_is_read_to_the_last(server):
+    # 마지막(64번째) 헤더 TTL: abc를 읽었다면 bad_ttl이 나옵니다.
+    status, body = put_with_header_count(server, "header-at-limit", HEADER_MAX)
+
+    expect(status, 400, "상태 코드")
+    expect(body, b'{"error":"bad_ttl"}', "body")
+
+
+def new_connection_after_431_is_served(server):
+    status, _ = put_with_header_count(server, "before-new-connection", HEADER_MAX + 1)
+    expect(status, 431, "첫 연결의 상태 코드")
+
+    status, _, _ = server.request("PUT", "/keys/after-431", body=b"v")
+
+    expect(status, 204, "새 연결의 상태 코드")
+
+
+def too_many_headers_wins_over_transfer_encoding(server):
+    fillers = [f"X-Filler-{index}: v" for index in range(HEADER_MAX)]
+    lines = ["PUT /keys/both HTTP/1.1", "Host: x", "Transfer-Encoding: chunked"] + fillers
+    with socket.create_connection((HOST, server.port), timeout=REQUEST_TIMEOUT) as raw:
+        raw.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
+        response = http.client.HTTPResponse(raw)
+        response.begin()
+        status, body = response.status, response.read()
+
+    expect(status, 431, "상태 코드")
+    expect(body, b'{"error":"too_many_headers"}', "body")
+
+
 def body_at_limit_round_trips(server):
     # 바이트마다 값이 바뀌어, 잘리거나 밀린 곳이 있으면 비교가 실패합니다.
     value = bytes(range(256)) * (BODY_MAX // 256)
@@ -296,6 +361,14 @@ TESTS = [
     ("(기능) 연결 하나로 보낸 두 번째 요청도 응답을 받는다", second_request_on_same_connection_gets_response),
     ("[T8] (기능) 헤더만 보내도 Content-Length가 상한을 넘으면 413을 받는다", headers_only_over_limit_returns_413),
     ("(기능) 헤더만 보내도 Transfer-Encoding: chunked이면 411을 받는다", headers_only_chunked_returns_411),
+    ("(기능) Transfer-Encoding이 chunked가 아니어도 411을 받는다",
+     headers_only_other_transfer_encoding_returns_411),
+    ("(기능) 헤더가 상한보다 많으면 431 too_many_headers를 받고 저장되지 않는다",
+     header_over_limit_returns_431_and_stores_nothing),
+    ("(기능) 헤더가 상한과 같으면 마지막 헤더까지 읽는다", header_at_limit_is_read_to_the_last),
+    ("(기능) 431을 받은 뒤 새 연결의 요청은 정상으로 처리된다", new_connection_after_431_is_served),
+    ("(기능) 헤더가 상한보다 많으면 Transfer-Encoding이 있어도 431을 받는다",
+     too_many_headers_wins_over_transfer_encoding),
     ("(기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다", body_at_limit_round_trips),
     ("(기능) 헤더를 반쯤 보내고 멈춘 연결이 있어도 다른 요청은 바로 응답을 받는다", half_sent_headers_do_not_block_others),
     ("(기능) 큰 body를 천천히 보내는 연결이 있어도 다른 요청은 바로 응답을 받는다", slow_large_body_does_not_block_others),
