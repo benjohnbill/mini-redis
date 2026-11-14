@@ -313,9 +313,10 @@ static void request_handle(struct mg_connection *connection,
         return;
     }
     struct store *store = connection->fn_data;
-    struct api_response response = api_handle(
-        store, message->method.buf, message->method.len, message->uri.buf,
-        target_len(message), message->body.buf, message->body.len);
+    struct api_response response =
+        api_handle(store, mg_millis(), message->method.buf, message->method.len,
+                   message->uri.buf, target_len(message), message->body.buf,
+                   message->body.len);
     /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. */
     response_send(connection, &response);
     /* mongoose는 이 이벤트 전에 is_resp를 세우고, 세워져 있는 동안 같은 연결의

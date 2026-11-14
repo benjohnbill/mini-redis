@@ -56,9 +56,11 @@ void store_destroy(struct store *store)
 }
 
 bool store_set(struct store *store, const void *key, size_t key_len,
-               const void *value, size_t value_len)
+               const void *value, size_t value_len, uint64_t expires_at)
 {
     assert(store != NULL);
+    /* 아직 만료를 판정하지 않으므로 만료 시각을 entry에 두지 않습니다. */
+    (void)expires_at;
 
     /* 새 entry를 먼저 다 만든 뒤에 테이블에 넣습니다. 만들기가 실패하면
        테이블은 그대로입니다. */
@@ -76,10 +78,11 @@ bool store_set(struct store *store, const void *key, size_t key_len,
     return true;
 }
 
-bool store_get(struct store *store, const void *key, size_t key_len,
-               const void **value, size_t *value_len)
+bool store_get(struct store *store, uint64_t now, const void *key,
+               size_t key_len, const void **value, size_t *value_len)
 {
     assert(store != NULL && value != NULL && value_len != NULL);
+    assert(now != STORE_NO_EXPIRY);
 
     struct entry probe = probe_for(key, key_len);
     struct hash_elem *found = hash_find(&store->table, &probe.elem);
@@ -94,9 +97,11 @@ bool store_get(struct store *store, const void *key, size_t key_len,
     return true;
 }
 
-bool store_delete(struct store *store, const void *key, size_t key_len)
+bool store_delete(struct store *store, uint64_t now, const void *key,
+                  size_t key_len)
 {
     assert(store != NULL);
+    assert(now != STORE_NO_EXPIRY);
 
     /* hash_delete는 테이블에서 뺀 entry를 돌려줄 뿐 해제하지 않으므로, 해제는
        store가 합니다. */

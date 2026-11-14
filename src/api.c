@@ -23,33 +23,33 @@ static bool path_is_keys(const char *path, size_t path_len);
 static enum key_action key_action_parse(const char *method, size_t method_len);
 static bool method_is(const char *method, size_t method_len, const char *name);
 static struct api_response
-key_request_handle(struct store *store, enum key_action action,
+key_request_handle(struct store *store, uint64_t now, enum key_action action,
                    const char *encoded_key, size_t encoded_key_len,
                    const void *body, size_t body_len);
 static bool key_decode(const char *encoded, size_t encoded_len, char *key,
                        size_t *key_len);
 static int hex_digit_value(char digit);
-static struct api_response key_action_run(struct store *store,
+static struct api_response key_action_run(struct store *store, uint64_t now,
                                           enum key_action action,
                                           const char *key, size_t key_len,
                                           const void *body, size_t body_len);
-static struct api_response key_get(struct store *store, const char *key,
-                                   size_t key_len);
+static struct api_response key_get(struct store *store, uint64_t now,
+                                   const char *key, size_t key_len);
 static struct api_response key_set(struct store *store, const char *key,
                                    size_t key_len, const void *value,
                                    size_t value_len);
-static struct api_response key_delete(struct store *store, const char *key,
-                                      size_t key_len);
+static struct api_response key_delete(struct store *store, uint64_t now,
+                                      const char *key, size_t key_len);
 static struct api_response response_error(int status, const char *body);
 static struct api_response response_no_content(void);
 
 /* 경로, 메서드, key 순서로 검사하고 처음 걸린 오류 하나로 답합니다. 경로가
    틀린 요청에 메서드나 key 오류를 알리면 다른 서버가 엉뚱한 곳을 고치게
    되기 때문입니다(spec "오류의 우선순위"). */
-struct api_response api_handle(struct store *store, const char *method,
-                               size_t method_len, const char *path,
-                               size_t path_len, const void *body,
-                               size_t body_len)
+struct api_response api_handle(struct store *store, uint64_t now,
+                               const char *method, size_t method_len,
+                               const char *path, size_t path_len,
+                               const void *body, size_t body_len)
 {
     if (!path_is_keys(path, path_len)) {
         return response_error(404, ERROR_BODY("route_not_found"));
@@ -62,7 +62,7 @@ struct api_response api_handle(struct store *store, const char *method,
         return response;
     }
 
-    return key_request_handle(store, action, path + KEYS_PREFIX_LEN,
+    return key_request_handle(store, now, action, path + KEYS_PREFIX_LEN,
                               path_len - KEYS_PREFIX_LEN, body, body_len);
 }
 
@@ -121,7 +121,7 @@ static bool method_is(const char *method, size_t method_len, const char *name)
 }
 
 /* key의 인코딩을 풀어 검사한 뒤 store에 action을 합니다. */
-static struct api_response key_request_handle(struct store *store,
+static struct api_response key_request_handle(struct store *store, uint64_t now,
                                               enum key_action action,
                                               const char *encoded_key,
                                               size_t encoded_key_len,
@@ -141,7 +141,8 @@ static struct api_response key_request_handle(struct store *store,
            여지를 없애려고 거절합니다(spec Q3). */
         response = response_error(400, ERROR_BODY("empty_key"));
     } else {
-        response = key_action_run(store, action, key, key_len, body, body_len);
+        response =
+            key_action_run(store, now, action, key, key_len, body, body_len);
     }
     /* store는 key를 복사해서 가지므로, 응답을 돌려주기 전에 풀어도 됩니다. */
     free(key);
@@ -201,27 +202,27 @@ static int hex_digit_value(char digit)
 }
 
 /* action은 key_action_parse가 KEY_ACTION_NONE이 아니라고 확인한 값입니다. */
-static struct api_response key_action_run(struct store *store,
+static struct api_response key_action_run(struct store *store, uint64_t now,
                                           enum key_action action,
                                           const char *key, size_t key_len,
                                           const void *body, size_t body_len)
 {
     if (action == KEY_ACTION_GET) {
-        return key_get(store, key, key_len);
+        return key_get(store, now, key, key_len);
     }
     if (action == KEY_ACTION_SET) {
         return key_set(store, key, key_len, body, body_len);
     }
 
-    return key_delete(store, key, key_len);
+    return key_delete(store, now, key, key_len);
 }
 
-static struct api_response key_get(struct store *store, const char *key,
-                                   size_t key_len)
+static struct api_response key_get(struct store *store, uint64_t now,
+                                   const char *key, size_t key_len)
 {
     const void *value = NULL;
     size_t value_len = 0;
-    if (!store_get(store, key, key_len, &value, &value_len)) {
+    if (!store_get(store, now, key, key_len, &value, &value_len)) {
         return response_error(404, ERROR_BODY("key_not_found"));
     }
     struct api_response response = {.status = 200,
@@ -238,16 +239,16 @@ static struct api_response key_set(struct store *store, const char *key,
 {
     /* store_set의 false는 메모리 부족뿐입니다. 할당 함수를 바꿔 끼울 seam이
        없어서 이 분기는 자동 테스트하지 않고 리뷰로 확인합니다. */
-    if (!store_set(store, key, key_len, value, value_len)) {
+    if (!store_set(store, key, key_len, value, value_len, STORE_NO_EXPIRY)) {
         return response_error(500, ERROR_BODY("out_of_memory"));
     }
     return response_no_content();
 }
 
-static struct api_response key_delete(struct store *store, const char *key,
-                                      size_t key_len)
+static struct api_response key_delete(struct store *store, uint64_t now,
+                                      const char *key, size_t key_len)
 {
-    if (!store_delete(store, key, key_len)) {
+    if (!store_delete(store, now, key, key_len)) {
         return response_error(404, ERROR_BODY("key_not_found"));
     }
     return response_no_content();

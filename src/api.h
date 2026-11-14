@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "store.h"
 
@@ -28,11 +29,11 @@ struct api_response {
     const char *allow;
 };
 
-/* 요청 하나를 처리하고 응답을 돌려줍니다. */
-struct api_response api_handle(struct store *store, const char *method,
-                               size_t method_len, const char *path,
-                               size_t path_len, const void *body,
-                               size_t body_len);
+/* now 시각(mg_millis의 ms)에 온 요청 하나를 처리하고 응답을 돌려줍니다. */
+struct api_response api_handle(struct store *store, uint64_t now,
+                               const char *method, size_t method_len,
+                               const char *path, size_t path_len,
+                               const void *body, size_t body_len);
 
 /* 헤더만 보고 거절할 요청이면 오류 응답을 *response에 쓰고 true를 돌려줍니다.
    Transfer-Encoding 헤더가 있으면 411, 헤더가 알린 body 길이가 API_BODY_MAX를
