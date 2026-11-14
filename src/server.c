@@ -229,6 +229,11 @@ static void request_handle(struct mg_connection *connection,
         target_len(message), message->body.buf, message->body.len);
     /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. */
     response_send(connection, &response);
+    /* mongoose는 이 이벤트 전에 is_resp를 세우고, 세워져 있는 동안 같은 연결의
+       다음 요청을 해석하지 않습니다. is_resp를 내리는 것은 mg_http_reply뿐인데
+       응답을 mg_printf와 mg_send로 보내므로, 여기서 직접 내립니다. 내리지 않으면
+       연결 하나에서 두 번째 요청부터 응답이 오지 않습니다. */
+    connection->is_resp = 0;
 }
 
 /* mongoose는 요청 줄의 대상을 ? 앞(uri)과 뒤(query)로 나눕니다. api 층은 ?를
