@@ -62,9 +62,9 @@ struct origin *origin_open(const char *spec, bool create)
         return NULL;
     }
     sqlite3_busy_timeout(origin->database, WAIT_MS);
-    if (!create &&
-        sqlite3_exec(origin->database, "SELECT id,name,price FROM products LIMIT 0",
-                     NULL, NULL, NULL) != SQLITE_OK) {
+    if (!create && sqlite3_exec(origin->database,
+                                "SELECT id,name,price FROM products LIMIT 0",
+                                NULL, NULL, NULL) != SQLITE_OK) {
         fprintf(stderr, "cache-demo: origin schema unavailable\n");
         origin_destroy(origin);
         return NULL;
@@ -154,7 +154,8 @@ int origin_list_read(struct origin *origin, const struct list_query *list,
              list->q_len != 0 ? " AND instr(name,?5)>0" : "",
              order_sql[list->sort]);
     sqlite3_stmt *statement = NULL;
-    int result = sqlite3_prepare_v2(origin->database, sql, -1, &statement, NULL);
+    int result =
+        sqlite3_prepare_v2(origin->database, sql, -1, &statement, NULL);
     if (result == SQLITE_OK) {
         result = sqlite3_bind_int(statement, 1, list->min_price);
     }
@@ -194,7 +195,8 @@ static int product_change(struct origin *origin, const char *sql,
         sqlite3_exec(origin->database, "BEGIN IMMEDIATE", NULL, NULL, NULL);
     sqlite3_stmt *statement = NULL;
     if (result == SQLITE_OK) {
-        result = sqlite3_prepare_v2(origin->database, sql, -1, &statement, NULL);
+        result =
+            sqlite3_prepare_v2(origin->database, sql, -1, &statement, NULL);
     }
     if (result == SQLITE_OK) {
         result = sqlite3_bind_int(statement, 1, product_id);
@@ -206,10 +208,10 @@ static int product_change(struct origin *origin, const char *sql,
     if (result == SQLITE_OK && name != NULL) {
         result = sqlite3_bind_int(statement, 3, price);
     }
-    bool applied = result == SQLITE_OK && sqlite3_step(statement) == SQLITE_DONE;
-    bool committed =
-        applied && sqlite3_exec(origin->database, "COMMIT", NULL, NULL, NULL) ==
-                       SQLITE_OK;
+    bool applied =
+        result == SQLITE_OK && sqlite3_step(statement) == SQLITE_DONE;
+    bool committed = applied && sqlite3_exec(origin->database, "COMMIT", NULL,
+                                             NULL, NULL) == SQLITE_OK;
     int changes = applied ? sqlite3_changes(origin->database) : 0;
     if (!applied) {
         sqlite3_exec(origin->database, "ROLLBACK", NULL, NULL, NULL);

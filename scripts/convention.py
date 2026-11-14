@@ -35,6 +35,23 @@ if sys.platform == 'darwin':
                   '--extra-arg=-isysroot' + sdk]
 
 
+def pg_include_flag():
+    try:
+        proc = subprocess.run(['pg_config', '--includedir'],
+                              capture_output=True, text=True)
+    except OSError:
+        return None
+    path = proc.stdout.strip()
+    return '-I' + path if proc.returncode == 0 and path else None
+
+
+# 선택 PostgreSQL 원본은 libpq 헤더가 있을 때만 이름 검사를 합니다. 기본 CI는
+# PostgreSQL 개발 파일을 요구하지 않기 때문입니다(M5 spec).
+PG_INCLUDE = pg_include_flag()
+if PG_INCLUDE:
+    TIDY_FLAGS.append('--extra-arg=' + PG_INCLUDE)
+
+
 def paint(code, s):
     return f'\033[{code}m{s}\033[0m' if COLOR else s
 
@@ -51,7 +68,10 @@ def format_files():
 
 
 def lint_files():
-    return git_files('src/*.c', 'tests/*.c', 'demo/*.c')
+    files = git_files('src/*.c', 'tests/*.c', 'demo/*.c')
+
+    return files if PG_INCLUDE else [p for p in files
+                                     if p != 'demo/postgres_origin.c']
 
 
 def formatted(path):
