@@ -83,6 +83,11 @@ bool api_reject_headers(bool has_transfer_encoding, size_t body_len,
     return false;
 }
 
+struct api_response api_too_many_connections(void)
+{
+    return response_error(503, ERROR_BODY("too_many_connections"));
+}
+
 /* `/keys/`로 시작해야 합니다. 끝에 /가 없는 `/keys`도 경로 오류입니다. */
 static bool path_is_keys(const char *path, size_t path_len)
 {
