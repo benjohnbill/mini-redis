@@ -33,8 +33,8 @@ bool store_set(struct store *store, const void *key, size_t key_len,
                const void *value, size_t value_len, uint64_t expires_at);
 
 /* now 시각에 key를 찾으면 true를 돌려주고, *value와 *value_len에 저장된
-   value를 빌려줍니다. 없으면 false를 돌려주고 *value와 *value_len을 바꾸지
-   않습니다.
+   value를 빌려줍니다. 없거나 만료됐으면(now >= 만료 시각) false를 돌려주고
+   *value와 *value_len을 바꾸지 않습니다. 만료된 entry를 지우지는 않습니다.
    빌려준 *value는 읽기 전용이며, 같은 store에 다음 store_set 또는
    store_delete를 부르기 전까지만 유효합니다. 그 뒤에 쓰면 해제된 메모리를
    가리킬 수 있습니다. */
@@ -42,7 +42,8 @@ bool store_get(struct store *store, uint64_t now, const void *key,
                size_t key_len, const void **value, size_t *value_len);
 
 /* now 시각에 key가 있으면 그 entry를 빼서 해제하고 true를 돌려줍니다.
-   없으면 false를 돌려주며, 이것은 오류가 아니라 "지운 것이 없음"입니다. */
+   없으면 false를 돌려주며, 이것은 오류가 아니라 "지운 것이 없음"입니다.
+   만료된 entry는 빼서 해제하되, 없는 key와 같게 false를 돌려줍니다. */
 bool store_delete(struct store *store, uint64_t now, const void *key,
                   size_t key_len);
 

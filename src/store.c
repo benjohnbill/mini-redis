@@ -21,6 +21,8 @@ struct entry {
     size_t key_len;
     const unsigned char *value;
     size_t value_len;
+    /* 만료되지 않는 entry는 STORE_NO_EXPIRY입니다. */
+    uint64_t expires_at;
     unsigned char bytes[];
 };
 
@@ -29,10 +31,15 @@ static bool entry_less(const struct hash_elem *left,
                        const struct hash_elem *right, void *aux);
 static void entry_free(struct hash_elem *element, void *aux);
 static struct entry *entry_create(const void *key, size_t key_len,
-                                  const void *value, size_t value_len);
+                                  const void *value, size_t value_len,
+                                  uint64_t expires_at);
 static const unsigned char *bytes_or_empty(const void *bytes, size_t len);
-static void entry_init(struct entry *entry, size_t key_len, size_t value_len);
+static void entry_init(struct entry *entry, size_t key_len, size_t value_len,
+                       uint64_t expires_at);
+static struct entry *live_entry_find(struct store *store, uint64_t now,
+                                     const void *key, size_t key_len);
 static struct entry probe_for(const void *key, size_t key_len);
+static bool entry_is_expired(const struct entry *entry, uint64_t now);
 
 struct store *store_create(void)
 {
@@ -59,12 +66,11 @@ bool store_set(struct store *store, const void *key, size_t key_len,
                const void *value, size_t value_len, uint64_t expires_at)
 {
     assert(store != NULL);
-    /* 아직 만료를 판정하지 않으므로 만료 시각을 entry에 두지 않습니다. */
-    (void)expires_at;
 
     /* 새 entry를 먼저 다 만든 뒤에 테이블에 넣습니다. 만들기가 실패하면
        테이블은 그대로입니다. */
-    struct entry *entry = entry_create(key, key_len, value, value_len);
+    struct entry *entry =
+        entry_create(key, key_len, value, value_len, expires_at);
     if (entry == NULL) {
         return false;
     }
@@ -84,13 +90,13 @@ bool store_get(struct store *store, uint64_t now, const void *key,
     assert(store != NULL && value != NULL && value_len != NULL);
     assert(now != STORE_NO_EXPIRY);
 
-    struct entry probe = probe_for(key, key_len);
-    struct hash_elem *found = hash_find(&store->table, &probe.elem);
-    if (found == NULL) {
+    /* 만료된 entry는 "없음"으로 답하되 지우지 않습니다. get은 store를 바꾸지
+       않기 때문입니다(spec "조회할 때의 검사"). 지우는 일은 삭제와 주기 청소가
+       맡습니다. */
+    const struct entry *entry = live_entry_find(store, now, key, key_len);
+    if (entry == NULL) {
         return false;
     }
-
-    const struct entry *entry = hash_entry(found, struct entry, elem);
     *value = entry->value;
     *value_len = entry->value_len;
 
@@ -110,9 +116,13 @@ bool store_delete(struct store *store, uint64_t now, const void *key,
     if (removed == NULL) {
         return false;
     }
+    /* 만료된 entry도 빼서 해제하지만, 없는 key와 같게 "지운 것이 없음"으로
+       답합니다(spec Q3, "조회할 때의 검사"). */
+    bool was_live =
+        !entry_is_expired(hash_entry(removed, struct entry, elem), now);
     entry_free(removed, NULL);
 
-    return true;
+    return was_live;
 }
 
 /* value는 해시하지 않습니다. 같은 key는 value와 상관없이 같은 버킷에 가야 합니다. */
@@ -151,7 +161,8 @@ static void entry_free(struct hash_elem *element, void *aux)
 /* key와 value의 바이트를 복사한 새 entry를 만듭니다. 길이의 합이 size_t를
    넘거나 메모리가 부족하면 NULL을 돌려줍니다. */
 static struct entry *entry_create(const void *key, size_t key_len,
-                                  const void *value, size_t value_len)
+                                  const void *value, size_t value_len,
+                                  uint64_t expires_at)
 {
     /* 길이의 합이 size_t를 넘으면 malloc 크기가 작게 감기므로 할당 실패로 봅니다. */
     if (key_len > SIZE_MAX - sizeof(struct entry) ||
@@ -164,7 +175,7 @@ static struct entry *entry_create(const void *key, size_t key_len,
     }
     memcpy(entry->bytes, bytes_or_empty(key, key_len), key_len);
     memcpy(entry->bytes + key_len, bytes_or_empty(value, value_len), value_len);
-    entry_init(entry, key_len, value_len);
+    entry_init(entry, key_len, value_len, expires_at);
 
     return entry;
 }
@@ -180,12 +191,28 @@ static const unsigned char *bytes_or_empty(const void *bytes, size_t len)
 }
 
 /* key와 value의 바이트가 이미 bytes에 있을 때, 주소와 길이 필드를 채웁니다. */
-static void entry_init(struct entry *entry, size_t key_len, size_t value_len)
+static void entry_init(struct entry *entry, size_t key_len, size_t value_len,
+                       uint64_t expires_at)
 {
     entry->key = entry->bytes;
     entry->key_len = key_len;
     entry->value = entry->bytes + key_len;
     entry->value_len = value_len;
+    entry->expires_at = expires_at;
+}
+
+/* now 시각에 만료되지 않은 entry를 찾고, 없거나 만료됐으면 NULL을 돌려줍니다. */
+static struct entry *live_entry_find(struct store *store, uint64_t now,
+                                     const void *key, size_t key_len)
+{
+    struct entry probe = probe_for(key, key_len);
+    struct hash_elem *found = hash_find(&store->table, &probe.elem);
+    if (found == NULL) {
+        return NULL;
+    }
+    struct entry *entry = hash_entry(found, struct entry, elem);
+
+    return entry_is_expired(entry, now) ? NULL : entry;
 }
 
 /* 조회용 임시 entry입니다. key만 채우면 hash와 less가 동작합니다. */
@@ -193,4 +220,11 @@ static struct entry probe_for(const void *key, size_t key_len)
 {
     return (struct entry){.key = bytes_or_empty(key, key_len),
                           .key_len = key_len};
+}
+
+/* 만료 시각과 같은 순간부터 만료입니다(spec "경계"). now는 STORE_NO_EXPIRY가
+   아니므로, 만료 시각이 STORE_NO_EXPIRY인 entry는 만료되지 않습니다. */
+static bool entry_is_expired(const struct entry *entry, uint64_t now)
+{
+    return now >= entry->expires_at;
 }

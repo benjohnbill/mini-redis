@@ -29,10 +29,25 @@ struct api_response {
     const char *allow;
 };
 
-/* now 시각(mg_millis의 ms)에 온 요청 하나를 처리하고 응답을 돌려줍니다. */
+/* 요청의 TTL 헤더입니다(ADR ttl-in-request-header). 서버는 헤더의 값을 해석하지
+   않고 그대로 넘기며, 검사는 api 층이 합니다. */
+struct api_ttl_header {
+    /* 첫 번째 TTL 헤더 값의 바이트입니다. 헤더가 없으면 NULL이고 길이는 0입니다. */
+    const char *text;
+    size_t text_len;
+    /* 요청에 온 TTL 헤더의 개수입니다. 0이면 보관 기간이 없는 PUT입니다. */
+    size_t count;
+    /* 요청 헤더를 다 받은 시각(mg_millis의 ms)입니다. 보관 기간은 이 시각부터
+       셉니다(spec Q11). */
+    uint64_t received_at;
+};
+
+/* now 시각(mg_millis의 ms)에 온 요청 하나를 처리하고 응답을 돌려줍니다.
+   ttl_header는 PUT만 쓰고, GET과 DELETE는 무시합니다. NULL이면 안 됩니다. */
 struct api_response api_handle(struct store *store, uint64_t now,
                                const char *method, size_t method_len,
                                const char *path, size_t path_len,
+                               const struct api_ttl_header *ttl_header,
                                const void *body, size_t body_len);
 
 /* 헤더만 보고 거절할 요청이면 오류 응답을 *response에 쓰고 true를 돌려줍니다.

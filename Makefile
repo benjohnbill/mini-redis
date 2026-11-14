@@ -63,6 +63,7 @@ test: $(TEST_BINS)
 functional: $(SERVER)
 	python3 -B tests/functional/api_test.py $(SERVER)
 	python3 -B tests/functional/concurrency_test.py $(SERVER)
+	python3 -B tests/functional/expire_test.py $(SERVER)
 
 verify: $(SERVER) test functional
 	python3 scripts/check-ids.py

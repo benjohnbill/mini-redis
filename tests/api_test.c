@@ -13,8 +13,9 @@ static struct api_response request(struct store *store, const char *method,
                                    const char *path, const void *body,
                                    size_t body_len)
 {
+    struct api_ttl_header no_ttl_header = {.received_at = ANY_NOW};
     return api_handle(store, ANY_NOW, method, strlen(method), path,
-                      strlen(path), body, body_len);
+                      strlen(path), &no_ttl_header, body, body_len);
 }
 
 /* 오류 응답이 상태 코드, application/json, 기대한 body인지 확인합니다. */
