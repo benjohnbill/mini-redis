@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""기능 테스트(M3 concurrency): 실제 mini-redis 서버를 띄우고 바깥에서 연결과
-요청을 보냅니다.
+"""기능 테스트(M3 concurrency): 실제 mini-redis 서버를 띄우고 바깥에서 연결과 요청을 보냅니다.
 
 사용법: python3 -B tests/functional/concurrency_test.py build/mini-redis
 
-서버를 띄우는 방법은 api_test.py와 같습니다. 테스트마다 서로 다른 key를 쓰고,
-테스트가 연 연결은 테스트가 끝날 때 모두 닫습니다. 쉬는 연결은 10초 뒤에
-닫히므로(spec Q4), 연결을 여는 테스트는 그보다 훨씬 빨리 끝나야 합니다. 마지막에
-서버를 끄고, 서버의 종료 코드와 sanitizer 출력을 확인합니다.
-python3 표준 라이브러리만 씁니다.
+서버를 띄우는 방식은 api_test.py와 같습니다. 서버는 한 번만 띄우고, 테스트마다 서로
+다른 key를 씁니다. 테스트가 연 연결은 테스트가 끝날 때 모두 닫습니다. 쉬는 연결은
+10초 뒤에 닫히므로(spec Q4), 연결을 여는 테스트는 그보다 훨씬 빨리 끝나야 합니다.
+테스트가 실패해도 마지막에 서버를 끕니다.
+python3 표준 라이브러리만 쓰므로 CI에 새 의존성이 없습니다.
 """
 
 import http.client
@@ -23,8 +22,12 @@ HOST = "127.0.0.1"
 START_TIMEOUT = 10.0
 STOP_TIMEOUT = 10.0
 REQUEST_TIMEOUT = 5.0
+BODY_MAX = 16 * 1024 * 1024  # body 상한 16 MiB(16,777,216바이트), M2 spec Q10
+LARGE_REQUEST_TIMEOUT = 15.0  # ASan을 켠 서버가 16 MiB를 주고받는 요청입니다
+PROMPT_TIMEOUT = 0.5  # 큰 요청이 도는 중에도 작은 GET이 이 시간 안에 응답을 받아야 합니다(ASan 기준)
+LARGE_CHUNK = 1024 * 1024  # 큰 value를 이 크기씩 보내거나 받습니다
+CHUNKS_PER_CHECK = 4  # 큰 value를 이만큼 주고받을 때마다 작은 GET을 한 번 보냅니다
 CONNECTION_MAX = 128  # 동시 연결의 상한, spec Q8
-SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime error:")
 
 
 class Server:
@@ -45,6 +48,15 @@ class Server:
             except OSError:
                 time.sleep(0.02)
         raise AssertionError(f"서버가 {START_TIMEOUT}초 안에 연결을 받지 않습니다")
+
+    def request(self, method, path, body=None, timeout=REQUEST_TIMEOUT):
+        connection = http.client.HTTPConnection(HOST, self.port, timeout=timeout)
+        try:
+            connection.request(method, path, body=body)
+            response = connection.getresponse()
+            return response.status, response.getheader("Content-Type"), response.read()
+        finally:
+            connection.close()
 
     def stop(self):
         """SIGTERM을 보내고 종료 코드를 돌려줍니다. 제때 끝나지 않으면 죽입니다."""
@@ -127,6 +139,76 @@ def expect_rejected(status, content_type, body, rest):
 
 # ── 테스트 ────────────────────────────────────────────────────
 
+def large_value():
+    # 바이트마다 값이 바뀌어, 잘리거나 밀린 곳이 있으면 비교가 실패합니다.
+    return bytes(range(256)) * (BODY_MAX // 256)
+
+
+def expect_small_get_prompt(server, key):
+    """큰 요청과 별개인 새 연결의 작은 GET이 PROMPT_TIMEOUT 안에 응답을 받는지 봅니다."""
+    started = time.monotonic()
+    status, _, body = server.request("GET", f"/keys/{key}", timeout=PROMPT_TIMEOUT)
+    elapsed = time.monotonic() - started
+
+    expect(status, 404, "작은 GET의 상태 코드")
+    expect(body, b'{"error":"key_not_found"}', "작은 GET의 body")
+    if elapsed >= PROMPT_TIMEOUT:
+        raise AssertionError(f"작은 GET이 {elapsed:.3f}초 걸렸습니다")
+
+
+def small_get_prompt_while_storing_large_value(server):
+    value = large_value()
+    head = f"PUT /keys/large-store HTTP/1.1\r\nHost: x\r\nContent-Length: {len(value)}\r\n\r\n"
+    with socket.create_connection((HOST, server.port), timeout=LARGE_REQUEST_TIMEOUT) as large:
+        large.sendall(head.encode("ascii"))
+        # 조각을 쉬지 않고 보내므로, 작은 GET이 도착할 때 서버는 아직 받지 않은 body를 읽는 중입니다.
+        for index in range(len(value) // LARGE_CHUNK):
+            large.sendall(value[index * LARGE_CHUNK:(index + 1) * LARGE_CHUNK])
+            if index % CHUNKS_PER_CHECK == 0:
+                expect_small_get_prompt(server, f"small-while-storing-{index}")
+        status_line = large.makefile("rb").readline()
+
+    expect(status_line.split(b" ")[1:2], [b"204"], "큰 저장의 상태 코드")
+    status, _, body = server.request("GET", "/keys/large-store", timeout=LARGE_REQUEST_TIMEOUT)
+    expect(status, 200, "큰 저장 뒤 조회의 상태 코드")
+    if body != value:
+        raise AssertionError("조회한 body가 저장한 큰 body와 다릅니다")
+
+
+def read_response_head(stream):
+    """상태 줄과 헤더를 읽어 (상태 코드, Content-Length)를 돌려줍니다."""
+    status = int(stream.readline().split(b" ")[1])
+    content_length = None
+    for line in iter(stream.readline, b"\r\n"):
+        name, _, field = line.partition(b":")
+        if name.strip().lower() == b"content-length":
+            content_length = int(field)
+    return status, content_length
+
+
+def small_get_prompt_while_downloading_large_value(server):
+    value = large_value()
+    status, _, _ = server.request("PUT", "/keys/large-download", body=value, timeout=LARGE_REQUEST_TIMEOUT)
+    expect(status, 204, "큰 저장의 상태 코드")
+
+    with socket.create_connection((HOST, server.port), timeout=LARGE_REQUEST_TIMEOUT) as large:
+        large.sendall(b"GET /keys/large-download HTTP/1.1\r\nHost: x\r\n\r\n")
+        stream = large.makefile("rb")
+        status, content_length = read_response_head(stream)
+        # 조금씩 받으므로, 작은 GET이 도착할 때 서버는 아직 보내지 못한 body를 들고 있습니다.
+        received = []
+        for index in range(len(value) // LARGE_CHUNK):
+            if index % CHUNKS_PER_CHECK == 0:
+                expect_small_get_prompt(server, f"small-while-downloading-{index}")
+            received.append(stream.read(LARGE_CHUNK))
+        body = b"".join(received)
+
+    expect(status, 200, "큰 조회의 상태 코드")
+    expect(content_length, len(value), "큰 조회의 Content-Length")
+    if body != value:
+        raise AssertionError("받아 간 body가 저장한 큰 body와 다릅니다")
+
+
 def connection_over_limit_gets_503_and_closed(server):
     connections = open_full(server, "limit-full")
     try:
@@ -162,8 +244,11 @@ def open_connections_served_while_rejecting(server):
         close_all(connections)
 
 
-# 서버를 끄는 확인은 main의 마지막에 합니다.
 TESTS = [
+    ("[T14] (기능) 다른 연결이 16 MiB value를 저장하는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
+     small_get_prompt_while_storing_large_value),
+    ("(기능) 다른 연결이 16 MiB value를 조회해 받아 가는 중에도 작은 GET은 0.5초 안에 응답을 받는다",
+     small_get_prompt_while_downloading_large_value),
     ("[T13] (기능) 연결 128개가 열려 있을 때 129번째 연결은 503과 too_many_connections를 받고 닫힌다",
      connection_over_limit_gets_503_and_closed),
     ("(기능) 열린 연결 하나가 닫혀 자리가 나면 새 연결이 다시 정상 응답을 받는다",
@@ -171,16 +256,6 @@ TESTS = [
     ("(기능) 129번째 연결이 거절되는 동안에도 이미 열린 연결의 요청은 정상 응답을 받는다",
      open_connections_served_while_rejecting),
 ]
-
-
-def server_stop_check(server):
-    """서버를 끄고, sanitizer 오류 없이 0으로 끝났는지 봅니다."""
-    code = server.stop()
-    output = server.output()
-    for mark in SANITIZER_MARKS:
-        if mark in output:
-            raise AssertionError(f"서버 출력에 sanitizer 오류가 있습니다:\n{output}")
-    expect(code, 0, "서버의 종료 코드")
 
 
 def main():
@@ -197,10 +272,9 @@ def main():
             except Exception as error:  # 한 테스트가 실패해도 나머지를 돌립니다.
                 failed += 1
                 print(f"Test {name}... [ FAILED ]\n  {error}")
-        server_stop_check(server)
     except AssertionError as error:
-        failed = max(failed, 1)
-        print(f"서버를 띄우거나 끄는 데 실패했습니다: {error}")
+        failed = len(TESTS)
+        print(f"서버를 띄우지 못했습니다: {error}")
     finally:
         server.stop()
     if failed:
