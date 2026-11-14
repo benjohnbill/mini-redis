@@ -62,6 +62,7 @@ test: $(TEST_BINS)
 # .pyc를 만들지 않게 합니다(scripts/check-ids.py가 tests/의 모든 파일을 텍스트로 읽습니다).
 functional: $(SERVER)
 	python3 -B tests/functional/api_test.py $(SERVER)
+	python3 -B tests/functional/concurrency_test.py $(SERVER)
 
 verify: $(SERVER) test functional
 	python3 scripts/check-ids.py
