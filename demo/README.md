@@ -22,17 +22,53 @@ make cache-functional  # 임시 DB와 실제 HTTP 서버를 사용하는 sanitiz
 
 ## 옵션
 
-준비 옵션은 `--db PATH --seed N [--count N]`입니다. seed는 1\~2,147,483,646이며 count는 1\~2,147,483,647, 생략하면 10,000입니다. id는 1부터 순서대로, 이름은 `상품 <id>`로 만듭니다. 가격은 seed를 시작값으로 매 상품마다 `state = state * 48271 % 2147483647`, `price = state % 1000000001`로 정합니다. seed 1의 첫 상품은 `{"id":1,"name":"상품 1","price":48271}`입니다. 상품 테이블의 기본 key는 id이고 `(price,id)` 인덱스를 둡니다.
+준비 명령은 상품 테이블을 채우고 끝납니다.
 
-서버 필수 옵션은 `--db PATH --port N --cache on|off`입니다. `--cache-url`은 HTTP 호스트와 선택 port만 받으며 기본값은 `http://127.0.0.1:8000`입니다. IPv6 URL은 지원하지 않습니다. `--ttl-seconds`는 기본 60초, `--cache-timeout-ms`는 기본 100ms이고 둘 다 양의 정수입니다. 캐시 기한은 연결부터 응답 완료까지 요청마다 적용합니다. 캐시 연결과 별도 Mongoose manager를 재사용하여 상품 요청 처리가 재진입하지 않도록 합니다. port는 1\~65,535이고 localhost에서만 연결을 받습니다. 준비하지 않은 DB로 시작하면 종료 코드 1, 잘못된 옵션은 2로 끝납니다. `--seed`와 서버 옵션을 함께 쓰거나 옵션을 중복하면 거절합니다. `--cache off`는 캐시 연결이나 상태 확인을 하지 않습니다. SQLite 연결 하나를 재사용하고 잠금 대기는 최대 1초입니다. SIGTERM이나 SIGINT로 종료합니다.
+| 준비 옵션 | 받는 값 | 생략하면 |
+|---|---|---|
+| `--db PATH` | DB 경로 | 필수 |
+| `--seed N` | 1\~2,147,483,646 | 필수 |
+| `--count N` | 1\~2,147,483,647 | 10,000 |
+
+id는 1부터 순서대로, 이름은 `상품 <id>`로 만듭니다. 가격은 seed를 시작값으로 매 상품마다 `state = state * 48271 % 2147483647`, `price = state % 1000000001`로 정합니다. seed 1의 첫 상품은 `{"id":1,"name":"상품 1","price":48271}`입니다. 상품 테이블의 기본 key는 id이고 `(price,id)` 인덱스를 둡니다.
+
+| 서버 옵션 | 받는 값 | 생략하면 |
+|---|---|---|
+| `--db PATH` | DB 경로 | 필수 |
+| `--port N` | 1\~65,535. localhost에서만 연결을 받습니다 | 필수 |
+| `--cache on\|off` | `on` 또는 `off` | 필수 |
+| `--cache-url` | HTTP 호스트와 선택 port. IPv6 URL은 지원하지 않습니다 | `http://127.0.0.1:8000` |
+| `--ttl-seconds` | 양의 정수 | 60초 |
+| `--cache-timeout-ms` | 양의 정수. 캐시 기한은 연결부터 응답 완료까지 요청마다 적용합니다 | 100ms |
+
+- **종료 코드:** 준비하지 않은 DB로 시작하면 1, 잘못된 옵션은 2로 끝납니다. `--seed`와 서버 옵션을 함께 쓰거나 옵션을 중복하면 거절합니다. SIGTERM이나 SIGINT로 종료합니다.
+- **연결:** 캐시 연결과 별도 Mongoose manager를 재사용하여 상품 요청 처리가 재진입하지 않도록 합니다. `--cache off`는 캐시 연결이나 상태 확인을 하지 않습니다. SQLite 연결 하나를 재사용하고 잠금 대기는 최대 1초입니다.
 
 ## HTTP API
 
-`GET /products/{id}`는 상품 JSON을 200으로, 없는 상품을 `404 product_not_found`로 반환합니다. id 범위는 1\~2,147,483,647이고 가격은 0\~1,000,000,000입니다. 이름은 NUL 없는 UTF-8 1\~120바이트입니다. 잘못된 id·query·GET body는 `400 invalid_request`, 모르는 경로는 `404 route_not_found`, 지원하지 않는 메서드는 `405 method_not_allowed`와 `Allow: GET`입니다. 원본 조회 실패나 잘못된 원본 데이터는 `503 origin_unavailable`이며, 다음 요청에서 원본을 다시 시도합니다. 모든 응답의 Content-Type은 `application/json`이고 오류는 `{"error":"고정된_영어_문자열"}` 형태입니다.
+| 요청 | 성공 | 이 요청의 오류 |
+|---|---|---|
+| `GET /products/{id}` | `200`과 상품 JSON | 없는 상품은 `404 product_not_found` |
+| `GET /products` | `200`과 `{"items":[...]}`. 빈 `items`도 정상 200이므로 저장합니다 | 아래 "목록 매개변수"를 어기면 `400 invalid_request` |
+| `PUT /products/{id}` | `204`. `{"name":...,"price":...}` 전체로 기존 상품을 수정합니다 | JSON이 아닌 Content-Type은 `415 unsupported_media_type`, 4 KiB를 넘는 body는 `413 body_too_large`, 그 밖의 잘못된 JSON·이름·가격은 `400 invalid_request`, 없는 상품은 `404 product_not_found` |
+| `DELETE /products/{id}` | `204`. 기존 상품을 삭제합니다 | 이미 없으면 `404` |
 
-`GET /products`는 조건에 맞는 상품을 `{"items":[...]}`로 반환합니다. 매개변수는 `q`(부분 문자열, 대소문자 구분, 최대 120바이트), `min_price`·`max_price`(0\~1,000,000,000, 양 끝 포함), `sort`(`id`, `price_asc`, `price_desc`), `offset`(0\~1,000,000), `limit`(1\~100)이며 기본값은 빈 `q`, 0, 1,000,000,000, `id`, 0, 20입니다. 가격이 같으면 id 오름차순입니다. 매개변수 이름과 값을 한 번 디코딩하며, 중복·알 수 없는 이름·깨진 인코딩·범위 밖 값·`min_price > max_price`는 `400 invalid_request`입니다. 정렬된 조건의 고정된 표현으로 캐시 key를 만들어 매개변수 순서와 기본값 표기가 달라도 같은 key를 씁니다. 빈 `items`도 정상 200이므로 저장합니다.
+- **상품:** id 범위는 1\~2,147,483,647이고 가격은 0\~1,000,000,000입니다. 이름은 NUL 없는 UTF-8 1\~120바이트입니다.
+- **공통 오류:** 잘못된 id·query·GET body는 `400 invalid_request`, 모르는 경로는 `404 route_not_found`, 지원하지 않는 메서드는 `405 method_not_allowed`와 `Allow: GET`입니다. 원본 조회 실패나 잘못된 원본 데이터는 `503 origin_unavailable`이며, 다음 요청에서 원본을 다시 시도합니다.
+- **형식:** 모든 응답의 Content-Type은 `application/json`이고 오류는 `{"error":"고정된_영어_문자열"}` 형태입니다.
+- **수정:** 부분 수정·신규 생성·추가 필드·중복 필드·누락 필드는 받지 않습니다. `PUT`과 `DELETE` 모두 원본 트랜잭션이 commit된 뒤에만 응답하며, 실패하면 rollback하고 캐시를 무효화하지 않습니다.
 
-`PUT /products/{id}`는 `{"name":...,"price":...}` 전체로 기존 상품을 수정하고 성공은 204입니다. 부분 수정·신규 생성·추가 필드·중복 필드·누락 필드는 받지 않습니다. JSON이 아닌 Content-Type은 415 `unsupported_media_type`, 4 KiB를 넘는 body는 413 `body_too_large`, 그 밖의 잘못된 JSON·이름·가격은 400 `invalid_request`, 없는 상품은 404 `product_not_found`입니다. `DELETE /products/{id}`는 기존 상품을 삭제하고 성공은 204, 이미 없으면 404입니다. 두 요청 모두 원본 트랜잭션이 commit된 뒤에만 응답하며, 실패하면 rollback하고 캐시를 무효화하지 않습니다.
+### 목록 매개변수
+
+| 매개변수 | 받는 값 | 기본값 |
+|---|---|---|
+| `q` | 부분 문자열, 대소문자 구분, 최대 120바이트 | 빈 `q` |
+| `min_price`, `max_price` | 0\~1,000,000,000, 양 끝 포함 | 0, 1,000,000,000 |
+| `sort` | `id`, `price_asc`, `price_desc`. 가격이 같으면 id 오름차순입니다 | `id` |
+| `offset` | 0\~1,000,000 | 0 |
+| `limit` | 1\~100 | 20 |
+
+매개변수 이름과 값을 한 번 디코딩하며, 중복·알 수 없는 이름·깨진 인코딩·범위 밖 값·`min_price > max_price`는 `400 invalid_request`입니다. 정렬된 조건의 고정된 표현으로 캐시 key를 만들어 매개변수 순서와 기본값 표기가 달라도 같은 key를 씁니다.
 
 ## 무효화
 
@@ -40,13 +76,50 @@ make cache-functional  # 임시 DB와 실제 HTTP 서버를 사용하는 sanitiz
 
 ## `/stats`
 
-`GET /stats`는 이 실행의 `product_gets`(유효한 상품 GET), `origin_queries`(404와 실패를 포함한 원본 조회 시도), `origin_failures`(원본 조회·변경 실패), `origin_changes`(원본 변경 성공), `invalidations`(목록 세대를 올린 논리적 무효화 수), `cache_bypasses`(캐시 미사용 조회), `cache_state`(`off`, `active`, `suspended`)를 반환합니다. 통계 요청과 준비 작업은 원본 조회로 세지 않습니다. 추가 카운터는 `cache_gets`(GET 시도), `cache_hits`(200), `cache_misses`(404), `cache_get_errors`(그 외 상태·통신 오류), `cache_puts`(PUT 시도), `cache_put_failures`(PUT 실패), `cache_deletes`(무효화 DELETE 시도), `cache_delete_failures`(204·404가 아닌 DELETE), `cache_probes`(상태 확인 시도), `cache_probe_failures`(상태 확인 실패), `cache_recoveries`(재개 횟수), `cache_errors`(GET 오류 + PUT 실패 + DELETE 실패)입니다. 적중률 분모는 `cache_gets = cache_hits + cache_misses + cache_get_errors`이며, off 또는 중단 상태의 조회는 `cache_bypasses`로만 셉니다.
+`GET /stats`는 이 실행의 카운터와 캐시 상태를 반환합니다. 통계 요청과 준비 작업은 원본 조회로 세지 않습니다.
+
+| 값 | 뜻 |
+|---|---|
+| `product_gets` | 유효한 상품 GET |
+| `origin_queries` | 404와 실패를 포함한 원본 조회 시도 |
+| `origin_failures` | 원본 조회·변경 실패 |
+| `origin_changes` | 원본 변경 성공 |
+| `invalidations` | 목록 세대를 올린 논리적 무효화 수 |
+| `cache_bypasses` | 캐시 미사용 조회 |
+| `cache_state` | `off`, `active`, `suspended` |
+| `cache_gets` | GET 시도 |
+| `cache_hits` | 200 |
+| `cache_misses` | 404 |
+| `cache_get_errors` | 그 외 상태·통신 오류 |
+| `cache_puts` | PUT 시도 |
+| `cache_put_failures` | PUT 실패 |
+| `cache_deletes` | 무효화 DELETE 시도 |
+| `cache_delete_failures` | 204·404가 아닌 DELETE |
+| `cache_probes` | 상태 확인 시도 |
+| `cache_probe_failures` | 상태 확인 실패 |
+| `cache_recoveries` | 재개 횟수 |
+| `cache_errors` | GET 오류 + PUT 실패 + DELETE 실패 |
+
+적중률 분모는 `cache_gets = cache_hits + cache_misses + cache_get_errors`이며, off 또는 중단 상태의 조회는 `cache_bypasses`로만 셉니다.
 
 ## 저장과 캐시 장애
 
 정상 200 body만 TTL 헤더를 붙여 저장하며, 적중 시 TTL을 늘리지 않습니다. 실행마다 새 식별자로 이전 캐시와 격리합니다.
 
-캐시 GET·PUT·DELETE의 연결 실패, 기한 초과, 응답 중 연결 종료, 오류 상태는 캐시 오류로 보고 `suspended`로 바꿉니다. 오류 뒤 연결을 닫고, 그 응답은 원본에서 만든 것을 그대로 돌려줍니다. 중단 중 실제 상품 요청이 오면 1초에 한 번만 전용 key GET으로 상태를 확인합니다. 정상적인 404 `key_not_found`를 받으면 새 실행 식별자와 초기 목록 세대로 재개하고, 실패하면 원본만 사용합니다. 이전 식별자의 key는 읽지 않고 TTL과 주기 청소로 회수되므로, 늦게 도착한 이전 PUT이나 재시작 전 값은 새 실행에서 재사용되지 않습니다. 유휴 중 배경 작업은 없습니다. 재현: `./build/mini-redis 8080`을 띄우고 데모를 `--cache on`으로 시작해 `/products/1`을 두 번 조회한 뒤, mini-redis를 끄고 다시 조회하면 `/stats`의 `cache_get_errors`가 늘고 `cache_state`가 `suspended`가 됩니다. mini-redis를 다시 띄우고 1초 뒤 조회하면 `cache_recoveries`가 늘고 첫 조회는 원본을, 다음 조회는 새 key를 사용합니다. 한계: 단일 프로세스만 같은 캐시를 쓰며, 재개 판정은 지연된 이전 PUT의 도착이 아니라 새 식별자로 격리합니다.
+```mermaid
+stateDiagram-v2
+    [*] --> active: --cache on
+    [*] --> off: --cache off
+    active --> suspended: 캐시 오류
+    suspended --> suspended: 상태 확인 실패
+    suspended --> active: 404 key_not_found
+```
+
+- **중단:** 캐시 GET·PUT·DELETE의 연결 실패, 기한 초과, 응답 중 연결 종료, 오류 상태는 캐시 오류로 보고 `suspended`로 바꿉니다. 오류 뒤 연결을 닫고, 그 응답은 원본에서 만든 것을 그대로 돌려줍니다.
+- **재개:** 중단 중 실제 상품 요청이 오면 1초에 한 번만 전용 key GET으로 상태를 확인합니다. 정상적인 404 `key_not_found`를 받으면 새 실행 식별자와 초기 목록 세대로 재개하고, 실패하면 원본만 사용합니다. 유휴 중 배경 작업은 없습니다.
+- **격리:** 이전 식별자의 key는 읽지 않고 TTL과 주기 청소로 회수되므로, 늦게 도착한 이전 PUT이나 재시작 전 값은 새 실행에서 재사용되지 않습니다.
+- **재현:** `./build/mini-redis 8080`을 띄우고 데모를 `--cache on`으로 시작해 `/products/1`을 두 번 조회한 뒤, mini-redis를 끄고 다시 조회하면 `/stats`의 `cache_get_errors`가 늘고 `cache_state`가 `suspended`가 됩니다. mini-redis를 다시 띄우고 1초 뒤 조회하면 `cache_recoveries`가 늘고 첫 조회는 원본을, 다음 조회는 새 key를 사용합니다.
+- **한계:** 단일 프로세스만 같은 캐시를 쓰며, 재개 판정은 지연된 이전 PUT의 도착이 아니라 새 식별자로 격리합니다.
 
 ## 원본 DB
 
