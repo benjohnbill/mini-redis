@@ -27,6 +27,11 @@ REQUEST_TIMEOUT = 5.0
 # TTL 1초로 저장한 key를 조회하기 전에 기다리는 시간입니다. 서버는 헤더를 받은
 # 순간부터 세므로, 저장 요청이 돌아온 뒤 1초를 넘게 기다리면 만료돼 있어야 합니다.
 WAIT_SECONDS = 2.0
+# TTL 1초로 저장한 key를 보관 기간 안에 한 번 조회하는 시각과, 다시 조회하는 시각입니다.
+# 둘 다 저장 요청을 보내기 직전부터 셉니다. 조회가 기간을 늦췄다면 key는
+# GET_AGAIN_SECONDS에 아직 남아 있습니다(0.5 + 1 = 1.5초 > 1.3초).
+GET_WITHIN_TTL_SECONDS = 0.5
+GET_AGAIN_SECONDS = 1.3
 SANITIZER_MARKS = ("ERROR: AddressSanitizer", "ERROR: LeakSanitizer", "runtime error:")
 
 
@@ -135,6 +140,29 @@ def overwrite_without_ttl_clears_expiry(server):
     expect(body, b"kept", "TTL 없이 덮어쓴 key 조회의 body")
 
 
+def get_does_not_push_back_expiry(server):
+    started = time.monotonic()
+    put(server, "ttl-read", b"short", ttl="1")
+    time.sleep(max(0.0, started + GET_WITHIN_TTL_SECONDS - time.monotonic()))
+    status, body = server.request("GET", "/keys/ttl-read")
+    expect(status, 200, "기간 안에 조회한 key의 상태 코드")
+    expect(body, b"short", "기간 안에 조회한 key의 body")
+    time.sleep(max(0.0, started + GET_AGAIN_SECONDS - time.monotonic()))
+
+    status, _ = server.request("GET", "/keys/ttl-read")
+    expect(status, 404, "조회한 뒤 처음 기간이 지난 key 조회의 상태 코드")
+
+
+def ttl_on_delete_is_ignored(server):
+    put(server, "ttl-delete", b"value")
+    # PUT이었다면 bad_ttl을 받는 값입니다. DELETE는 TTL을 보지 않습니다.
+    status, _ = server.request("DELETE", "/keys/ttl-delete", headers={"TTL": "0"})
+    expect(status, 204, "TTL이 붙은 DELETE의 상태 코드")
+
+    status, _ = server.request("GET", "/keys/ttl-delete")
+    expect(status, 404, "TTL이 붙은 DELETE 뒤 조회의 상태 코드")
+
+
 # ── 테스트: 잘못된 TTL ────────────────────────────────────────
 
 def duplicate_ttl_header_is_rejected(server):
@@ -158,13 +186,15 @@ def ttl_with_surrounding_spaces_is_accepted(server):
 QUICK_TESTS = [
     ("(기능) TTL 헤더를 두 번 보낸 PUT은 400과 bad_ttl을 받는다", duplicate_ttl_header_is_rejected),
     ("(기능) TTL 값 앞뒤의 공백은 서버가 지우고 받는다", ttl_with_surrounding_spaces_is_accepted),
+    ("(기능) DELETE에 붙은 TTL은 무시하고 key를 지운다", ttl_on_delete_is_ignored),
 ]
 
-# 모두 WAIT_SECONDS를 기다리므로 스레드로 함께 돌립니다.
+# 모두 WAIT_SECONDS 안에서 기다리므로 스레드로 함께 돌립니다.
 WAITING_TESTS = [
     ("[T16] (기능) TTL 1로 저장한 key는 2초 뒤 404와 key_not_found를 받는다", key_with_ttl_expires),
     ("(기능) TTL 없이 저장한 key는 2초 뒤에도 조회된다", key_without_ttl_stays),
     ("(기능) TTL로 저장한 key를 TTL 없이 덮어쓰면 2초 뒤에도 조회된다", overwrite_without_ttl_clears_expiry),
+    ("(기능) TTL로 저장한 key를 조회해도 만료 시각이 늦춰지지 않는다", get_does_not_push_back_expiry),
 ]
 
 
