@@ -43,7 +43,7 @@
 
 ## 결과
 
-**결론:** 서버 없이 잰 조회는 key가 100만 개 이상일 때 (1, 0.5, 0.25)에서 가장 좋았고, 이 설정으로 바꿨어요([`rehash-micro/001`](../../../measurements/rehash-micro/001-CJG-rehash-thresholds.md)). 서버 전체에서는 조회가 빨라진 것이 회마다의 흔들림에 묻혀 보이지 않았고, 버킷을 한 번 늘리는 멈춤(E)은 길어졌어요([`server/006`](../../../measurements/server/006-CJG-rehash-thresholds-before.md), [`server/007`](../../../measurements/server/007-CJG-rehash-thresholds-after.md)).
+**결론:** 범위를 (2, 1, 0.5)로 줄였어요. 서버 없이 잰 조회는 key가 100만 개 이상일 때 약 25% 빨라지고, key 하나당 메모리는 약 4% 늘었어요([`rehash-micro/001`](../../../measurements/rehash-micro/001-CJG-rehash-thresholds.md)). 서버 전체에서는 조회 이득이 회마다의 흔들림에 묻혀 보이지 않았어요([`server/006`](../../../measurements/server/006-CJG-rehash-thresholds-before.md), [`server/007`](../../../measurements/server/007-CJG-rehash-thresholds-after.md), [`server/008`](../../../measurements/server/008-CJG-rehash-thresholds-2-1-0.5.md)).
 
 ### 탐색 과정
 
@@ -59,7 +59,12 @@
 
 ### 결정
 
-(1, 0.5, 0.25)를 쓰기로 했어요(2026-11-18). key가 많을 때의 조회 이득을 택하고, 가장 긴 멈춤이 길어지는 것은 받아들였어요. 멈춤을 줄이는 나눠 옮기기([`rehash-incremental.md`](rehash-incremental.md))는 보류했어요.
+처음에는 시간 × 메모리가 가장 작은 (1, 0.5, 0.25)를 골랐어요. 서버에서 재 보니(`server/007`) 조회 이득은 보이지 않았고, 버킷을 한 번 늘리는 멈춤(E)은 3회 가운데 2회에서 길어졌어요. 그래서 원인을 쪼개 봤어요.
+
+- **조회 이득이 안 보인 이유:** 서버는 요청 하나에 CPU를 약 14 µs 쓰는데, 서버 없이 잰 조회 이득은 약 0.8 µs(약 5%)예요. 이 머신에서는 같은 빌드도 요청 하나의 CPU가 12.6\~17.3 µs로 흔들려서 이 차이를 가려낼 수 없었어요. 확인하지 못한 원인이에요.
+- **멈춤이 길어진 이유:** 버킷을 늘리는 rehash는 entry를 옮기기 전에 새 버킷 배열을 할당하고 초기화해요. 그 일만 따로 재 보니 버킷 2,097,152개(64 MiB)는 약 35 ms, 8,388,608개(256 MiB)는 약 136 ms였어요. E에서 (4, 2, 1)은 64 MiB, (1, 0.5, 0.25)는 256 MiB를 만들므로, 약 100 ms 차이가 늘어난 멈춤과 같은 크기예요.
+
+그래서 (2, 1, 0.5)로 한 단계 덜 줄였어요(2026-11-18). 새 배열이 128 MiB(약 72 ms)라서 멈춤 증가가 절반 정도이고, 메모리 증가도 4%예요. `server/008`은 머신 상태가 006과 달라서 이 변경의 효과를 판정하는 데 쓰지 않았어요. 멈춤을 줄이는 나눠 옮기기([`rehash-incremental.md`](rehash-incremental.md))는 보류했어요.
 
 ## 관련 ADR 및 문서
 

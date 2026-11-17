@@ -22,7 +22,7 @@ key 수가 꾸준히 늘어나는 입력에서, 버킷을 늘리는 rehash 한 �
 
 ## 결과
 
-보류했어요(2026-11-18). [`rehash-thresholds.md`](rehash-thresholds.md)에서 (1, 0.5, 0.25)를 고르면서 가장 긴 멈춤이 길어지는 것을 받아들였고([`server/007`](../../../measurements/server/007-CJG-rehash-thresholds-after.md)), 이 실험은 그 뒤로 미뤘어요.
+보류했어요(2026-11-18). [`rehash-thresholds.md`](rehash-thresholds.md)에서 범위를 (2, 1, 0.5)로 줄이면서 멈춤이 크게 늘지 않는 설정을 골랐고, 이 실험은 그 뒤로 미뤘어요.
 
 ## 관련 ADR 및 문서
 
