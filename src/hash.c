@@ -310,8 +310,10 @@ is_power_of_2 (size_t x) {
 }
 
 /* Element per bucket ratios. */
-/* CJG-hash-bench: make rehash-micro가 BEST와 MAX를 빌드할 때 바꿉니다. */
+/* CJG-hash-bench: make rehash-micro가 세 값을 빌드할 때 바꿉니다. */
+#ifndef MIN_ELEMS_PER_BUCKET
 #define MIN_ELEMS_PER_BUCKET  1 /* Elems/bucket < 1: reduce # of buckets. */
+#endif
 #ifndef BEST_ELEMS_PER_BUCKET
 #define BEST_ELEMS_PER_BUCKET 2 /* Ideal elems/bucket. */
 #endif

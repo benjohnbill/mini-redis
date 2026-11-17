@@ -1,4 +1,4 @@
-/* rehash 범위(MAX_ELEMS_PER_BUCKET, BEST_ELEMS_PER_BUCKET)에 따른 저장, 조회
+/* rehash 범위(MAX, BEST, MIN_ELEMS_PER_BUCKET)에 따른 저장, 조회
  * 시간과 버킷 배열 메모리를 서버 없이 잽니다.
  *
  * 실험 브랜치 CJG-hash-bench 전용입니다(mini-redis-ideas/rehash-thresholds.md).
@@ -13,7 +13,7 @@
  *   buckets  다 넣은 뒤의 버킷 수와 버킷 배열 메모리(MiB)
  *   rss_per_key  다 넣은 뒤 프로세스 RSS가 늘어난 양 ÷ key 수(바이트)
  *
- * 사용법: build/bench/rehash_micro_<MAX>_<BEST> [key 수, 기본 4194304] */
+ * 사용법: build/bench/rehash_micro_<MAX>_<BEST>_<MIN> [key 수, 기본 4194304] */
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -69,10 +69,10 @@ int main(int argc, char **argv)
     rss_after = rss_bytes();
     get_average_ns = get_all(store);
     buckets = bucket_count(store);
-    printf("keys=%zu max=%s best=%s put_avg=%.1f put_max=%.3f rehash=%zu "
+    printf("keys=%zu max=%s best=%s min=%s put_avg=%.1f put_max=%.3f rehash=%zu "
            "get_avg=%.1f buckets=%zu bucket_mib=%.1f rss_per_key=%.1f\n",
            key_count, MACRO_TEXT(MAX_ELEMS_PER_BUCKET),
-           MACRO_TEXT(BEST_ELEMS_PER_BUCKET),
+           MACRO_TEXT(BEST_ELEMS_PER_BUCKET), MACRO_TEXT(MIN_ELEMS_PER_BUCKET),
            put.average_ns, put.max_ms, put.rehash_count, get_average_ns,
            buckets, (double)(buckets * sizeof(struct list)) / (1 << 20),
            (double)(rss_after - rss_before) / (double)key_count);

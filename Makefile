@@ -152,9 +152,10 @@ $(BENCH_BUILD)/siphash_2_4.o: vendor/siphash/siphash.c | $(BENCH_BUILD)
 # (실험 브랜치 CJG-hash-bench 전용). 설정마다 src/*.c를 -D로 따로 컴파일한 바이너리를
 # 만들고, 회마다 세 설정을 번갈아 실행합니다. 설정 순서에 따른 차이가 한쪽에 몰리지
 # 않게 하기 위해서입니다.
-# REHASH_KEYS는 넣을 key 수의 목록입니다. 예(효율 측정):
-#   make rehash-micro REHASH_SETTINGS='4_2 2_1' REHASH_KEYS='100000 1048576 4194304'
-REHASH_SETTINGS ?= 4_2 8_2 2_1
+# REHASH_KEYS는 넣을 key 수의 목록입니다. 설정 하나는 <위쪽 경계>_<목표>_<아래쪽 경계>입니다.
+# 예(효율 측정):
+#   make rehash-micro REHASH_SETTINGS='4_2_1 2_1_0.5' REHASH_KEYS='100000 1048576 4194304'
+REHASH_SETTINGS ?= 4_2_1 8_2_1 2_1_0.5
 REHASH_KEYS     ?= 4194304
 REHASH_ROUNDS   ?= 3
 REHASH_BINS     := $(REHASH_SETTINGS:%=$(BENCH_BUILD)/rehash_micro_%)
@@ -169,7 +170,8 @@ rehash-micro: $(REHASH_BINS)
 $(BENCH_BUILD)/rehash_micro_%: scripts/bench/rehash_micro.c $(filter-out src/server.c src/api.c,$(LIB_SRCS)) | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) \
 	    -DMAX_ELEMS_PER_BUCKET=$(word 1,$(subst _, ,$*)) \
-	    -DBEST_ELEMS_PER_BUCKET=$(word 2,$(subst _, ,$*)) $^ -o $@
+	    -DBEST_ELEMS_PER_BUCKET=$(word 2,$(subst _, ,$*)) \
+	    -DMIN_ELEMS_PER_BUCKET=$(word 3,$(subst _, ,$*)) $^ -o $@
 
 # SQLite는 별도 상품 데모에만 링크합니다.
 CACHE_DEMO := $(BUILD)/cache-demo
