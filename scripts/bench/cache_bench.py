@@ -5,10 +5,12 @@
             build/bench/mini-redis [--quick] [--self-check] [--scenario 이름 ...]
 
 실험마다 같은 seed로 상품 10,000개를 새로 만들고, 새 mini-redis와 새 데모를 띄웁니다.
-cache off와 on에 같은 요청 계획을 쓰고, 준비 구간과 측정 구간을 나눕니다. 측정은
-지연(p50·p95·p99), 성공 처리량, HTTP 오류, timeout, 적중률, 원본 조회 횟수와 감소율,
-반복 편차를 출력합니다. 기본값은 연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회
-입니다. --quick은 준비 1초, 측정 3초, 1회로 함수만 확인할 때 씁니다. 시간 수치는
+cache off와 on에 같은 요청 계획을 쓰고, 준비 구간과 측정 구간을 나눕니다. off와 on은
+회마다 번갈아 실행합니다. 측정은 지연(p50·p95·p99), 성공 처리량, HTTP 오류, timeout,
+적중률, 원본 조회 횟수와 감소율을 회마다 출력하고, 회마다 값의 중앙값과 범위를
+더합니다. --output JSON에는 측정한 commit과 회마다 값을 숫자로 적습니다. 기본값은
+연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회입니다. --quick은 준비 1초,
+측정 3초, 1회로 함수만 확인할 때 씁니다. 시간 수치는
 합격 기준이 아니며 make verify와 CI에서 실행하지 않습니다.
 """
 
@@ -21,6 +23,7 @@ import platform
 import random
 import signal
 import socket
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -309,6 +312,36 @@ def record_text(record, seconds):
             f"적중률 {rate}, 원본 조회 {origin}{checked}")
 
 
+def record_numbers(record, seconds):
+    """회 하나의 결과를 숫자 칸으로 돌려줍니다. --output JSON에 이 모양으로 적습니다."""
+    latencies = record["latencies"]
+    kinds = {kind: {"count": len(values), "p50_ms": percentile(values, 50),
+                    "p95_ms": percentile(values, 95),
+                    "p99_ms": percentile(values, 99)}
+             for kind, values in sorted(latencies.items())
+             if kind != open_loop.CLIENT_LATE and values}
+    before, after = record["before"], record["after"]
+
+    return {"throughput": successes(latencies) / seconds, "latency": kinds,
+            "errors": dict(record["errors"]), "timeouts": record["timeouts"],
+            "cache_gets": stats_delta(before, after, "cache_gets"),
+            "cache_hits": stats_delta(before, after, "cache_hits"),
+            "origin_queries": stats_delta(before, after, "origin_queries"),
+            "checked": record["checked"]}
+
+
+def git_state():
+    """측정한 코드의 commit과, 커밋하지 않은 추적 파일 변경이 있는지 돌려줍니다."""
+    root = os.path.dirname(os.path.abspath(__file__))
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
+                            capture_output=True, text=True, check=True)
+    status = subprocess.run(["git", "status", "--porcelain",
+                             "--untracked-files=no"], cwd=root,
+                            capture_output=True, text=True, check=True)
+
+    return commit.stdout.strip(), bool(status.stdout.strip())
+
+
 def summarize(records, seconds):
     throughput = sorted(successes(record["latencies"]) / seconds
                         for record in records)
@@ -323,7 +356,7 @@ def summarize(records, seconds):
             "hits": hits}
 
 
-def report(scenario, runs, seconds, results):
+def report(scenario, seconds, results):
     print(f"\n== {scenario}")
     summary = {}
     for mode in ("off", "on"):
@@ -331,19 +364,40 @@ def report(scenario, runs, seconds, results):
         for index, record in enumerate(records):
             print(f"  {mode} #{index + 1}: {record_text(record, seconds)}")
         summary[mode] = summarize(records, seconds)
-        throughput = summary[mode]["throughput"]
-        origin = summary[mode]["origins"]
-        print(f"  {mode} 평균: 처리량 {sum(throughput) / len(throughput):.1f}/s"
-              f" (최소 {throughput[0]:.1f}, 최대 {throughput[-1]:.1f}),"
-              f" 원본 조회 평균 {sum(origin) / len(origin):.1f}")
-    off_origin = sum(summary["off"]["origins"]) / runs
-    on_origin = sum(summary["on"]["origins"]) / runs
+        for line in median_lines(mode, records, summary[mode]):
+            print(line)
+    off_origin = statistics.median(summary["off"]["origins"])
+    on_origin = statistics.median(summary["on"]["origins"])
     if off_origin:
         print(f"  원본 조회 감소: {100 * (1 - on_origin / off_origin):.1f}%")
     gets = sum(summary["on"]["gets"])
     hits = sum(summary["on"]["hits"])
     print(f"  cache on 적중률: "
           f"{100 * hits / gets:.1f}%" if gets else "  cache on 적중률: 계산 불가")
+
+
+def median_lines(mode, records, summary):
+    """회마다 값의 중앙값과 범위입니다. 한 회만 튄 값이 결론을 끌지 않게 합니다."""
+    lines = [f"  {mode} 중앙값: 처리량 "
+             f"{range_text(summary['throughput'], '.1f')}/s, "
+             f"원본 조회 {range_text(summary['origins'], '.0f')}"]
+    kinds = sorted({kind for record in records for kind in record["latencies"]
+                    if kind != open_loop.CLIENT_LATE})
+    for kind in kinds:
+        runs = [record["latencies"][kind] for record in records
+                if record["latencies"].get(kind)]
+        p50 = [percentile(values, 50) for values in runs]
+        p95 = [percentile(values, 95) for values in runs]
+        lines.append(f"    {kind} p50 {range_text(p50, '.2f')} ms, "
+                     f"p95 {range_text(p95, '.2f')} ms")
+
+    return lines
+
+
+def range_text(values, spec):
+    """중앙값 (최소~최대) 모양의 글자입니다."""
+    return (f"{statistics.median(values):{spec}} "
+            f"({min(values):{spec}}~{max(values):{spec}})")
 
 
 def self_check():
@@ -366,6 +420,7 @@ def self_check():
     varied = Plan("list", "varied")
     assert len({varied.request(i).path for i in range(200)}) > 190, "다양한 조건"
     assert percentile([2_000_000, 4_000_000], 50) == 2.0, "백분위수"
+    assert range_text([3, 1, 2], ".0f") == "2 (1~3)", "중앙값과 범위"
     latencies = collections.defaultdict(list)
     latencies["detail"] = [1, 2, 3]
     latencies[open_loop.CLIENT_LATE] = [9]
@@ -406,7 +461,9 @@ def main():
     if arguments.kind:
         scenarios = [name for name in scenarios
                      if name.split("-")[0] in arguments.kind]
+    commit, dirty = git_state()
     print(f"build: {demo_binary}, {redis_binary}")
+    print(f"commit: {commit}" + (" (커밋하지 않은 변경 있음)" if dirty else ""))
     print(f"machine: {platform.platform()}, python {platform.python_version()}, "
           f"sqlite {sqlite3.sqlite_version}")
     print(f"input: 상품 {COUNT}개 seed {SEED}, 연결 {CONNECTIONS}, "
@@ -418,14 +475,15 @@ def main():
                 redis_binary, database, results)
     if arguments.output:
         with open(arguments.output, "w", encoding="utf-8") as output:
-            json.dump({"inputs": {"count": COUNT, "seed": SEED,
+            json.dump({"commit": commit, "dirty": dirty,
+                       "inputs": {"count": COUNT, "seed": SEED,
                                   "connections": CONNECTIONS, "rate": RATE,
                                   "warmup": warmup, "measure": measure,
                                   "runs": runs, "ttl": ttls,
                                   "scenarios": scenarios,
                                   "database": arguments.db or "sqlite"},
                        "results": {
-                           key: {mode: [record_text(record, measure)
+                           key: {mode: [record_numbers(record, measure)
                                         for record in records]
                                  for mode, records in modes.items()}
                            for key, modes in results.items()}},
@@ -440,12 +498,14 @@ def run_all(arguments, scenarios, ttls, warmup, measure, runs, demo_binary,
             key = f"{scenario} ttl {ttl}s"
             print(f"\n### {key} 시작", flush=True)
             results[key] = {"off": [], "on": []}
-            for mode in ("off", "on"):
-                for _ in range(runs):
+            # off를 모두 잰 뒤에 on을 재면 그동안 바뀐 머신 상태가 한쪽에만
+            # 들어가므로, 회마다 off와 on을 번갈아 잽니다.
+            for _ in range(runs):
+                for mode in ("off", "on"):
                     results[key][mode].append(run_once(
                         demo_binary, redis_binary, mode, scenario, ttl,
                         warmup, measure, database))
-            report(key, runs, measure, results)
+            report(key, measure, results)
 
 
 if __name__ == "__main__":
