@@ -87,9 +87,10 @@ def repeated_product_in_one_bundle(cached, off):
     for responses in bundled_bursts(cached, paths):
         expect(responses, expected, '같은 상품만 든 묶음의 응답')
     _, after = read_json(cached, '/stats')
-    # 상품이 하나뿐이라, 생긴 묶음은 모두 같은 key를 두 번 이상 담습니다.
-    expect(after['cache_mget_keys'] - before['cache_mget_keys'] >=
-           2 * (after['cache_mgets'] - before['cache_mgets']), True, '묶음당 key 2개 이상')
+    # 상품이 하나뿐이라, 같은 상품의 요청들은 key 하나를 함께 쓰므로 생긴 묶음은
+    # 모두 key를 하나만 담습니다.
+    expect(after['cache_mget_keys'] - before['cache_mget_keys'],
+           after['cache_mgets'] - before['cache_mgets'], '묶음당 key 1개')
 
 
 def detail_after_update_in_same_poll_sees_new_value(cached):

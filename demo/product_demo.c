@@ -142,6 +142,16 @@ struct pending_detail {
     bool is_last;
 };
 
+/* 묶음 하나에서 mini-redis에 물을 key입니다. 같은 상품을 원하는 요청들은 key
+   하나를 함께 씁니다. key_index[i]는 묶음의 i번째 요청이 쓰는 key의 번호입니다. */
+struct pending_keys {
+    char names[MGET_KEYS_MAX][DETAIL_KEY_MAX];
+    const char *list[MGET_KEYS_MAX];
+    int product_ids[MGET_KEYS_MAX];
+    size_t key_index[MGET_KEYS_MAX];
+    size_t count;
+};
+
 struct demo {
     struct origin *origin;
     struct cache_client cache;
@@ -187,6 +197,14 @@ static struct mg_connection *connection_find(struct mg_mgr *manager,
 static void pending_chunk_run(struct demo *demo,
                               const struct pending_detail *chunk,
                               size_t chunk_len);
+static void pending_keys_build(struct pending_keys *keys,
+                               const struct pending_detail *chunk,
+                               size_t chunk_len);
+static void pending_replies_share(struct demo *demo,
+                                  const struct pending_detail *chunk,
+                                  size_t chunk_len,
+                                  const struct pending_keys *keys,
+                                  char **bodies);
 static void pending_reply_by_get(struct demo *demo,
                                  const struct pending_detail *pending);
 static void pending_reply_from(struct demo *demo,
@@ -246,6 +264,8 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
                          int product_id);
 static void product_reply(struct mg_connection *connection, struct demo *demo,
                           int product_id, const char *key, char *cached);
+static char *product_body_load(struct demo *demo, int product_id,
+                               const char *key, char *cached, int *status);
 static void detail_key_build(int product_id, char *key, size_t key_size);
 static char *product_body_create(struct demo *demo, int product_id,
                                  int *status);
@@ -626,11 +646,11 @@ static struct mg_connection *connection_find(struct mg_mgr *manager,
     return NULL;
 }
 
-/* 묶음 하나(key 1개부터 MGET_KEYS_MAX개까지)를 처리합니다. 2개 이상이면 캐시를 POST
-   /mget 한 번으로 묻고, 1개면 기존 GET 경로로 처리합니다. mini-redis가 응답이
-   너무 크다고 거절하면 key마다 GET으로 다시 묻습니다. 다른 실패는
-   cache_client_mget이 GET 실패와 같게 캐시를 중단하므로, 모든 key가 원본으로
-   갑니다. */
+/* 묶음 하나(요청 1개부터 MGET_KEYS_MAX개까지)를 처리합니다. 요청이 2개 이상이면
+   캐시를 POST /mget 한 번으로 묻고, 1개면 기존 GET 경로로 처리합니다. 같은
+   상품을 원하는 요청이 여럿이면 key는 한 번만 묻습니다. mini-redis가 응답이 너무
+   크다고 거절하면 요청마다 GET으로 다시 묻습니다. 다른 실패는 cache_client_mget이
+   GET 실패와 같게 캐시를 중단하므로, 요청마다 원본으로 갑니다. */
 static void pending_chunk_run(struct demo *demo,
                               const struct pending_detail *chunk,
                               size_t chunk_len)
@@ -641,23 +661,87 @@ static void pending_chunk_run(struct demo *demo,
         pending_reply_by_get(demo, chunk);
         return;
     }
-    char keys[MGET_KEYS_MAX][DETAIL_KEY_MAX];
-    const char *key_list[MGET_KEYS_MAX];
+    struct pending_keys keys;
+    pending_keys_build(&keys, chunk, chunk_len);
     char *bodies[MGET_KEYS_MAX];
-    for (size_t i = 0; i < chunk_len; i++) {
-        detail_key_build(chunk[i].product_id, keys[i], DETAIL_KEY_MAX);
-        key_list[i] = keys[i];
-    }
     enum cache_mget_result result =
-        cache_client_mget(&demo->cache, key_list, chunk_len, bodies);
-    stage_trace_chunk_mget_end(chunk_len);
+        cache_client_mget(&demo->cache, keys.list, keys.count, bodies);
+    stage_trace_chunk_mget_end(keys.count);
+    if (result == CACHE_MGET_DONE) {
+        pending_replies_share(demo, chunk, chunk_len, &keys, bodies);
+        return;
+    }
+    /* 캐시가 답하지 않았으면 bodies는 모두 NULL입니다. */
     for (size_t i = 0; i < chunk_len; i++) {
         if (result == CACHE_MGET_TOO_LARGE) {
             pending_reply_by_get(demo, &chunk[i]);
         } else {
-            pending_reply_from(demo, &chunk[i], keys[i], bodies[i],
-                               result != CACHE_MGET_BYPASSED);
+            pending_reply_from(demo, &chunk[i], keys.names[keys.key_index[i]],
+                               NULL, result != CACHE_MGET_BYPASSED);
         }
+    }
+}
+
+/* 묶음의 요청마다 key를 정하고, 같은 상품의 요청은 같은 key 하나를 쓰게 합니다.
+   key는 처음 나온 순서대로 쌓습니다. */
+static void pending_keys_build(struct pending_keys *keys,
+                               const struct pending_detail *chunk,
+                               size_t chunk_len)
+{
+    keys->count = 0;
+    for (size_t i = 0; i < chunk_len; i++) {
+        size_t found = 0;
+        while (found < keys->count &&
+               keys->product_ids[found] != chunk[i].product_id) {
+            found++;
+        }
+        if (found == keys->count) {
+            keys->product_ids[found] = chunk[i].product_id;
+            detail_key_build(chunk[i].product_id, keys->names[found],
+                             DETAIL_KEY_MAX);
+            keys->list[found] = keys->names[found];
+            keys->count++;
+        }
+        keys->key_index[i] = found;
+    }
+}
+
+/* POST /mget이 답한 묶음의 요청들에 응답합니다. key마다 body를 한 번만 정하고,
+   그 key를 원하는 요청 모두에 같은 body를 보냅니다. 캐시에 없던 key는 처음
+   응답하는 요청이 원본을 읽고 캐시에 저장합니다. 하나씩 처리했다면 뒤 요청은
+   앞 요청이 저장한 값을 캐시에서 받았을 것이므로, 원본 조회와 저장을 되풀이하지
+   않습니다. bodies는 이 함수가 해제합니다. */
+static void pending_replies_share(struct demo *demo,
+                                  const struct pending_detail *chunk,
+                                  size_t chunk_len,
+                                  const struct pending_keys *keys,
+                                  char **bodies)
+{
+    bool is_loaded[MGET_KEYS_MAX] = {false};
+    int statuses[MGET_KEYS_MAX] = {0};
+    for (size_t i = 0; i < chunk_len; i++) {
+        struct mg_connection *connection =
+            connection_find(demo->manager, chunk[i].connection_id);
+        if (connection == NULL) {
+            continue;
+        }
+        size_t key_index = keys->key_index[i];
+        stage_trace_deferred_begin(connection, true);
+        if (!is_loaded[key_index]) {
+            bodies[key_index] = product_body_load(
+                demo, chunk[i].product_id, keys->names[key_index],
+                bodies[key_index], &statuses[key_index]);
+            is_loaded[key_index] = true;
+        }
+        if (bodies[key_index] == NULL) {
+            origin_error_send(connection, statuses[key_index]);
+        } else {
+            body_send(connection, bodies[key_index]);
+        }
+        pending_reply_finish(connection, &chunk[i]);
+    }
+    for (size_t key_index = 0; key_index < keys->count; key_index++) {
+        free(bodies[key_index]);
     }
 }
 
@@ -1187,24 +1271,36 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
 static void product_reply(struct mg_connection *connection, struct demo *demo,
                           int product_id, const char *key, char *cached)
 {
-    if (cached != NULL) {
-        body_send(connection, cached);
-        free(cached);
-        return;
-    }
     int status = 0;
-    stage_trace_stage_begin(STAGE_ORIGIN);
-    char *body = product_body_create(demo, product_id, &status);
-    stage_trace_stage_end(STAGE_ORIGIN);
+    char *body = product_body_load(demo, product_id, key, cached, &status);
     if (body == NULL) {
         origin_error_send(connection, status);
         return;
     }
+    body_send(connection, body);
+    free(body);
+}
+
+/* 캐시에서 받은 body가 있으면 그대로 돌려주고, 없으면 원본에서 만들어 캐시에
+   저장한 뒤 돌려줍니다. 원본에서 만들지 못하면 NULL을 돌려주고 status에 응답
+   코드를 적습니다. 돌려준 body는 부른 쪽이 해제합니다. */
+static char *product_body_load(struct demo *demo, int product_id,
+                               const char *key, char *cached, int *status)
+{
+    if (cached != NULL) {
+        return cached;
+    }
+    stage_trace_stage_begin(STAGE_ORIGIN);
+    char *body = product_body_create(demo, product_id, status);
+    stage_trace_stage_end(STAGE_ORIGIN);
+    if (body == NULL) {
+        return NULL;
+    }
     bool is_put_traced = stage_trace_cache_begin(demo, STAGE_CACHE_PUT);
     cache_client_set(&demo->cache, key, body);
     stage_trace_cache_end(is_put_traced, STAGE_CACHE_PUT);
-    body_send(connection, body);
-    free(body);
+
+    return body;
 }
 
 static void detail_key_build(int product_id, char *key, size_t key_size)

@@ -22,7 +22,10 @@ stats 사이의 요청만 셉니다. --all은 준비 구간까지 모두 셉니�
 --batch-get은 묶음마다 캐시 GET 횟수와 GET 시간의 합을 세고, 한 묶음의 GET을
 왕복 한 번으로 줄였을 때의 묶음 처리 시간을 어림합니다. 묶음 처리 시간은 묶음
 시작부터 마지막 요청의 처리가 끝나기까지(대기 + 처리의 최댓값)입니다. 왕복 한
-번의 비용은 같은 파일 묶음에서 잰 캐시 GET 한 번의 p50으로 둡니다.
+번의 비용은 같은 파일 묶음에서 잰 단건 캐시 GET의 p50으로 둡니다. POST /mget으로
+묶여 물은 요청들은 같은 왕복 한 번의 시간을 각자 적으므로, 같은 묶음에서 시간과
+mget key 수가 같은 묶인 요청은 왕복 한 번으로 셉니다. 그래서 묶기 전 기록에서는
+묶었을 때의 이득을 어림하고, 묶은 뒤 기록에서는 남은 왕복 수를 봅니다.
 """
 
 import argparse
@@ -163,21 +166,45 @@ def table_print(name, traces, kind, use_all):
                                 if record.mget_keys is not None], 0)
 
 
+def round_trips(members):
+    """묶음 하나의 캐시 왕복 시간들입니다. POST /mget으로 묶여 물은 요청들은 같은
+    왕복 한 번의 시간을 각자 적으므로, 같은 묶음에서 시간과 mget key 수가 같은 묶인
+    요청은 왕복 한 번으로 셉니다."""
+    trips = []
+    bundles = set()
+    for record in members:
+        time = record.times[GET_INDEX]
+        if time is None:
+            continue
+        if record.mget_keys is None:
+            trips.append(time)
+        elif (time, record.mget_keys) not in bundles:
+            bundles.add((time, record.mget_keys))
+            trips.append(time)
+    return trips
+
+
 def batch_get_print(name, traces, kind, use_all):
     records, _ = records_select(traces, kind, use_all)
     batches = collections.defaultdict(list)
     for record in records:
         batches[record.batch].append(record)
-    gets = [record.times[GET_INDEX] for record in records
-            if record.times[GET_INDEX] is not None]
-    if not gets:
+    trips_by_batch = {batch: round_trips(members)
+                      for batch, members in batches.items()}
+    trips = [trip for batch_trips in trips_by_batch.values()
+             for trip in batch_trips]
+    if not trips:
         print(f"\n### {name}: 캐시 GET이 없습니다")
         return
-    round_trip = open_loop.percentile(sorted(gets), 50)
+    # 왕복 한 번의 비용은 단건 GET의 p50으로 둡니다. 모두 묶여 물은 기록이면 묶음
+    # 왕복의 p50으로 둡니다.
+    singles = [record.times[GET_INDEX] for record in records
+               if record.times[GET_INDEX] is not None
+               and record.mget_keys is None]
+    round_trip = open_loop.percentile(sorted(singles or trips), 50)
     rows = collections.defaultdict(list)
-    for members in batches.values():
-        times = [record.times[GET_INDEX] for record in members
-                 if record.times[GET_INDEX] is not None]
+    for batch, members in batches.items():
+        times = trips_by_batch[batch]
         if not times:
             continue
         elapsed = max(record.times[0] + record.times[1] for record in members)
@@ -189,7 +216,8 @@ def batch_get_print(name, traces, kind, use_all):
         rows["줄어드는 시간 (ms)"].append(elapsed - expected)
         rows["줄어드는 비율 (%)"].append(100 * (elapsed - expected) / elapsed)
     print(f"\n### {name}: 묶음 {len(rows['GET 횟수']):,}개, "
-          f"왕복 한 번 {round_trip:.3f} ms (캐시 GET p50)")
+          f"왕복 한 번 {round_trip:.3f} ms "
+          f"({'단건 캐시 GET' if singles else '묶음 왕복'} p50)")
     print()
     print("| 값 | 평균 | " + " | ".join(f"p{percent}" for percent in PERCENTS)
           + " |")
