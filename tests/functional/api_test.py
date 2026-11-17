@@ -453,6 +453,30 @@ def mset_stores_items_with_one_ttl(server):
     expect(mget_request(server, b"mset-a\nmset-bin")[3], b"-\n-\n", "만료 뒤 body")
 
 
+def interrupted_body_is_not_stored(server):
+    """body를 다 보내기 전에 끊은 PUT과 POST /mset은 처리하지 않아, 있던 value가
+    그대로 남는지 봅니다. mongoose는 닫히는 연결의 받다 만 요청을 받은 데까지
+    넘기므로, 서버가 선언한 길이만큼 받았는지 봐야 합니다. POST /mset은 앞 항목이
+    온전한 모양이라, 길이를 보지 않으면 그 항목만 저장됩니다."""
+    status, _, _ = server.request("PUT", "/keys/cut-kept", body=b"old")
+    expect(status, 204, "있던 value 저장")
+    partial_put = (b"PUT /keys/cut-kept HTTP/1.1\r\nHost: localhost\r\n"
+                   b"Content-Length: 10\r\n\r\nnew")
+    item = b"cut-kept\n3\nnew\n"
+    partial_mset = (f"POST /mset HTTP/1.1\r\nHost: localhost\r\n"
+                    f"Content-Length: {len(item) + 20}\r\n\r\n").encode("ascii") + item
+    for request in (partial_put, partial_mset):
+        raw = socket.create_connection((HOST, server.port), timeout=REQUEST_TIMEOUT)
+        raw.sendall(request)
+        raw.close()
+    # 서버가 끊긴 연결을 알아챌 때까지 기다립니다.
+    time.sleep(0.2)
+
+    status, _, body = server.request("GET", "/keys/cut-kept")
+
+    expect((status, body), (200, b"old"), "끊긴 요청 뒤의 value")
+
+
 # 서버를 끄는 테스트는 마지막에 둡니다.
 TESTS = [
     ("[T5] (기능) 실제 서버에 저장한 value를 조회로 돌려받는다", put_then_get_returns_value),
@@ -484,6 +508,8 @@ TESTS = [
      mget_values_over_limit_are_rejected),
     ("(기능) POST /mset은 모든 key를 저장하고 TTL 헤더 하나로 같은 보관 기간을 붙인다",
      mset_stores_items_with_one_ttl),
+    ("(기능) body를 다 보내기 전에 끊은 PUT과 POST /mset은 저장되지 않고 있던 value가 남는다",
+     interrupted_body_is_not_stored),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
     ("(기능) 서버 출력에 mongoose가 요청마다 찍는 줄이 없고 오류만 남는다", output_has_no_per_request_lines),
 ]
