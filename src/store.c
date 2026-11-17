@@ -5,7 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/random.h>
+
 #include "hash.h"
+#include "siphash.h"
 
 /* 기간이 있는 entry만 만료 시각이 이른 순으로 담는 min-heap입니다(ADR
    expiry-heap-with-immediate-removal). entries[0]이 만료 시각이 가장 이른
@@ -19,9 +22,15 @@ struct heap {
 /* heap 배열을 처음 만들 때의 칸 수입니다. 그 뒤로는 두 배씩 늘립니다. */
 #define HEAP_CAPACITY_MIN 16
 
+/* SipHash가 받는 seed(key)의 바이트 수입니다. */
+#define HASH_SEED_SIZE 16
+
 struct store {
     struct hash table;
     struct heap heap;
+    /* store를 만들 때 무작위로 정하는 hash seed입니다. 서버 밖에서는 이 값을
+       모르므로 같은 버킷에 떨어지는 key를 미리 고를 수 없습니다. */
+    unsigned char hash_seed[HASH_SEED_SIZE];
 };
 
 /* entry 하나는 malloc 한 번으로 만듭니다. key와 value의 바이트는 구조체 바로
@@ -74,7 +83,11 @@ struct store *store_create(void)
     if (store == NULL) {
         return NULL;
     }
-    if (!hash_init(&store->table, entry_hash, entry_less, NULL)) {
+    if (getentropy(store->hash_seed, sizeof store->hash_seed) != 0) {
+        free(store);
+        return NULL;
+    }
+    if (!hash_init(&store->table, entry_hash, entry_less, store)) {
         free(store);
         return NULL;
     }
@@ -183,12 +196,20 @@ size_t store_delete_expired(struct store *store, uint64_t now, size_t max_count)
     return deleted_count;
 }
 
-/* value는 해시하지 않습니다. 같은 key는 value와 상관없이 같은 버킷에 가야 합니다. */
+/* value는 해시하지 않습니다. 같은 key는 value와 상관없이 같은 버킷에 가야 합니다.
+   key는 store의 seed를 섞는 SipHash 1-2로 hash합니다(ADR siphash-with-random-seed). */
 static uint64_t entry_hash(const struct hash_elem *element, void *aux)
 {
-    (void)aux;
+    const struct store *store = aux;
     const struct entry *entry = hash_entry(element, struct entry, elem);
-    return hash_bytes(entry->key, entry->key_len);
+    uint8_t digest[sizeof(uint64_t)];
+    uint64_t hash;
+
+    siphash(bytes_or_empty(entry->key, entry->key_len), entry->key_len,
+            store->hash_seed, digest, sizeof digest);
+    memcpy(&hash, digest, sizeof hash);
+
+    return hash;
 }
 
 /* hash.c는 less(a, b)와 less(b, a)가 모두 거짓이면 같은 key로 봅니다.
