@@ -148,6 +148,7 @@ static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
+static void response_flush(struct mg_connection *connection);
 static void stats_request_handle(struct mg_connection *connection,
                                  struct demo *demo,
                                  struct mg_http_message *message);
@@ -466,6 +467,7 @@ static void http_event_handle(struct mg_connection *connection, int event,
         stage_trace_request_begin(connection, event_data);
         request_handle(connection, event_data);
         stage_trace_request_end();
+        response_flush(connection);
     }
 }
 
@@ -481,6 +483,23 @@ static void request_handle(struct mg_connection *connection,
         product_request_handle(connection, demo, message);
     } else {
         error_send(connection, 404, "route_not_found");
+    }
+}
+
+/* mongoose는 handler가 send 버퍼에 쌓은 응답을 다음 mg_mgr_poll에서 씁니다.
+   요청이 한꺼번에 몰리면 한 poll이 그 요청을 모두 처리한 뒤에야 응답이 나가므로,
+   처리한 직후 소켓에 바로 씁니다. 다 쓰지 못한 바이트와 오류는 버퍼에 남겨
+   mongoose가 다음 mg_mgr_poll에서 원래대로 다루게 합니다. */
+static void response_flush(struct mg_connection *connection)
+{
+    if (connection->send.len == 0 || connection->is_closing) {
+        return;
+    }
+    long sent_len =
+        mg_io_send(connection, connection->send.buf, connection->send.len);
+    if (sent_len > 0) {
+        mg_iobuf_del(&connection->send, 0, (size_t)sent_len);
+        stage_trace_sent(connection);
     }
 }
 
@@ -1105,8 +1124,9 @@ static void product_delete(struct mg_connection *connection, struct demo *demo,
    mg_mgr_poll인지입니다(1부터). 대기는 묶음이 시작된 뒤 처리가 시작되기까지,
    처리는 handler 하나의 시간입니다. 붙잡힘은 처리가 끝난 뒤 mg_mgr_poll이
    돌아오기까지이고, 실제 붙잡힘은 처리가 끝난 뒤 응답을 소켓에 다 쓰기까지
-   입니다. mongoose는 handler가 쌓은 응답을 대개 다음 mg_mgr_poll에서 쓰므로,
-   다음 묶음이 끝날 때까지 쓰지 못한 응답의 실제 붙잡힘은 "-"입니다.
+   입니다. 응답은 response_flush가 처리 직후에 쓰고, 다 쓰지 못한 나머지는
+   mongoose가 다음 mg_mgr_poll에서 쓰므로, 다음 묶음이 끝날 때까지 다 쓰지 못한
+   응답의 실제 붙잡힘은 "-"입니다.
    STAGE_TRACE_FILE이 없으면 적지 않습니다. make verify의 빌드에서는 아무것도
    하지 않습니다. */
 static void stage_trace_open(void)
@@ -1199,7 +1219,7 @@ static void stage_trace_request_end(void)
 }
 
 /* 연결의 send 버퍼가 비었으면, 그 연결에서 아직 보내지 않은 응답을 모두 지금
-   보낸 것으로 적습니다. MG_EV_WRITE가 부릅니다. */
+   보낸 것으로 적습니다. response_flush와 MG_EV_WRITE가 부릅니다. */
 static void stage_trace_sent(const struct mg_connection *connection)
 {
 #ifdef STAGE_TRACE
