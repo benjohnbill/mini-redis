@@ -59,7 +59,7 @@ LMS에 따로 있는 요구사항은 아닙니다. L8(동시성 문제)과 L17(�
 | 다양한 조건에서 cache on의 p95가 튐 | `cache-demo/` 목록·검색 다양 | p95 최대 약 496 ms | 확인하지 않음 | 미정 | |
 | 수정이 섞이면 목록·검색 적중률이 떨어짐 | `cache-demo/` 반복 90:10 | 적중률 약 90% | 목록·검색 캐시 전체를 무효화하는 설계 | 구체 | 예 |
 
-README의 나머지 한계 가운데 eviction은 LMS에 없어 이 표에 넣지 않습니다. 해시 seed와 client가 알아야 할 한계는 성능이 아니라 안전성과 정확성의 문제이므로 이 마일스톤 밖에 둡니다.
+README의 나머지 한계 가운데 eviction은 LMS에 없어 이 표에 넣지 않습니다. client가 알아야 할 한계는 성능이 아니라 정확성의 문제이므로 이 마일스톤 밖에 둡니다. 해시 seed는 안전성의 문제지만, hash 함수를 바꾸는 성능 실험과 함께 정했습니다([`ideas/hash-function.md`](ideas/hash-function.md), ADR [`siphash-with-random-seed`](../../adr/siphash-with-random-seed.md)).
 
 ## 새 활용 사례 후보
 
