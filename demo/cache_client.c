@@ -11,6 +11,10 @@
 #define ENCODED_KEY_MAX (CACHE_KEY_MAX * URL_ENCODED_BYTES_MAX)
 #define KEYS_PATH "/keys/"
 #define MGET_PATH "/mget"
+#define MSET_PATH "/mset"
+/* "<value 바이트 길이>\n"의 최대 길이입니다. size_t 20자리와 \n, '\0'이
+   들어갑니다. */
+#define MSET_LENGTH_TEXT_MAX 24
 /* POST /mget 응답에서 없는 key 하나의 자리입니다(docs/api.md). */
 #define MGET_MISSING "-\n"
 #define MGET_MISSING_LEN 2
@@ -34,6 +38,10 @@ static void response_body_copy(struct cache_client *cache,
 static bool request_send(struct cache_client *cache, const char *method,
                          const char *path, size_t path_len, const char *body,
                          size_t body_len);
+static char *mset_body_create(const struct cache_client *cache,
+                              const char *const *keys,
+                              const char *const *bodies, size_t key_count,
+                              size_t *body_len);
 static char *mget_body_create(const struct cache_client *cache,
                               const char *const *keys, size_t key_count,
                               size_t *body_len);
@@ -144,6 +152,29 @@ void cache_client_set(struct cache_client *cache, const char *key,
     }
     cache->puts++;
     if (cache_request(cache, "PUT", key, body) != 204) {
+        cache->put_failures++;
+        cache_suspend(cache);
+    }
+}
+
+void cache_client_mset(struct cache_client *cache, const char *const *keys,
+                       const char *const *bodies, size_t key_count)
+{
+    if (!cache->active) {
+        return;
+    }
+    cache->msets++;
+    cache->mset_keys += key_count;
+    size_t request_len = 0;
+    char *request =
+        mset_body_create(cache, keys, bodies, key_count, &request_len);
+    int status = 0;
+    if (request != NULL) {
+        status = cache_exchange(cache, "POST", MSET_PATH, strlen(MSET_PATH),
+                                request, request_len);
+        free(request);
+    }
+    if (status != 204) {
         cache->put_failures++;
         cache_suspend(cache);
     }
@@ -343,6 +374,47 @@ static bool request_send(struct cache_client *cache, const char *method,
     }
 
     return body_len == 0 || mg_send(cache->connection, body, body_len);
+}
+
+/* key마다 "<인코딩한 key>\n<body 바이트 길이>\n<body>\n"을 이은 POST /mset
+   body를 만듭니다(docs/api.md "여러 key 저장"). 인코딩한 key에는 \n이 없습니다.
+   담을 수 없는 key가 있거나 메모리가 없으면 NULL입니다. */
+static char *mset_body_create(const struct cache_client *cache,
+                              const char *const *keys,
+                              const char *const *bodies, size_t key_count,
+                              size_t *body_len)
+{
+    char encoded[ENCODED_KEY_MAX];
+    char length_text[MSET_LENGTH_TEXT_MAX];
+    char *body = NULL;
+    size_t written = 0;
+    for (size_t i = 0; i < key_count; i++) {
+        size_t encoded_len =
+            key_encode(cache, keys[i], encoded, sizeof encoded);
+        size_t value_len = strlen(bodies[i]);
+        int length_text_len =
+            snprintf(length_text, sizeof length_text, "%zu\n", value_len);
+        size_t item_len =
+            encoded_len + 1 + (size_t)length_text_len + value_len + 1;
+        char *grown =
+            encoded_len == 0 ? NULL : realloc(body, written + item_len);
+        if (grown == NULL) {
+            free(body);
+            return NULL;
+        }
+        body = grown;
+        memcpy(body + written, encoded, encoded_len);
+        written += encoded_len;
+        body[written++] = '\n';
+        memcpy(body + written, length_text, (size_t)length_text_len);
+        written += (size_t)length_text_len;
+        memcpy(body + written, bodies[i], value_len);
+        written += value_len;
+        body[written++] = '\n';
+    }
+    *body_len = written;
+
+    return body;
 }
 
 /* key마다 /keys/<key>와 같은 인코딩을 한 줄씩 이은 POST /mget body를

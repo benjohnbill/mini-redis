@@ -776,17 +776,30 @@ static void pending_replies_share(struct demo *demo,
 }
 
 /* 원본에서 읽은 body들을 캐시에 저장합니다. 묶음의 응답을 모두 보낸 뒤에
-   부릅니다. */
+   부릅니다. 저장할 key가 2개 이상이면 POST /mset 한 번으로, 1개면 PUT으로
+   저장합니다. */
 static void pending_stores_run(struct demo *demo,
                                const struct pending_keys *keys,
                                char *const *bodies, const bool *needs_store)
 {
-    bool is_traced = stage_trace_store_begin(demo);
+    const char *store_keys[MGET_KEYS_MAX];
+    const char *store_bodies[MGET_KEYS_MAX];
+    size_t store_count = 0;
     for (size_t key_index = 0; key_index < keys->count; key_index++) {
         if (needs_store[key_index]) {
-            cache_client_set(&demo->cache, keys->names[key_index],
-                             bodies[key_index]);
+            store_keys[store_count] = keys->names[key_index];
+            store_bodies[store_count] = bodies[key_index];
+            store_count++;
         }
+    }
+    if (store_count == 0) {
+        return;
+    }
+    bool is_traced = stage_trace_store_begin(demo);
+    if (store_count == 1) {
+        cache_client_set(&demo->cache, store_keys[0], store_bodies[0]);
+    } else {
+        cache_client_mset(&demo->cache, store_keys, store_bodies, store_count);
     }
     stage_trace_store_end(is_traced);
 }
@@ -913,7 +926,8 @@ static void stats_send(struct mg_connection *connection,
         "\"cache_deletes\":%llu,\"cache_delete_failures\":%llu,"
         "\"cache_probes\":%llu,\"cache_probe_failures\":%llu,"
         "\"cache_recoveries\":%llu,\"cache_mgets\":%llu,"
-        "\"cache_mget_keys\":%llu,\"origin\":\"%s\",\"cache_state\":\"%s\"}",
+        "\"cache_mget_keys\":%llu,\"cache_msets\":%llu,"
+        "\"cache_mset_keys\":%llu,\"origin\":\"%s\",\"cache_state\":\"%s\"}",
         (unsigned long long)demo->product_gets,
         (unsigned long long)demo->origin_queries,
         (unsigned long long)demo->origin_failures,
@@ -931,7 +945,8 @@ static void stats_send(struct mg_connection *connection,
         (unsigned long long)cache->probes,
         (unsigned long long)cache->probe_failures,
         (unsigned long long)cache->recoveries, (unsigned long long)cache->mgets,
-        (unsigned long long)cache->mget_keys, origin_name(),
+        (unsigned long long)cache->mget_keys, (unsigned long long)cache->msets,
+        (unsigned long long)cache->mset_keys, origin_name(),
         !cache->enabled ? "off"
         : cache->active ? "active"
                         : "suspended");
