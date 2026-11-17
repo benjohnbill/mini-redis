@@ -140,7 +140,7 @@ PostgreSQL 연결이나 질의가 실패하면 상세·목록은 503 `origin_una
 
 `--arrival burst|even`은 요청이 도착하는 모양을 고릅니다. 기본값 `burst`는 연결마다 같은 시각에 시작하는 시간표를 두어, 연결 수만큼의 요청이 한꺼번에 도착합니다. 앞선 측정 기록과 같은 모양입니다. `even`은 시간표 하나가 1/rate초마다 요청을 하나씩 내고 연결들에 차례로 맡깁니다. 두 모양을 같은 조건에서 견주면, 지연이 요청 하나의 처리 시간에서 오는지 한꺼번에 도착한 요청이 차례를 기다리는 시간에서 오는지 가를 수 있습니다.
 
-`make cache-stage-bench`는 `cache-bench`와 같은 측정을 `STAGE_TRACE`를 켠 데모(`build/bench/cache-demo-stage`)로 돌립니다. 데모가 요청마다 대기, 처리, 캐시 GET, 원본 조회, 캐시 PUT, 처리 뒤 응답이 나가기까지의 시간을 적고, 측정 스크립트가 실행마다 파일 하나로 `STAGE_TRACE_DIR`(기본 `build/stage-trace`)에 남깁니다. `python3 -B scripts/bench/stage_summary.py <폴더>`가 구간마다 p50, p90, p95, p99 표를 만듭니다. 기록하는 비용이 지연에 섞이므로, 이 숫자는 `make cache-bench`의 숫자와 나란히 비교하지 않고 원인을 쪼개는 데만 씁니다.
+`make cache-stage-bench`는 `cache-bench`와 같은 측정을 `STAGE_TRACE`를 켠 데모(`build/bench/cache-demo-stage`)로 돌립니다. 데모가 요청마다 대기, 처리, 캐시 GET, 원본 조회, 캐시 PUT, 처리 뒤 응답이 나가기까지의 시간을 적고, 측정 스크립트가 실행마다 파일 하나로 `STAGE_TRACE_DIR`(기본 `build/stage-trace`)에 남깁니다. 캐시 GET과 PUT은 캐시에 실제로 요청을 보낸 호출만 기록합니다. 캐시가 꺼졌거나 중단된 동안의 호출은 그 구간을 지나지 않은 것으로 남습니다. `python3 -B scripts/bench/stage_summary.py <폴더>`가 구간마다 p50, p90, p95, p99 표를 만듭니다. 기록하는 비용이 지연에 섞이므로, 이 숫자는 `make cache-bench`의 숫자와 나란히 비교하지 않고 원인을 쪼개는 데만 씁니다. PostgreSQL 원본의 같은 기록은 `make cache-stage-bench-postgres POSTGRES_URL=...`이 남기며, 측정 옵션은 `POSTGRES_BENCH_FLAGS`로 넘깁니다.
 
 ## 한계
 
