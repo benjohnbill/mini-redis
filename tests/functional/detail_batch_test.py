@@ -34,9 +34,8 @@ UPDATED_ID = 40
 # 다른 확인과 겹치지 않게 떨어뜨려 둡니다.
 DISTINCT_BASE = 1000
 FAILING_BASE = 2000
-# 조회와 수정의 순서를 보는 확인의 상품 번호와 시도 수입니다.
+# 조회와 수정의 순서를 보는 확인의 첫 상품 번호입니다. 시도마다 두 개씩 씁니다.
 ORDER_BASE = 3000
-ORDER_TRIALS = 20
 
 
 def burst(demo, paths, closed=()):
@@ -295,24 +294,30 @@ def failed_mset_still_answers_and_suspends(binary, database, off):
 
 
 def update_after_bundled_miss_is_not_overwritten(cached):
-    """캐시에 없는 상품을 두 연결에서 조회하고 곧바로 세 번째 연결에서 수정한 뒤 다시
-    조회하면 새 값을 받는지 봅니다. 묶음의 저장이 수정보다 늦게 끝나면, 수정이
-    무효화한 key에 옛 값이 다시 들어가 마지막 조회가 옛 값을 받습니다. 세 요청이 같은
-    poll에 들어와야 그 순서를 지나므로 상품을 바꿔 여러 번 보냅니다."""
-    for trial in range(ORDER_TRIALS):
-        product_id = ORDER_BASE + trial
-        path = f'/products/{product_id}'
-        new_value = {'id': product_id, 'name': f'순서 확인 {trial}', 'price': 900 + trial}
+    """캐시에 없는 서로 다른 상품 X, Y를 두 연결에서 조회하고 곧바로 세 번째 연결에서
+    X를 수정한 뒤, X를 다시 조회하면 새 값을 받는지 봅니다. 묶음의 저장(POST /mset)이
+    수정보다 늦게 끝나면, 수정이 무효화한 X의 key에 옛 값이 다시 들어가 마지막 조회가
+    옛 값을 받습니다. 그 순서를 실제로 지난 시도만 셉니다. X의 첫 조회가 옛 값을
+    받았으면 조회가 수정보다 먼저 처리됐고, cache_msets가 늘었으면 X와 Y가 한 묶음에서
+    미스를 내 POST /mset으로 저장됐습니다. 마지막 조회는 모든 시도에서 새 값이어야
+    합니다."""
+    for trial in range(BURST_TRIALS):
+        target_id = ORDER_BASE + 2 * trial
+        target_path = f'/products/{target_id}'
+        other_path = f'/products/{target_id + 1}'
+        new_value = {'id': target_id, 'name': f'순서 확인 {trial}', 'price': 900 + trial}
         update = json.dumps({'name': new_value['name'], 'price': new_value['price']},
                             ensure_ascii=False).encode('utf-8')
-        get_request = f'GET {path} HTTP/1.1\r\nHost: {HOST}\r\n\r\n'.encode('ascii')
-        put_request = (f'PUT {path} HTTP/1.1\r\nHost: {HOST}\r\n'
-                       f'Content-Type: application/json\r\n'
-                       f'Content-Length: {len(update)}\r\n\r\n').encode('ascii') + update
+        requests = [f'GET {path} HTTP/1.1\r\nHost: {HOST}\r\n\r\n'.encode('ascii')
+                    for path in (target_path, other_path)]
+        requests.append((f'PUT {target_path} HTTP/1.1\r\nHost: {HOST}\r\n'
+                         f'Content-Type: application/json\r\n'
+                         f'Content-Length: {len(update)}\r\n\r\n').encode('ascii') + update)
+        _, before = read_json(cached, '/stats')
         sockets = [socket.create_connection((HOST, cached.port), timeout=REQUEST_TIMEOUT)
-                   for _ in range(3)]
+                   for _ in requests]
         try:
-            for raw, request in zip(sockets, (get_request, get_request, put_request)):
+            for raw, request in zip(sockets, requests):
                 raw.sendall(request)
             responses = []
             for raw in sockets:
@@ -321,8 +326,14 @@ def update_after_bundled_miss_is_not_overwritten(cached):
         finally:
             for raw in sockets:
                 raw.close()
+        _, after = read_json(cached, '/stats')
         expect(responses[2], (204, b''), f'{trial + 1}번째 수정 응답')
-        expect(read_json(cached, path), (200, new_value), f'{trial + 1}번째 수정 뒤 조회')
+        expect(read_json(cached, target_path), (200, new_value), f'{trial + 1}번째 수정 뒤 조회')
+        first_name = json.loads(responses[0][1])['name'] if responses[0][0] == 200 else None
+        if first_name == f'상품 {target_id}' and after['cache_msets'] > before['cache_msets']:
+            return
+    raise AssertionError(f'{BURST_TRIALS}번 보내도 조회가 수정보다 먼저 처리되고 '
+                         'POST /mset으로 저장된 시도가 없었습니다')
 
 
 def main():
