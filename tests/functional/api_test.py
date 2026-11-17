@@ -353,6 +353,88 @@ def output_has_no_per_request_lines(server):
     expect(chatty[:3], [], "오류가 아닌 mongoose 줄")
 
 
+def mget_request(server, body, timeout=REQUEST_TIMEOUT):
+    """POST /mget을 보내고 상태 코드, Content-Type, Allow, body를 돌려줍니다."""
+    connection = http.client.HTTPConnection(HOST, server.port, timeout=timeout)
+    try:
+        connection.request("POST", "/mget", body=body)
+        response = connection.getresponse()
+        return (response.status, response.getheader("Content-Type"),
+                response.getheader("Allow"), response.read())
+    finally:
+        connection.close()
+
+
+def mget_returns_values_in_key_order(server):
+    for key, value in ((b"mget-a", b"1"), (b"mget-bin", b"x\ny\x00z\n"), (b"mget-empty", b"")):
+        status, _, _ = server.request("PUT", "/keys/" + key.decode(), body=value)
+        expect(status, 204, f"{key!r} 저장의 상태 코드")
+
+    # 마지막 \n이 없는 body입니다. 같은 key가 두 번 오고, 없는 key가 끼어 있습니다.
+    status, content_type, _, body = mget_request(
+        server, b"mget-a\nmget-none\nmget-bin\nmget-a\nmget-empty")
+
+    expect(status, 200, "상태 코드")
+    expect(content_type, "application/octet-stream", "Content-Type")
+    expect(body, b"1\n1\n-\n6\nx\ny\x00z\n\n1\n1\n0\n\n", "body")
+
+
+def mget_expired_key_is_missing(server):
+    connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+    try:
+        connection.request("PUT", "/keys/mget-expiring", body=b"v", headers={"TTL": "1"})
+        expect(connection.getresponse().status, 204, "TTL 1초 저장의 상태 코드")
+    finally:
+        connection.close()
+    expect(mget_request(server, b"mget-expiring\n")[3], b"1\nv\n", "만료 전 body")
+
+    time.sleep(1.2)
+
+    expect(mget_request(server, b"mget-expiring\n")[3], b"-\n", "만료 뒤 body")
+
+
+def mget_key_count_and_line_errors(server):
+    status, _, _, body = mget_request(server, b"k\n" * 64)
+    expect((status, body), (200, b"-\n" * 64), "key 64개")
+    status, _, _, body = mget_request(server, b"k\n" * 65)
+    expect((status, body), (400, b'{"error":"too_many_keys"}'), "key 65개")
+    status, _, _, body = mget_request(server, b"")
+    expect((status, body), (400, b'{"error":"bad_request"}'), "빈 body")
+    status, _, _, body = mget_request(server, b"a\n\nb\n")
+    expect((status, body), (400, b'{"error":"empty_key"}'), "빈 줄")
+    status, _, _, body = mget_request(server, b"a\n%G1\n")
+    expect((status, body), (400, b'{"error":"bad_key_encoding"}'), "깨진 인코딩")
+
+
+def mget_other_method_returns_405_with_allow_post(server):
+    connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+    try:
+        connection.request("GET", "/mget")
+        response = connection.getresponse()
+        status, allow, body = response.status, response.getheader("Allow"), response.read()
+    finally:
+        connection.close()
+
+    expect(status, 405, "상태 코드")
+    expect(allow, "POST", "Allow")
+    expect(body, b'{"error":"method_not_allowed"}', "body")
+
+
+def mget_values_over_limit_are_rejected(server):
+    value = bytes(range(256)) * (BODY_MAX // 256)
+    status, _, _ = server.request("PUT", "/keys/mget-big", body=value, timeout=LARGE_REQUEST_TIMEOUT)
+    expect(status, 204, "16 MiB 저장의 상태 코드")
+    status, _, _ = server.request("PUT", "/keys/mget-small", body=b"x")
+    expect(status, 204, "1바이트 저장의 상태 코드")
+
+    status, _, _, body = mget_request(server, b"mget-big\nmget-none", timeout=LARGE_REQUEST_TIMEOUT)
+    expect(status, 200, "합계 16 MiB의 상태 코드")
+    if body != b"16777216\n" + value + b"\n-\n":
+        raise AssertionError(f"합계 16 MiB의 body가 다릅니다: {len(body)}바이트")
+    status, _, _, body = mget_request(server, b"mget-big\nmget-small", timeout=LARGE_REQUEST_TIMEOUT)
+    expect((status, body), (400, b'{"error":"response_too_large"}'), "합계 16 MiB + 1바이트")
+
+
 # 서버를 끄는 테스트는 마지막에 둡니다.
 TESTS = [
     ("[T5] (기능) 실제 서버에 저장한 value를 조회로 돌려받는다", put_then_get_returns_value),
@@ -375,6 +457,13 @@ TESTS = [
     ("(기능) 짧은 key에 상한과 같은 크기의 body를 저장하고 그대로 돌려받는다", body_at_limit_round_trips),
     ("(기능) 헤더를 반쯤 보내고 멈춘 연결이 있어도 다른 요청은 바로 응답을 받는다", half_sent_headers_do_not_block_others),
     ("(기능) 큰 body를 천천히 보내는 연결이 있어도 다른 요청은 바로 응답을 받는다", slow_large_body_does_not_block_others),
+    ("(기능) POST /mget은 key 순서대로 길이와 value를, 없는 key는 -를 돌려준다", mget_returns_values_in_key_order),
+    ("(기능) POST /mget은 보관 기간이 지난 key를 -로 돌려준다", mget_expired_key_is_missing),
+    ("(기능) POST /mget은 key 64개를 받고, 65개, 빈 body, 빈 줄, 깨진 인코딩은 400을 받는다",
+     mget_key_count_and_line_errors),
+    ("(기능) /mget에 POST가 아닌 메서드는 405와 Allow: POST를 받는다", mget_other_method_returns_405_with_allow_post),
+    ("(기능) POST /mget은 value 합계 16 MiB까지 돌려주고, 넘으면 400 response_too_large를 받는다",
+     mget_values_over_limit_are_rejected),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
     ("(기능) 서버 출력에 mongoose가 요청마다 찍는 줄이 없고 오류만 남는다", output_has_no_per_request_lines),
 ]
