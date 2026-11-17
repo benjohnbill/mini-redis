@@ -123,6 +123,31 @@ $(BENCH_BUILD)/%.o: src/%.c | $(BENCH_BUILD)
 $(BENCH_BUILD):
 	mkdir -p $@
 
+# make hash-micro: hash 함수 후보를 서버 없이 잽니다(실험 브랜치 CJG-hash-bench 전용).
+# 측정 서버와 같은 BENCH_CFLAGS로 빌드합니다. vendor의 헤더는 -isystem으로 읽어서
+# 가져온 코드의 경고가 -Werror로 빌드를 멈추지 않게 합니다.
+# vendor/siphash: https://github.com/veorq/SipHash (CC0),
+#   commit 32d067603b93b47828700880649198e0bfbbcffa 의 siphash.c, siphash.h 그대로입니다.
+#   라운드 수가 매크로라서 파일을 고치지 않고 1-2와 2-4로 두 번 컴파일합니다.
+# vendor/wyhash: https://github.com/wangyi-fudan/wyhash (Unlicense),
+#   commit e4764a0b637d34d3421a7760affada9288b625a8 의 wyhash.h 그대로입니다.
+# vendor/xxhash: https://github.com/Cyan4973/xxHash (BSD-2-Clause), tag v0.8.4 의 xxhash.h 그대로입니다.
+HASH_MICRO   := $(BENCH_BUILD)/hash_micro
+HASH_VENDOR  := -isystem vendor/siphash -isystem vendor/wyhash -isystem vendor/xxhash
+.PHONY: hash-micro
+hash-micro: $(HASH_MICRO)
+	./$(HASH_MICRO)
+
+$(HASH_MICRO): scripts/bench/hash_micro.c $(BENCH_BUILD)/hash.o $(BENCH_BUILD)/list.o \
+               $(BENCH_BUILD)/siphash_1_2.o $(BENCH_BUILD)/siphash_2_4.o | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(HASH_VENDOR) $(BENCH_CFLAGS) $^ -lm -o $@
+
+$(BENCH_BUILD)/siphash_1_2.o: vendor/siphash/siphash.c | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -O2 -Dsiphash=siphash_1_2 -DcROUNDS=1 -DdROUNDS=2 -c $< -o $@
+
+$(BENCH_BUILD)/siphash_2_4.o: vendor/siphash/siphash.c | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -O2 -Dsiphash=siphash_2_4 -DcROUNDS=2 -DdROUNDS=4 -c $< -o $@
+
 # SQLite는 별도 상품 데모에만 링크합니다.
 CACHE_DEMO := $(BUILD)/cache-demo
 .PHONY: cache-demo cache-functional
