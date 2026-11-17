@@ -82,6 +82,9 @@ struct stage_record {
     bool is_bundled;
     size_t mget_keys;
     unsigned long long mget_number;
+    /* 원본에서 읽은 body를 응답 뒤에 묶음 끝에서 캐시에 저장하는 요청입니다.
+       캐시 PUT 칸은 그 저장이 끝날 때 채웁니다. */
+    bool is_store_deferred;
 };
 
 /* mg_mgr_poll 한 번이 처리한 요청들입니다. request_count는 기록하지 못한
@@ -108,6 +111,10 @@ struct stage_trace {
     size_t chunk_keys;
     unsigned long long chunk_mget_number;
     unsigned long long mget_count;
+    /* 대기 묶음의 첫 요청이 batch.records에 들어갈 자리와, 묶음 끝의 캐시 저장을
+       시작한 시각입니다. */
+    size_t chunk_first_record;
+    double store_started_ms;
     unsigned long long dropped_count;
     struct stage_record current;
     struct stage_batch batch;
@@ -211,6 +218,9 @@ static void pending_replies_share(struct demo *demo,
                                   size_t chunk_len,
                                   const struct pending_keys *keys,
                                   char **bodies);
+static void pending_stores_run(struct demo *demo,
+                               const struct pending_keys *keys,
+                               char *const *bodies, const bool *needs_store);
 static void pending_reply_by_get(struct demo *demo,
                                  const struct pending_detail *pending);
 static void pending_reply_from(struct demo *demo,
@@ -272,6 +282,8 @@ static void product_reply(struct mg_connection *connection, struct demo *demo,
                           int product_id, const char *key, char *cached);
 static char *product_body_load(struct demo *demo, int product_id,
                                const char *key, char *cached, int *status);
+static char *product_body_from_origin(struct demo *demo, int product_id,
+                                      int *status);
 static void detail_key_build(int product_id, char *key, size_t key_size);
 static char *product_body_create(struct demo *demo, int product_id,
                                  int *status);
@@ -299,6 +311,9 @@ static void stage_trace_chunk_begin(void);
 static void stage_trace_chunk_mget_end(size_t key_count);
 static void stage_trace_deferred_begin(const struct mg_connection *connection,
                                        bool is_bundled);
+static void stage_trace_store_defer(void);
+static bool stage_trace_store_begin(const struct demo *demo);
+static void stage_trace_store_end(bool is_traced);
 static void stage_trace_request_end(void);
 static void stage_trace_sent(const struct mg_connection *connection);
 static void stage_trace_batch_end(void);
@@ -714,9 +729,13 @@ static void pending_keys_build(struct pending_keys *keys,
 
 /* POST /mget이 답한 묶음의 요청들에 응답합니다. key마다 body를 한 번만 정하고,
    그 key를 원하는 요청 모두에 같은 body를 보냅니다. 캐시에 없던 key는 처음
-   응답하는 요청이 원본을 읽고 캐시에 저장합니다. 하나씩 처리했다면 뒤 요청은
-   앞 요청이 저장한 값을 캐시에서 받았을 것이므로, 원본 조회와 저장을 되풀이하지
-   않습니다. bodies는 이 함수가 해제합니다. */
+   응답하는 요청이 원본을 읽습니다. 하나씩 처리했다면 뒤 요청은 앞 요청이 저장한
+   값을 캐시에서 받았을 것이므로, 원본 조회와 저장을 되풀이하지 않습니다.
+   원본에서 읽은 body는 응답을 먼저 보낸 뒤, 묶음의 응답을 모두 보내고 나서
+   저장합니다. 응답이 캐시 저장을 기다리지 않게 하기 위해서입니다. 저장은 이
+   함수 안에서 끝나므로, 다음 수정·삭제 요청보다 먼저 끝납니다. 그 순서가
+   뒤집히면 수정이 무효화한 key에 옛 값을 다시 쓸 수 있습니다. bodies는 이
+   함수가 해제합니다. */
 static void pending_replies_share(struct demo *demo,
                                   const struct pending_detail *chunk,
                                   size_t chunk_len,
@@ -724,6 +743,7 @@ static void pending_replies_share(struct demo *demo,
                                   char **bodies)
 {
     bool is_loaded[MGET_KEYS_MAX] = {false};
+    bool needs_store[MGET_KEYS_MAX] = {false};
     int statuses[MGET_KEYS_MAX] = {0};
     for (size_t i = 0; i < chunk_len; i++) {
         struct mg_connection *connection =
@@ -733,12 +753,15 @@ static void pending_replies_share(struct demo *demo,
         }
         size_t key_index = keys->key_index[i];
         stage_trace_deferred_begin(connection, true);
-        if (!is_loaded[key_index]) {
-            bodies[key_index] = product_body_load(
-                demo, chunk[i].product_id, keys->names[key_index],
-                bodies[key_index], &statuses[key_index]);
-            is_loaded[key_index] = true;
+        if (!is_loaded[key_index] && bodies[key_index] == NULL) {
+            bodies[key_index] = product_body_from_origin(
+                demo, chunk[i].product_id, &statuses[key_index]);
+            needs_store[key_index] = bodies[key_index] != NULL;
+            if (needs_store[key_index]) {
+                stage_trace_store_defer();
+            }
         }
+        is_loaded[key_index] = true;
         if (bodies[key_index] == NULL) {
             origin_error_send(connection, statuses[key_index]);
         } else {
@@ -746,9 +769,26 @@ static void pending_replies_share(struct demo *demo,
         }
         pending_reply_finish(connection, &chunk[i]);
     }
+    pending_stores_run(demo, keys, bodies, needs_store);
     for (size_t key_index = 0; key_index < keys->count; key_index++) {
         free(bodies[key_index]);
     }
+}
+
+/* 원본에서 읽은 body들을 캐시에 저장합니다. 묶음의 응답을 모두 보낸 뒤에
+   부릅니다. */
+static void pending_stores_run(struct demo *demo,
+                               const struct pending_keys *keys,
+                               char *const *bodies, const bool *needs_store)
+{
+    bool is_traced = stage_trace_store_begin(demo);
+    for (size_t key_index = 0; key_index < keys->count; key_index++) {
+        if (needs_store[key_index]) {
+            cache_client_set(&demo->cache, keys->names[key_index],
+                             bodies[key_index]);
+        }
+    }
+    stage_trace_store_end(is_traced);
 }
 
 static void pending_reply_by_get(struct demo *demo,
@@ -1296,15 +1336,25 @@ static char *product_body_load(struct demo *demo, int product_id,
     if (cached != NULL) {
         return cached;
     }
-    stage_trace_stage_begin(STAGE_ORIGIN);
-    char *body = product_body_create(demo, product_id, status);
-    stage_trace_stage_end(STAGE_ORIGIN);
+    char *body = product_body_from_origin(demo, product_id, status);
     if (body == NULL) {
         return NULL;
     }
     bool is_put_traced = stage_trace_cache_begin(demo, STAGE_CACHE_PUT);
     cache_client_set(&demo->cache, key, body);
     stage_trace_cache_end(is_put_traced, STAGE_CACHE_PUT);
+
+    return body;
+}
+
+/* 원본에서 상품 body를 만듭니다. 캐시에는 저장하지 않습니다. 만들지 못하면
+   NULL을 돌려주고 status에 응답 코드를 적습니다. */
+static char *product_body_from_origin(struct demo *demo, int product_id,
+                                      int *status)
+{
+    stage_trace_stage_begin(STAGE_ORIGIN);
+    char *body = product_body_create(demo, product_id, status);
+    stage_trace_stage_end(STAGE_ORIGIN);
 
     return body;
 }
@@ -1528,6 +1578,8 @@ static void stage_trace_chunk_begin(void)
         stage_trace_state.chunk_mget_ms = STAGE_NOT_ENTERED;
         stage_trace_state.chunk_keys = 0;
         stage_trace_state.chunk_mget_number = 0;
+        stage_trace_state.chunk_first_record =
+            stage_trace_state.batch.request_count;
     }
 #endif
 }
@@ -1607,6 +1659,52 @@ static void stage_trace_cache_end(bool is_traced, enum stage stage)
     if (is_traced) {
         stage_trace_stage_end(stage);
     }
+}
+
+/* 지금 요청이 원본에서 읽은 body를 응답 뒤 묶음 끝에서 저장한다고 적습니다. */
+static void stage_trace_store_defer(void)
+{
+#ifdef STAGE_TRACE
+    stage_trace_state.current.is_store_deferred = true;
+#endif
+}
+
+/* 묶음 끝의 캐시 저장을 재기 시작합니다. 캐시에 실제로 요청을 보낼 때만 잽니다
+   (stage_trace_cache_begin과 같은 이유). 돌려준 값을 stage_trace_store_end에
+   넘깁니다. */
+static bool stage_trace_store_begin(const struct demo *demo)
+{
+    if (!demo->cache.active) {
+        return false;
+    }
+#ifdef STAGE_TRACE
+    stage_trace_state.store_started_ms = stage_trace_now();
+#endif
+
+    return true;
+}
+
+/* 묶음 끝의 캐시 저장 시간을, 이 대기 묶음에서 저장을 맡긴 요청들의 캐시 PUT
+   칸에 적습니다. 그 요청들의 기록은 응답을 보낼 때 이미 batch.records에
+   들어갔습니다. 저장 여러 번을 함께 기다렸으므로 모두 같은 시간을 적습니다. */
+static void stage_trace_store_end(bool is_traced)
+{
+#ifdef STAGE_TRACE
+    if (!is_traced || stage_trace_state.file == NULL) {
+        return;
+    }
+    double stored_ms = stage_trace_now() - stage_trace_state.store_started_ms;
+    struct stage_batch *batch = &stage_trace_state.batch;
+    size_t end = batch->request_count < STAGE_BATCH_MAX ? batch->request_count
+                                                        : STAGE_BATCH_MAX;
+    for (size_t i = stage_trace_state.chunk_first_record; i < end; i++) {
+        if (batch->records[i].is_store_deferred) {
+            batch->records[i].stage_ms[STAGE_CACHE_PUT] = stored_ms;
+        }
+    }
+#else
+    (void)is_traced;
+#endif
 }
 
 /* 붙잡힘은 묶음이 끝나야 알 수 있으므로, 요청의 기록을 묶음 끝까지 모읍니다. */
@@ -1712,6 +1810,7 @@ static void stage_record_start(const char *kind, unsigned long connection_id,
     record->is_bundled = false;
     record->mget_keys = 0;
     record->mget_number = 0;
+    record->is_store_deferred = false;
     for (int i = 0; i < STAGE_COUNT; i++) {
         record->stage_ms[i] = STAGE_NOT_ENTERED;
     }
