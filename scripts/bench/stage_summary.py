@@ -7,9 +7,11 @@
 기록 한 줄은 데모(demo/product_demo.c의 stage_trace_*)가 요청 하나마다 적습니다.
 
     stage <묶음 번호> <종류> <대기> <처리> <캐시 GET> <원본 조회> <캐시 PUT>
-          <붙잡힘> <실제 붙잡힘> <mget 묶임> <mget key 수> <묶음 요청 수>
+          <붙잡힘> <실제 붙잡힘> <mget 묶임> <mget key 수> <mget 번호>
+          <묶음 요청 수>
 
-자동 묶기 전의 기록에는 mget 묶임과 mget key 수 칸이 없고, 그 기록도 읽습니다.
+자동 묶기 전의 기록에는 mget 묶임, mget key 수, mget 번호 칸이 없고, mget 번호를
+적기 전의 기록에는 mget 번호 칸이 없습니다. 그 기록들도 읽습니다.
 
 시간은 ms이고 지나지 않은 구간과 알 수 없는 값은 "-"입니다. 구간마다 그 구간을
 지난 요청만 셉니다. 그래서 원본 조회와 캐시 PUT의 개수는 캐시에서 찾지 못한
@@ -19,13 +21,14 @@ stats 사이의 요청만 셉니다. --all은 준비 구간까지 모두 셉니�
 *.log를 모두 읽고, 같은 폴더에서 이름이 회 번호(-1, -2, ...)만 다른 파일을 한
 표로 합칩니다.
 
---batch-get은 묶음마다 캐시 GET 횟수와 GET 시간의 합을 세고, 한 묶음의 GET을
-왕복 한 번으로 줄였을 때의 묶음 처리 시간을 어림합니다. 묶음 처리 시간은 묶음
-시작부터 마지막 요청의 처리가 끝나기까지(대기 + 처리의 최댓값)입니다. 왕복 한
-번의 비용은 같은 파일 묶음에서 잰 단건 캐시 GET의 p50으로 둡니다. POST /mget으로
-묶여 물은 요청들은 같은 왕복 한 번의 시간을 각자 적으므로, 같은 묶음에서 시간과
-mget key 수가 같은 묶인 요청은 왕복 한 번으로 셉니다. 그래서 묶기 전 기록에서는
-묶었을 때의 이득을 어림하고, 묶은 뒤 기록에서는 남은 왕복 수를 봅니다.
+--batch-get은 묶음마다 캐시 왕복 횟수와 그 시간의 합을 셉니다. POST /mget으로
+묶여 물은 요청들은 같은 왕복 한 번의 시간을 각자 적으므로, mget 번호가 같은
+요청은 왕복 한 번으로 셉니다. mget 번호가 없는 기록에서는 같은 묶음에서 시간과
+mget key 수가 같은 묶인 요청을 왕복 한 번으로 봅니다. 왕복이 두 번 이상인 묶음만
+그 왕복을 한 번으로 줄였을 때의 묶음 처리 시간을 어림합니다. 묶음 처리 시간은
+묶음 시작부터 마지막 요청의 처리가 끝나기까지(대기 + 처리의 최댓값)이고, 왕복
+한 번의 비용은 같은 파일 묶음에서 잰 단건 캐시 GET의 p50으로 둡니다. 왕복이
+이미 한 번인 묶음은 실제 왕복 수와 시간만 셉니다.
 """
 
 import argparse
@@ -42,15 +45,19 @@ COLUMNS = ("대기", "처리", "캐시 GET", "원본 조회", "캐시 PUT", "붙
 GET_INDEX = COLUMNS.index("캐시 GET")
 BATCH_LABEL = "묶음 요청 수"
 MGET_KEYS_LABEL = "mget key 수 (묶인 요청)"
-# 자동 묶기 전의 기록은 mget 묶임과 mget key 수 칸이 없습니다.
-FIELD_COUNTS = (3 + len(COLUMNS) + 1, 3 + len(COLUMNS) + 3)
+# 자동 묶기 전의 기록은 mget 칸이 없고, mget 번호를 적기 전의 기록은 번호 칸이
+# 없습니다. MGET_INDEX는 mget 묶임 칸의 자리입니다.
+FIELD_COUNTS = (3 + len(COLUMNS) + 1, 3 + len(COLUMNS) + 3,
+                3 + len(COLUMNS) + 4)
+MGET_INDEX = 3 + len(COLUMNS)
 PERCENTS = (50, 90, 95, 99)
 RUN_SUFFIX = re.compile(r"-\d+$")
 STAGE_PREFIX = "stage "
 DROPPED_PREFIX = "dropped "
 
 Record = collections.namedtuple("Record",
-                                "batch kind times batch_size mget_keys")
+                                "batch kind times batch_size mget_keys "
+                                "mget_number")
 
 
 class Trace:
@@ -76,12 +83,17 @@ class Trace:
                              f"{line.rstrip()}")
         times = [None if field == "-" else float(field)
                  for field in fields[3:3 + len(COLUMNS)]]
-        # 묶이지 않은 요청과 자동 묶기 전의 기록은 mget key 수가 None입니다.
+        # 묶이지 않은 요청과 자동 묶기 전의 기록은 mget key 수가 None이고,
+        # mget 번호를 적기 전의 기록은 mget 번호가 None입니다.
         mget_keys = None
-        if len(fields) == FIELD_COUNTS[1] and fields[-3] == "1":
-            mget_keys = int(fields[-2])
+        mget_number = None
+        if len(fields) > FIELD_COUNTS[0] and fields[MGET_INDEX] == "1":
+            mget_keys = int(fields[MGET_INDEX + 1])
+            if len(fields) == FIELD_COUNTS[2]:
+                mget_number = int(fields[MGET_INDEX + 2])
         self.records.append(Record((self.path, int(fields[1])), fields[2],
-                                   times, int(fields[-1]), mget_keys))
+                                   times, int(fields[-1]), mget_keys,
+                                   mget_number))
 
     def measured(self, use_all):
         """첫 stats와 둘째 stats 사이의 요청입니다. stats가 둘보다 적으면 모두입니다."""
@@ -168,8 +180,9 @@ def table_print(name, traces, kind, use_all):
 
 def round_trips(members):
     """묶음 하나의 캐시 왕복 시간들입니다. POST /mget으로 묶여 물은 요청들은 같은
-    왕복 한 번의 시간을 각자 적으므로, 같은 묶음에서 시간과 mget key 수가 같은 묶인
-    요청은 왕복 한 번으로 셉니다."""
+    왕복 한 번의 시간을 각자 적으므로, mget 번호가 같은 요청은 왕복 한 번으로
+    셉니다. 번호가 없는 옛 기록은 시간과 mget key 수가 같은 묶인 요청을 왕복 한
+    번으로 봅니다."""
     trips = []
     bundles = set()
     for record in members:
@@ -178,8 +191,12 @@ def round_trips(members):
             continue
         if record.mget_keys is None:
             trips.append(time)
-        elif (time, record.mget_keys) not in bundles:
-            bundles.add((time, record.mget_keys))
+            continue
+        bundle = record.mget_number
+        if bundle is None:
+            bundle = (time, record.mget_keys)
+        if bundle not in bundles:
+            bundles.add(bundle)
             trips.append(time)
     return trips
 
@@ -208,14 +225,19 @@ def batch_get_print(name, traces, kind, use_all):
         if not times:
             continue
         elapsed = max(record.times[0] + record.times[1] for record in members)
-        expected = elapsed - sum(times) + round_trip
         rows["GET 횟수"].append(len(times))
         rows["GET 시간 합 (ms)"].append(sum(times))
         rows["묶음 처리 시간 (ms)"].append(elapsed)
+        # 왕복이 이미 한 번이면 줄일 왕복이 없으므로 어림하지 않습니다.
+        if len(times) < 2:
+            continue
+        expected = elapsed - sum(times) + round_trip
         rows["예상 처리 시간 (ms)"].append(expected)
         rows["줄어드는 시간 (ms)"].append(elapsed - expected)
         rows["줄어드는 비율 (%)"].append(100 * (elapsed - expected) / elapsed)
+    estimated = len(rows.get("예상 처리 시간 (ms)", []))
     print(f"\n### {name}: 묶음 {len(rows['GET 횟수']):,}개, "
+          f"왕복이 2번 이상이라 어림한 묶음 {estimated:,}개, "
           f"왕복 한 번 {round_trip:.3f} ms "
           f"({'단건 캐시 GET' if singles else '묶음 왕복'} p50)")
     print()

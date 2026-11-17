@@ -76,9 +76,12 @@ struct stage_record {
     double stage_ms[STAGE_COUNT];
     double held_ms;
     double sent_ms;
-    /* POST /mget으로 묶여 캐시를 물었는지와 그 묶음의 key 수입니다. */
+    /* POST /mget으로 묶여 캐시를 물었는지와 그 묶음의 key 수, 그 POST /mget의
+       번호(기록 파일 안에서 1부터)입니다. 같은 번호의 요청들은 왕복 한 번을
+       함께 썼습니다. */
     bool is_bundled;
     size_t mget_keys;
+    unsigned long long mget_number;
 };
 
 /* mg_mgr_poll 한 번이 처리한 요청들입니다. request_count는 기록하지 못한
@@ -98,10 +101,13 @@ struct stage_trace {
     double batch_started_ms;
     double stage_started_ms;
     /* 대기 목록의 묶음 하나를 처리하기 시작한 시각과, 그 묶음의 POST /mget
-       왕복 시간과 key 수입니다. */
+       왕복 시간, key 수, 번호입니다. mget_count는 지금까지 부른 POST /mget의
+       수입니다. */
     double chunk_started_ms;
     double chunk_mget_ms;
     size_t chunk_keys;
+    unsigned long long chunk_mget_number;
+    unsigned long long mget_count;
     unsigned long long dropped_count;
     struct stage_record current;
     struct stage_batch batch;
@@ -1454,7 +1460,8 @@ static void product_delete(struct mg_connection *connection, struct demo *demo,
    지나지 않은 구간과 알 수 없는 값은 "-"입니다.
 
      stage <묶음 번호> <종류> <대기> <처리> <캐시 GET> <원본 조회> <캐시 PUT>
-           <붙잡힘> <실제 붙잡힘> <mget 묶임> <mget key 수> <묶음 요청 수>
+           <붙잡힘> <실제 붙잡힘> <mget 묶임> <mget key 수> <mget 번호>
+           <묶음 요청 수>
 
    묶음은 mg_mgr_poll 한 번이 처리한 요청들이고, 묶음 번호는 몇 번째
    mg_mgr_poll인지입니다(1부터). 대기는 묶음이 시작된 뒤 처리가 시작되기까지,
@@ -1462,7 +1469,9 @@ static void product_delete(struct mg_connection *connection, struct demo *demo,
    그 요청이 든 대기 묶음(POST /mget 하나)을 처리하기 시작한 때가 처리
    시작입니다. mget 묶임은 POST /mget으로 캐시를 물었으면 1, 아니면 0이고,
    묶였으면 캐시 GET 칸은 그 POST /mget의 왕복 시간, mget key 수는 그 key
-   수입니다. 묶이지 않았으면 mget key 수는 "-"입니다. 붙잡힘은 처리가 끝난 뒤 mg_mgr_poll이
+   수, mget 번호는 그 POST /mget이 이 파일에서 몇 번째인지입니다(1부터). 같은
+   번호의 요청들은 왕복 한 번을 함께 썼습니다. 묶이지 않았으면 mget key 수와
+   mget 번호는 "-"입니다. 붙잡힘은 처리가 끝난 뒤 mg_mgr_poll이
    돌아오기까지이고, 실제 붙잡힘은 처리가 끝난 뒤 응답을 소켓에 다 쓰기까지
    입니다. 응답은 response_flush가 처리 직후에 쓰고, 다 쓰지 못한 나머지는
    mongoose가 다음 mg_mgr_poll에서 쓰므로, 다음 묶음이 끝날 때까지 다 쓰지 못한
@@ -1518,6 +1527,7 @@ static void stage_trace_chunk_begin(void)
         stage_trace_state.chunk_started_ms = stage_trace_now();
         stage_trace_state.chunk_mget_ms = STAGE_NOT_ENTERED;
         stage_trace_state.chunk_keys = 0;
+        stage_trace_state.chunk_mget_number = 0;
     }
 #endif
 }
@@ -1529,6 +1539,7 @@ static void stage_trace_chunk_mget_end(size_t key_count)
         stage_trace_state.chunk_mget_ms =
             stage_trace_now() - stage_trace_state.chunk_started_ms;
         stage_trace_state.chunk_keys = key_count;
+        stage_trace_state.chunk_mget_number = ++stage_trace_state.mget_count;
     }
 #else
     (void)key_count;
@@ -1550,6 +1561,7 @@ static void stage_trace_deferred_begin(const struct mg_connection *connection,
     if (is_bundled) {
         record->is_bundled = true;
         record->mget_keys = stage_trace_state.chunk_keys;
+        record->mget_number = stage_trace_state.chunk_mget_number;
         record->stage_ms[STAGE_CACHE_GET] = stage_trace_state.chunk_mget_ms;
     }
 #else
@@ -1699,6 +1711,7 @@ static void stage_record_start(const char *kind, unsigned long connection_id,
     record->sent_ms = 0;
     record->is_bundled = false;
     record->mget_keys = 0;
+    record->mget_number = 0;
     for (int i = 0; i < STAGE_COUNT; i++) {
         record->stage_ms[i] = STAGE_NOT_ENTERED;
     }
@@ -1758,9 +1771,9 @@ static void stage_record_write(const struct stage_record *record)
         fprintf(file, " %.3f", record->sent_ms - record->finished_ms);
     }
     if (record->is_bundled) {
-        fprintf(file, " 1 %zu", record->mget_keys);
+        fprintf(file, " 1 %zu %llu", record->mget_keys, record->mget_number);
     } else {
-        fputs(" 0 -", file);
+        fputs(" 0 - -", file);
     }
     fprintf(file, " %zu\n", record->batch_size);
 }
