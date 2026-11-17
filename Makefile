@@ -148,6 +148,24 @@ $(BENCH_BUILD)/siphash_1_2.o: vendor/siphash/siphash.c | $(BENCH_BUILD)
 $(BENCH_BUILD)/siphash_2_4.o: vendor/siphash/siphash.c | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) -O2 -Dsiphash=siphash_2_4 -DcROUNDS=2 -DdROUNDS=4 -c $< -o $@
 
+# make rehash-micro: rehash 범위(위쪽 경계, 목표)를 바꾼 store를 서버 없이 잽니다
+# (실험 브랜치 CJG-hash-bench 전용). 설정마다 src/*.c를 -D로 따로 컴파일한 바이너리를
+# 만들고, 회마다 세 설정을 번갈아 실행합니다. 설정 순서에 따른 차이가 한쪽에 몰리지
+# 않게 하기 위해서입니다.
+REHASH_SETTINGS := 4_2 8_2 2_1
+REHASH_ROUNDS   ?= 3
+REHASH_BINS     := $(REHASH_SETTINGS:%=$(BENCH_BUILD)/rehash_micro_%)
+.PHONY: rehash-micro
+rehash-micro: $(REHASH_BINS)
+	@for round in $$(seq $(REHASH_ROUNDS)); do \
+	    for bin in $(REHASH_BINS); do printf 'round=%s ' $$round; ./$$bin; done; \
+	done
+
+$(BENCH_BUILD)/rehash_micro_%: scripts/bench/rehash_micro.c $(filter-out src/server.c src/api.c,$(LIB_SRCS)) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) \
+	    -DMAX_ELEMS_PER_BUCKET=$(word 1,$(subst _, ,$*)) \
+	    -DBEST_ELEMS_PER_BUCKET=$(word 2,$(subst _, ,$*)) $^ -o $@
+
 # SQLite는 별도 상품 데모에만 링크합니다.
 CACHE_DEMO := $(BUILD)/cache-demo
 .PHONY: cache-demo cache-functional

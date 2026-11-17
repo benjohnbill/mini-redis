@@ -310,9 +310,14 @@ is_power_of_2 (size_t x) {
 }
 
 /* Element per bucket ratios. */
+/* CJG-hash-bench: make rehash-micro가 BEST와 MAX를 빌드할 때 바꿉니다. */
 #define MIN_ELEMS_PER_BUCKET  1 /* Elems/bucket < 1: reduce # of buckets. */
+#ifndef BEST_ELEMS_PER_BUCKET
 #define BEST_ELEMS_PER_BUCKET 2 /* Ideal elems/bucket. */
+#endif
+#ifndef MAX_ELEMS_PER_BUCKET
 #define MAX_ELEMS_PER_BUCKET  4 /* Elems/bucket > 4: increase # of buckets. */
+#endif
 
 /* Changes the number of buckets in hash table H to match the
    ideal.  This function can fail because of an out-of-memory
