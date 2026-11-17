@@ -161,14 +161,16 @@ $(CACHE_STAGE_DEMO): demo/product_demo.c demo/cache_client.c demo/sqlite_origin.
 	    demo/sqlite_origin.c $(BENCH_MONGOOSE) -lsqlite3 -o $@
 
 # make cache-stage-bench-postgres: cache-stage-bench와 같은 구간 기록을 PostgreSQL
-# 원본으로 남깁니다. 원본 조회 구간이 PostgreSQL 왕복을 담습니다. 예:
+# 원본으로 남깁니다. 원본 조회 구간이 PostgreSQL 왕복을 담습니다. 기록 파일 이름에는
+# DB 종류가 없으므로, SQLite 기록을 덮어쓰지 않게 기본 폴더를 따로 둡니다. 예:
 #   make cache-stage-bench-postgres POSTGRES_URL='postgresql://127.0.0.1/products' \
 #        POSTGRES_BENCH_FLAGS='--arrival burst --kind detail'
 CACHE_STAGE_POSTGRES := $(BENCH_BUILD)/cache-demo-postgres-stage
+STAGE_TRACE_POSTGRES_DIR ?= $(BUILD)/stage-trace-postgres
 .PHONY: cache-stage-bench-postgres
 cache-stage-bench-postgres: $(CACHE_STAGE_POSTGRES) $(BENCH_SERVER)
 	@test -n "$(POSTGRES_URL)" || { echo "POSTGRES_URL을 지정하세요"; exit 1; }
-	python3 -B scripts/bench/cache_bench.py $(CACHE_STAGE_POSTGRES) $(BENCH_SERVER) --db "$(POSTGRES_URL)" --stage-trace $(STAGE_TRACE_DIR) $(POSTGRES_BENCH_FLAGS)
+	python3 -B scripts/bench/cache_bench.py $(CACHE_STAGE_POSTGRES) $(BENCH_SERVER) --db "$(POSTGRES_URL)" --stage-trace $(STAGE_TRACE_POSTGRES_DIR) $(POSTGRES_BENCH_FLAGS)
 
 $(CACHE_STAGE_POSTGRES): demo/product_demo.c demo/cache_client.c demo/postgres_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) -DSTAGE_TRACE -I$(MONGOOSE_DIR) -I$(PG_INCLUDEDIR) $(BENCH_CFLAGS) demo/product_demo.c \
