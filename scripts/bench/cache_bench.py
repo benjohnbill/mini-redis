@@ -3,16 +3,12 @@
 
 사용법: python3 -B scripts/bench/cache_bench.py build/bench/cache-demo \\
             build/bench/mini-redis [--quick] [--self-check] [--scenario 이름 ...]
-            [--arrival even|burst]
 
 실험마다 같은 seed로 상품 10,000개를 새로 만들고, 새 mini-redis와 새 데모를 띄웁니다.
 cache off와 on에 같은 요청 계획을 쓰고, 준비 구간과 측정 구간을 나눕니다. 측정은
 지연(p50·p95·p99), 성공 처리량, HTTP 오류, timeout, 적중률, 원본 조회 횟수와 감소율,
 반복 편차를 출력합니다. 기본값은 연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회
-입니다. 요청은 기본으로 2 ms마다 하나씩 고르게 도착합니다(--arrival even).
---arrival burst는 연결마다 64 ms 간격의 시간표를 같은 시각에 시작해, 요청 32개가
-한꺼번에 도착합니다. cache-demo/001~004의 측정이 이 모양이었습니다.
---quick은 준비 1초, 측정 3초, 1회로 함수만 확인할 때 씁니다. 시간 수치는
+입니다. --quick은 준비 1초, 측정 3초, 1회로 함수만 확인할 때 씁니다. 시간 수치는
 합격 기준이 아니며 make verify와 CI에서 실행하지 않습니다.
 """
 
@@ -38,7 +34,6 @@ COUNT = 10_000
 SEED = 1
 CONNECTIONS = 32
 RATE = 500
-ARRIVALS = ("even", "burst")
 WARMUP_SECONDS = 10
 MEASURE_SECONDS = 30
 RUNS = 3
@@ -231,19 +226,12 @@ class Plan:
                                  headers=(("Content-Type", "application/json"),))
 
 
-def execute(port, plan, seconds, arrival):
+def execute(port, plan, seconds):
     run = open_loop.Run(port, seconds * open_loop.NS_PER_SECOND, strict=False)
     connections = run.connections_open(CONNECTIONS)
-    if arrival == "burst":
-        # 연결마다 시간표를 두면 모든 시간표가 같은 시각에 시작하므로, 64 ms마다
-        # 요청 32개가 한꺼번에 도착합니다. 001~004를 다시 재기 위해 남깁니다.
-        interval = open_loop.NS_PER_SECOND * CONNECTIONS // RATE
-        for connection in connections:
-            run.stream_add([connection], interval, plan.request)
-    else:
-        # 시간표 하나가 2 ms마다 요청을 내고 연결들에 차례로 맡깁니다.
-        run.stream_add(connections, open_loop.NS_PER_SECOND // RATE,
-                       plan.request)
+    interval = open_loop.NS_PER_SECOND * CONNECTIONS // RATE
+    for connection in connections:
+        run.stream_add([connection], interval, plan.request)
     latencies = run.run()
 
     return run, latencies
@@ -263,7 +251,7 @@ def stats_delta(before, after, name):
 
 
 def run_once(demo_binary, redis_binary, mode, scenario, ttl, warmup, measure,
-             database, arrival):
+             database):
     kind, spread, ratio = ALL_SCENARIOS[scenario]
     subprocess.run([demo_binary, "--db", database, "--seed", str(SEED),
                     "--count", str(COUNT)], check=True,
@@ -281,10 +269,9 @@ def run_once(demo_binary, redis_binary, mode, scenario, ttl, warmup, measure,
         demo = Process([demo_binary, "--db", database, "--port", str(port),
                         *cache_arguments], port)
         demo.wait_until_listening()
-        execute(port, Plan(kind, spread, ratio, SEED + 1), warmup, arrival)
+        execute(port, Plan(kind, spread, ratio, SEED + 1), warmup)
         before = stats_read(port)
-        run, latencies = execute(port, Plan(kind, spread, ratio), measure,
-                                 arrival)
+        run, latencies = execute(port, Plan(kind, spread, ratio), measure)
         after = stats_read(port)
         checked = correctness_check(demo_binary, database, port) if ratio else 0
     finally:
@@ -403,8 +390,6 @@ def main():
     parser.add_argument("--measure", type=int)
     parser.add_argument("--runs", type=int)
     parser.add_argument("--output")
-    parser.add_argument("--arrival", choices=ARRIVALS, default="even",
-                        help="요청이 도착하는 모양. 기본 even")
     parser.add_argument("--db", help="PostgreSQL 연결 문자열. 없으면 임시 SQLite 파일")
     arguments = parser.parse_args()
     self_check()
@@ -425,7 +410,7 @@ def main():
     print(f"machine: {platform.platform()}, python {platform.python_version()}, "
           f"sqlite {sqlite3.sqlite_version}")
     print(f"input: 상품 {COUNT}개 seed {SEED}, 연결 {CONNECTIONS}, "
-          f"초당 {RATE}요청, 도착 {arguments.arrival}, 준비 {warmup}s, 측정 {measure}s, {runs}회, TTL {ttls}")
+          f"초당 {RATE}요청, 준비 {warmup}s, 측정 {measure}s, {runs}회, TTL {ttls}")
     results = {}
     with tempfile.TemporaryDirectory() as directory:
         database = arguments.db or os.path.join(directory, "products.sqlite")
@@ -435,7 +420,6 @@ def main():
         with open(arguments.output, "w", encoding="utf-8") as output:
             json.dump({"inputs": {"count": COUNT, "seed": SEED,
                                   "connections": CONNECTIONS, "rate": RATE,
-                                  "arrival": arguments.arrival,
                                   "warmup": warmup, "measure": measure,
                                   "runs": runs, "ttl": ttls,
                                   "scenarios": scenarios,
@@ -460,7 +444,7 @@ def run_all(arguments, scenarios, ttls, warmup, measure, runs, demo_binary,
                 for _ in range(runs):
                     results[key][mode].append(run_once(
                         demo_binary, redis_binary, mode, scenario, ttl,
-                        warmup, measure, database, arguments.arrival))
+                        warmup, measure, database))
             report(key, runs, measure, results)
 
 
