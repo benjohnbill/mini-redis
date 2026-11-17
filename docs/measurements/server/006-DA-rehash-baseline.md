@@ -7,7 +7,7 @@ commit: d64ae63
 previous: 005-CJG-baseline.md
 machine: "Intel Core Ultra 9 275HX(논리 코어 24개), Windows 11 Pro의 WSL2 Ubuntu 26.04(커널 6.18.33.2-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make build/bench/mini-redis: -std=c11 -Wall -Wextra -Werror -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
-command: "python3 -B scripts/bench/bench.py build/bench/mini-redis c-rehash e-grow-once, 3회"
+command: "python3 -B scripts/bench/bench.py build/bench/mini-redis c-rehash e-grow-once, 3회 / 같은 커밋을 다시 빌드해 python3 -B scripts/bench/bench.py build/bench/mini-redis lab a-quiet, 3회"
 milestones: [perf]
 data: none
 ---
@@ -18,14 +18,15 @@ data: none
 
 - **목적:** 버킷을 늘리는 rehash 한 번의 멈춤(`overview.md`의 "증상과 원인" 첫 줄)을 줄이기 전의 숫자를 이 머신에서 고정합니다. 다음 기록 007이 이 기록과 견줍니다.
 - **머신:** 005와 다른 머신입니다(005는 Ultra 7 155H). 그래서 005의 숫자와 나란히 비교하지 않습니다. 001\~003과 같은 머신입니다.
-- **범위:** 시나리오 9개 가운데 rehash를 재는 `c-rehash`와 `e-grow-once`만 쟀습니다.
+- **범위:** 시나리오 9개 가운데 rehash를 재는 `c-rehash`와 `e-grow-once`, 그리고 변경이 평소 조회를 느리게 하지 않는지 볼 대조군 `lab`과 `a-quiet`를 쟀습니다.
 - **코드:** `src/`는 005(`6b1ec7d`)와 같습니다.
-- **조건:** 측정하는 동안 이 머신에서 다른 작업을 하지 않았습니다. 세 회 모두 "client 늦음"의 max가 5 ms 아래라서, 측정 client가 멈춘 회는 없습니다.
+- **조건:** `c-rehash`와 `e-grow-once`는 다른 작업이 없을 때 쟀습니다. `lab`과 `a-quiet`는 1시간 30분쯤 뒤에 같은 커밋을 다시 빌드해서 쟀고, 그동안 에디터만 열어 둔 가벼운 사용이 있었습니다. 모든 회에서 "client 늦음"의 max가 6 ms 아래라서, 측정 client가 멈춘 회는 없습니다.
 
 ## 결론
 
 | 시나리오 | 작은 GET p99, 3회 (ms) | 목표 (ms) | 판정 |
 |---|---|---|---|
+| A 방해 없음 | 0.214, 0.152, 0.162 | 10 | 통과 |
 | C rehash 경계 | 0.115, 0.144, 0.169 | 10 | 통과 |
 | E 버킷을 한 번 늘림 | 233.418, 249.697, 239.864 | 10 | 초과 (3회 모두) |
 
@@ -34,10 +35,23 @@ data: none
 
 ## 결과
 
-`bench.py`의 출력을 3회 모았고, 단위는 ms입니다. 두 시나리오 모두 key 4,194,304개를 14.6\~15.4초에 미리 채운 뒤, 작은 GET을 초당 5,000개씩 100연결로 10초 동안 보냅니다.
+`bench.py`의 출력을 3회 모았고, 단위는 ms입니다. `c-rehash`와 `e-grow-once`는 key 4,194,304개를 14.6\~15.4초에 미리 채우고, `a-quiet`는 key 100,000개를 채웁니다. 세 시나리오 모두 그 뒤에 작은 GET을 초당 5,000개씩 100연결로 10초 동안 보냅니다.
+
+### lab (wrk 닫힌 루프)
+
+| 회 | p50 | p99 | 처리량 (/s) | 오류 |
+|---|---|---|---|---|
+| 1 | 0.306 | 0.623 | 299,281 | 0 |
+| 2 | 0.295 | 0.677 | 307,126 | 0 |
+| 3 | 0.290 | 0.558 | 313,095 | 0 |
+
+### A, C, E (python 열린 루프)
 
 | 시나리오 | 회 | 작은 GET p50 | p99 | max | 방해 요청 | client 늦음 p99, max |
 |---|---|---|---|---|---|---|
+| A 방해 없음 | 1 | 0.033 | 0.214 | 6.317 | | 0.038, 5.890 |
+| | 2 | 0.033 | 0.152 | 1.058 | | 0.023, 0.852 |
+| | 3 | 0.028 | 0.162 | 1.257 | | 0.027, 1.062 |
 | C rehash 경계 | 1 | 0.029 | 0.115 | 1.501 | 저장 max 0.102, 삭제 max 0.041 | 0.025, 0.955 |
 | | 2 | 0.033 | 0.144 | 1.171 | 저장 max 0.094, 삭제 max 0.200 | 0.018, 0.995 |
 | | 3 | 0.033 | 0.169 | 2.028 | 저장 max 0.220, 삭제 max 0.043 | 0.018, 1.925 |
