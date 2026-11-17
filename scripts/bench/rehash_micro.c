@@ -31,6 +31,9 @@
 #define VALUE_SIZE 100
 #define NOW 1
 #define SHUFFLE_SEED 0x9E3779B97F4A7C15ULL
+/* 범위 상수는 0.5 같은 실수일 수 있으므로 빌드할 때 준 글자 그대로 출력합니다. */
+#define TEXT(value) #value
+#define MACRO_TEXT(value) TEXT(value)
 
 struct put_result {
     double average_ns;
@@ -66,9 +69,10 @@ int main(int argc, char **argv)
     rss_after = rss_bytes();
     get_average_ns = get_all(store);
     buckets = bucket_count(store);
-    printf("keys=%zu max=%d best=%d put_avg=%.1f put_max=%.3f rehash=%zu "
+    printf("keys=%zu max=%s best=%s put_avg=%.1f put_max=%.3f rehash=%zu "
            "get_avg=%.1f buckets=%zu bucket_mib=%.1f rss_per_key=%.1f\n",
-           key_count, MAX_ELEMS_PER_BUCKET, BEST_ELEMS_PER_BUCKET,
+           key_count, MACRO_TEXT(MAX_ELEMS_PER_BUCKET),
+           MACRO_TEXT(BEST_ELEMS_PER_BUCKET),
            put.average_ns, put.max_ms, put.rehash_count, get_average_ns,
            buckets, (double)(buckets * sizeof(struct list)) / (1 << 20),
            (double)(rss_after - rss_before) / (double)key_count);
