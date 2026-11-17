@@ -32,12 +32,6 @@
 #define URL_ENCODED_BYTES_MAX 3
 #define LIST_VALUE_RAW_MAX (NAME_MAX_BYTES * URL_ENCODED_BYTES_MAX)
 #define LIST_VALUE_SIZE (LIST_VALUE_RAW_MAX + 2)
-/* 대기 목록에 쌓는 상세 조회의 상한입니다. 차면 쌓인 것을 먼저 처리합니다.
-   mongoose는 응답 전까지 연결마다 다음 요청을 해석하지 않으므로, 보통은 열린
-   연결 수를 넘지 않습니다. */
-#define PENDING_MAX 256
-/* mini-redis의 POST /mget이 한 번에 받는 key의 상한입니다(docs/api.md). */
-#define MGET_KEYS_MAX 64
 
 /* 목록 query string이 받는 필드입니다. 순서는 list_field_find의 이름 표와
    같습니다. */
@@ -50,66 +44,6 @@ enum list_field {
     LIST_FIELD_LIMIT,
     LIST_FIELD_COUNT
 };
-
-/* STAGE_TRACE가 요청 하나에서 따로 재는 구간입니다. 순서는 기록 줄의 칸
-   순서와 같습니다. */
-enum stage { STAGE_CACHE_GET, STAGE_ORIGIN, STAGE_CACHE_PUT, STAGE_COUNT };
-
-#ifdef STAGE_TRACE
-#include <time.h>
-
-#define STAGE_BATCH_MAX 1024
-#define STAGE_NOT_ENTERED (-1.0)
-#define MS_PER_SECOND 1000.0
-#define NS_PER_MS 1000000.0
-
-/* 요청 하나의 시각(ms)과 구간 시간(ms)입니다. 지나지 않은 구간은
-   STAGE_NOT_ENTERED이고, 응답을 소켓에 다 쓰기 전이면 sent_ms가 0입니다. */
-struct stage_record {
-    const char *kind;
-    unsigned long connection_id;
-    unsigned long long batch_number;
-    size_t batch_size;
-    double started_ms;
-    double finished_ms;
-    double waited_ms;
-    double stage_ms[STAGE_COUNT];
-    double held_ms;
-    double sent_ms;
-    /* POST /mget으로 묶여 캐시를 물었는지와 그 묶음의 key 수입니다. */
-    bool is_bundled;
-    size_t mget_keys;
-};
-
-/* mg_mgr_poll 한 번이 처리한 요청들입니다. request_count는 기록하지 못한
-   요청까지 셉니다. */
-struct stage_batch {
-    size_t request_count;
-    struct stage_record records[STAGE_BATCH_MAX];
-};
-
-/* 데모 백엔드는 스레드 하나로 요청을 처리하므로 기록 상태도 하나입니다.
-   batch_started_ms가 0이면 이번 묶음의 첫 이벤트가 아직 오지 않았습니다.
-   묶음의 응답은 대개 다음 mg_mgr_poll에서 소켓에 쓰이므로, 앞 묶음(previous)의
-   줄은 지금 묶음이 끝날 때 적습니다. */
-struct stage_trace {
-    FILE *file;
-    unsigned long long batch_number;
-    double batch_started_ms;
-    double stage_started_ms;
-    /* 대기 목록의 묶음 하나를 처리하기 시작한 시각과, 그 묶음의 POST /mget
-       왕복 시간과 key 수입니다. */
-    double chunk_started_ms;
-    double chunk_mget_ms;
-    size_t chunk_keys;
-    unsigned long long dropped_count;
-    struct stage_record current;
-    struct stage_batch batch;
-    struct stage_batch previous;
-};
-
-static struct stage_trace stage_trace_state;
-#endif
 
 struct text {
     char *data;
@@ -133,15 +67,6 @@ struct options {
     int cache_timeout_ms;
 };
 
-/* 대기 목록의 상세 조회 하나입니다. mongoose는 닫힌 연결을 해제하므로 연결은
-   포인터가 아니라 id로 기억합니다. */
-struct pending_detail {
-    unsigned long connection_id;
-    int product_id;
-    /* 요청에 Connection: close가 있어 응답 뒤에 연결을 닫습니다. */
-    bool is_last;
-};
-
 struct demo {
     struct origin *origin;
     struct cache_client cache;
@@ -151,9 +76,6 @@ struct demo {
     uint64_t origin_failures;
     uint64_t origin_changes;
     uint64_t invalidations;
-    struct mg_mgr *manager;
-    struct pending_detail pending[PENDING_MAX];
-    size_t pending_count;
 };
 
 static volatile sig_atomic_t stop_requested;
@@ -172,31 +94,8 @@ static void stop_signals_install(void);
 static void stop_signal_handle(int signum);
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data);
-static void message_handle(struct mg_connection *connection,
-                           struct mg_http_message *message);
-static bool detail_get_is(const struct mg_http_message *message);
-static void detail_get_receive(struct mg_connection *connection,
-                               struct demo *demo,
-                               struct mg_http_message *message);
-static void request_respond(struct mg_connection *connection,
-                            struct mg_http_message *message);
-static void pending_run(struct demo *demo);
-static void pending_live_keep(struct demo *demo);
-static struct mg_connection *connection_find(struct mg_mgr *manager,
-                                             unsigned long connection_id);
-static void pending_chunk_run(struct demo *demo,
-                              const struct pending_detail *chunk,
-                              size_t chunk_len);
-static void pending_reply_by_get(struct demo *demo,
-                                 const struct pending_detail *pending);
-static void pending_reply_from(struct demo *demo,
-                               const struct pending_detail *pending,
-                               const char *key, char *cached, bool is_bundled);
-static void pending_reply_finish(struct mg_connection *connection,
-                                 const struct pending_detail *pending);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
-static void response_flush(struct mg_connection *connection);
 static void stats_request_handle(struct mg_connection *connection,
                                  struct demo *demo,
                                  struct mg_http_message *message);
@@ -244,8 +143,6 @@ static bool product_id_parse(const struct mg_http_message *message,
                              int *product_id);
 static void product_send(struct mg_connection *connection, struct demo *demo,
                          int product_id);
-static void product_reply(struct mg_connection *connection, struct demo *demo,
-                          int product_id, const char *key, char *cached);
 static void detail_key_build(int product_id, char *key, size_t key_size);
 static char *product_body_create(struct demo *demo, int product_id,
                                  int *status);
@@ -261,30 +158,6 @@ static void product_change_reply(struct mg_connection *connection,
 static void cache_invalidate(struct demo *demo, int product_id);
 static void product_delete(struct mg_connection *connection, struct demo *demo,
                            int product_id);
-static void stage_trace_open(void);
-static void stage_trace_batch_begin(void);
-static void stage_trace_request_begin(const struct mg_connection *connection,
-                                      const struct mg_http_message *message);
-static void stage_trace_stage_begin(enum stage stage);
-static void stage_trace_stage_end(enum stage stage);
-static void stage_trace_chunk_begin(void);
-static void stage_trace_chunk_mget_end(size_t key_count);
-static void stage_trace_deferred_begin(const struct mg_connection *connection,
-                                       bool is_bundled);
-static void stage_trace_request_end(void);
-static void stage_trace_sent(const struct mg_connection *connection);
-static void stage_trace_batch_end(void);
-static void stage_trace_close(void);
-#ifdef STAGE_TRACE
-static double stage_trace_now(void);
-static void stage_record_start(const char *kind, unsigned long connection_id,
-                               double started_ms);
-static const char *stage_kind_find(const struct mg_http_message *message);
-static void stage_batch_sent(struct stage_batch *batch,
-                             unsigned long connection_id, double now);
-static void stage_batch_write(const struct stage_batch *batch);
-static void stage_record_write(const struct stage_record *record);
-#endif
 
 int main(int argc, char **argv)
 {
@@ -483,15 +356,9 @@ static int server_run(struct demo *demo, int port)
     snprintf(url, sizeof url, "http://127.0.0.1:%d", port);
     bool listening =
         mg_http_listen(&manager, url, http_event_handle, demo) != NULL;
-    demo->manager = &manager;
-    stage_trace_open();
     while (listening && !stop_requested) {
         mg_mgr_poll(&manager, POLL_INTERVAL_MS);
-        /* 이번 poll에 쌓인 상세 조회를 묶어 처리합니다. */
-        pending_run(demo);
-        stage_trace_batch_end();
     }
-    stage_trace_close();
     mg_mgr_free(&manager);
 
     return listening ? 0 : 1;
@@ -515,187 +382,8 @@ static void stop_signal_handle(int signum)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
-    /* mg_mgr_poll은 기다림이 끝나면 연결마다 MG_EV_POLL을 먼저 보내고 그다음
-       요청을 읽습니다. 그래서 첫 MG_EV_POLL이 묶음의 시작입니다. MG_EV_WRITE는
-       mongoose가 send()로 send 버퍼를 소켓에 쓴 직후에 옵니다. */
-    if (event == MG_EV_POLL) {
-        stage_trace_batch_begin();
-    } else if (event == MG_EV_WRITE) {
-        stage_trace_sent(connection);
-    } else if (event == MG_EV_HTTP_MSG && !connection->is_draining) {
-        message_handle(connection, event_data);
-    }
-}
-
-/* 상세 조회는 대기 목록에 넣고, mg_mgr_poll이 돌아온 뒤 한꺼번에 처리합니다.
-   다른 요청은 쌓인 상세 조회를 먼저 처리한 뒤 바로 처리합니다. 그래서 같은
-   poll에서 수정 앞에 온 상세 조회는 옛 값을, 뒤에 온 상세 조회는 새 값을
-   받습니다. */
-static void message_handle(struct mg_connection *connection,
-                           struct mg_http_message *message)
-{
-    struct demo *demo = connection->fn_data;
-    if (detail_get_is(message)) {
-        detail_get_receive(connection, demo, message);
-        return;
-    }
-    pending_run(demo);
-    request_respond(connection, message);
-}
-
-static bool detail_get_is(const struct mg_http_message *message)
-{
-    return path_is_product(message->uri) && method_is(message, "GET");
-}
-
-/* 입력 검사는 받을 때 해서, 잘못된 상세 조회는 대기 목록에 넣지 않고 바로
-   400으로 답합니다. mongoose는 응답하기 전까지 이 연결의 다음 요청을 해석하지
-   않으므로(is_resp), 연결 하나의 요청 순서는 그대로입니다. */
-static void detail_get_receive(struct mg_connection *connection,
-                               struct demo *demo,
-                               struct mg_http_message *message)
-{
-    int product_id = 0;
-    if (message->body.len != 0 || !product_id_parse(message, &product_id)) {
-        request_respond(connection, message);
-        return;
-    }
-    demo->product_gets++;
-    if (demo->pending_count == PENDING_MAX) {
-        pending_run(demo);
-    }
-    struct mg_str *close_header = mg_http_get_header(message, "Connection");
-    struct pending_detail *pending = &demo->pending[demo->pending_count++];
-    pending->connection_id = connection->id;
-    pending->product_id = product_id;
-    pending->is_last = close_header != NULL &&
-                       mg_strcasecmp(*close_header, mg_str("close")) == 0;
-}
-
-/* 요청을 지금 처리하고 응답을 바로 보냅니다. */
-static void request_respond(struct mg_connection *connection,
-                            struct mg_http_message *message)
-{
-    stage_trace_request_begin(connection, message);
-    request_handle(connection, message);
-    stage_trace_request_end();
-    response_flush(connection);
-}
-
-/* 대기 목록의 상세 조회를 받은 순서대로 처리합니다. 대기 중에 닫힌 연결의
-   요청은 버리고, 남은 요청을 MGET_KEYS_MAX개씩 나눠 묶음마다 캐시를 묻습니다. */
-static void pending_run(struct demo *demo)
-{
-    pending_live_keep(demo);
-    for (size_t start = 0; start < demo->pending_count;
-         start += MGET_KEYS_MAX) {
-        size_t left = demo->pending_count - start;
-        pending_chunk_run(demo, demo->pending + start,
-                          left < MGET_KEYS_MAX ? left : MGET_KEYS_MAX);
-    }
-    demo->pending_count = 0;
-}
-
-static void pending_live_keep(struct demo *demo)
-{
-    size_t kept_count = 0;
-    for (size_t i = 0; i < demo->pending_count; i++) {
-        if (connection_find(demo->manager, demo->pending[i].connection_id) !=
-            NULL) {
-            demo->pending[kept_count++] = demo->pending[i];
-        }
-    }
-    demo->pending_count = kept_count;
-}
-
-/* id로 연결을 찾습니다. 없거나 닫히는 중인 연결은 NULL입니다. */
-static struct mg_connection *connection_find(struct mg_mgr *manager,
-                                             unsigned long connection_id)
-{
-    for (struct mg_connection *connection = manager->conns; connection != NULL;
-         connection = connection->next) {
-        if (connection->id == connection_id) {
-            return connection->is_closing || connection->is_draining
-                       ? NULL
-                       : connection;
-        }
-    }
-
-    return NULL;
-}
-
-/* 묶음 하나(key 1개부터 MGET_KEYS_MAX개까지)를 처리합니다. 2개 이상이면 캐시를 POST
-   /mget 한 번으로 묻고, 1개면 기존 GET 경로로 처리합니다. mini-redis가 응답이
-   너무 크다고 거절하면 key마다 GET으로 다시 묻습니다. 다른 실패는
-   cache_client_mget이 GET 실패와 같게 캐시를 중단하므로, 모든 key가 원본으로
-   갑니다. */
-static void pending_chunk_run(struct demo *demo,
-                              const struct pending_detail *chunk,
-                              size_t chunk_len)
-{
-    cache_recover(demo);
-    stage_trace_chunk_begin();
-    if (chunk_len == 1) {
-        pending_reply_by_get(demo, chunk);
-        return;
-    }
-    char keys[MGET_KEYS_MAX][DETAIL_KEY_MAX];
-    const char *key_list[MGET_KEYS_MAX];
-    char *bodies[MGET_KEYS_MAX];
-    for (size_t i = 0; i < chunk_len; i++) {
-        detail_key_build(chunk[i].product_id, keys[i], DETAIL_KEY_MAX);
-        key_list[i] = keys[i];
-    }
-    enum cache_mget_result result =
-        cache_client_mget(&demo->cache, key_list, chunk_len, bodies);
-    stage_trace_chunk_mget_end(chunk_len);
-    for (size_t i = 0; i < chunk_len; i++) {
-        if (result == CACHE_MGET_TOO_LARGE) {
-            pending_reply_by_get(demo, &chunk[i]);
-        } else {
-            pending_reply_from(demo, &chunk[i], keys[i], bodies[i],
-                               result != CACHE_MGET_BYPASSED);
-        }
-    }
-}
-
-static void pending_reply_by_get(struct demo *demo,
-                                 const struct pending_detail *pending)
-{
-    struct mg_connection *connection =
-        connection_find(demo->manager, pending->connection_id);
-    if (connection == NULL) {
-        return;
-    }
-    stage_trace_deferred_begin(connection, false);
-    product_send(connection, demo, pending->product_id);
-    pending_reply_finish(connection, pending);
-}
-
-/* cached는 POST /mget이 돌려준 body이거나 NULL(원본 조회)이며, 이 함수가
-   해제합니다. */
-static void pending_reply_from(struct demo *demo,
-                               const struct pending_detail *pending,
-                               const char *key, char *cached, bool is_bundled)
-{
-    struct mg_connection *connection =
-        connection_find(demo->manager, pending->connection_id);
-    if (connection == NULL) {
-        free(cached);
-        return;
-    }
-    stage_trace_deferred_begin(connection, is_bundled);
-    product_reply(connection, demo, pending->product_id, key, cached);
-    pending_reply_finish(connection, pending);
-}
-
-static void pending_reply_finish(struct mg_connection *connection,
-                                 const struct pending_detail *pending)
-{
-    stage_trace_request_end();
-    response_flush(connection);
-    if (pending->is_last) {
-        connection->is_draining = 1;
+    if (event == MG_EV_HTTP_MSG && !connection->is_draining) {
+        request_handle(connection, event_data);
     }
 }
 
@@ -711,23 +399,6 @@ static void request_handle(struct mg_connection *connection,
         product_request_handle(connection, demo, message);
     } else {
         error_send(connection, 404, "route_not_found");
-    }
-}
-
-/* mongoose는 handler가 send 버퍼에 쌓은 응답을 다음 mg_mgr_poll에서 씁니다.
-   요청이 한꺼번에 몰리면 한 poll이 그 요청을 모두 처리한 뒤에야 응답이 나가므로,
-   처리한 직후 소켓에 바로 씁니다. 다 쓰지 못한 바이트와 오류는 버퍼에 남겨
-   mongoose가 다음 mg_mgr_poll에서 원래대로 다루게 합니다. */
-static void response_flush(struct mg_connection *connection)
-{
-    if (connection->send.len == 0 || connection->is_closing) {
-        return;
-    }
-    long sent_len =
-        mg_io_send(connection, connection->send.buf, connection->send.len);
-    if (sent_len > 0) {
-        mg_iobuf_del(&connection->send, 0, (size_t)sent_len);
-        stage_trace_sent(connection);
     }
 }
 
@@ -780,8 +451,7 @@ static void stats_send(struct mg_connection *connection,
         "\"cache_puts\":%llu,\"cache_put_failures\":%llu,"
         "\"cache_deletes\":%llu,\"cache_delete_failures\":%llu,"
         "\"cache_probes\":%llu,\"cache_probe_failures\":%llu,"
-        "\"cache_recoveries\":%llu,\"cache_mgets\":%llu,"
-        "\"cache_mget_keys\":%llu,\"origin\":\"%s\",\"cache_state\":\"%s\"}",
+        "\"cache_recoveries\":%llu,\"origin\":\"%s\",\"cache_state\":\"%s\"}",
         (unsigned long long)demo->product_gets,
         (unsigned long long)demo->origin_queries,
         (unsigned long long)demo->origin_failures,
@@ -798,8 +468,7 @@ static void stats_send(struct mg_connection *connection,
         (unsigned long long)cache->delete_failures,
         (unsigned long long)cache->probes,
         (unsigned long long)cache->probe_failures,
-        (unsigned long long)cache->recoveries, (unsigned long long)cache->mgets,
-        (unsigned long long)cache->mget_keys, origin_name(),
+        (unsigned long long)cache->recoveries, origin_name(),
         !cache->enabled ? "off"
         : cache->active ? "active"
                         : "suspended");
@@ -830,25 +499,19 @@ static void list_send(struct mg_connection *connection, struct demo *demo,
     cache_recover(demo);
     char key[LIST_KEY_MAX];
     list_key_build(demo, &list, key, sizeof key);
-    stage_trace_stage_begin(STAGE_CACHE_GET);
     char *cached = cache_client_get(&demo->cache, key);
-    stage_trace_stage_end(STAGE_CACHE_GET);
     if (cached != NULL) {
         body_send(connection, cached);
         free(cached);
         return;
     }
     int status = 0;
-    stage_trace_stage_begin(STAGE_ORIGIN);
     char *body = list_body_create(demo, &list, &status);
-    stage_trace_stage_end(STAGE_ORIGIN);
     if (body == NULL) {
         error_send(connection, status, "origin_unavailable");
         return;
     }
-    stage_trace_stage_begin(STAGE_CACHE_PUT);
     cache_client_set(&demo->cache, key, body);
-    stage_trace_stage_end(STAGE_CACHE_PUT);
     body_send(connection, body);
     free(body);
 }
@@ -1174,33 +837,19 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
     cache_recover(demo);
     char key[DETAIL_KEY_MAX];
     detail_key_build(product_id, key, sizeof key);
-    stage_trace_stage_begin(STAGE_CACHE_GET);
     char *cached = cache_client_get(&demo->cache, key);
-    stage_trace_stage_end(STAGE_CACHE_GET);
-    product_reply(connection, demo, product_id, key, cached);
-}
-
-/* 캐시에서 받은 body가 있으면 그대로 보내고, 없으면 원본에서 만들어 캐시에
-   저장한 뒤 보냅니다. cached는 이 함수가 해제합니다. */
-static void product_reply(struct mg_connection *connection, struct demo *demo,
-                          int product_id, const char *key, char *cached)
-{
     if (cached != NULL) {
         body_send(connection, cached);
         free(cached);
         return;
     }
     int status = 0;
-    stage_trace_stage_begin(STAGE_ORIGIN);
     char *body = product_body_create(demo, product_id, &status);
-    stage_trace_stage_end(STAGE_ORIGIN);
     if (body == NULL) {
         origin_error_send(connection, status);
         return;
     }
-    stage_trace_stage_begin(STAGE_CACHE_PUT);
     cache_client_set(&demo->cache, key, body);
-    stage_trace_stage_end(STAGE_CACHE_PUT);
     body_send(connection, body);
     free(body);
 }
@@ -1350,299 +999,3 @@ static void product_delete(struct mg_connection *connection, struct demo *demo,
     int status = origin_product_delete(demo->origin, product_id);
     product_change_reply(connection, demo, product_id, status);
 }
-
-/* 측정용 데모(make cache-stage-bench)만 STAGE_TRACE를 켭니다. 요청 하나마다
-   아래 칸을 STAGE_TRACE_FILE이 가리키는 파일에 한 줄로 적습니다. 시간은 ms이고,
-   지나지 않은 구간과 알 수 없는 값은 "-"입니다.
-
-     stage <묶음 번호> <종류> <대기> <처리> <캐시 GET> <원본 조회> <캐시 PUT>
-           <붙잡힘> <실제 붙잡힘> <mget 묶임> <mget key 수> <묶음 요청 수>
-
-   묶음은 mg_mgr_poll 한 번이 처리한 요청들이고, 묶음 번호는 몇 번째
-   mg_mgr_poll인지입니다(1부터). 대기는 묶음이 시작된 뒤 처리가 시작되기까지,
-   처리는 처리 시작부터 응답을 만들 때까지입니다. 대기 목록에 넣은 상세 조회는
-   그 요청이 든 대기 묶음(POST /mget 하나)을 처리하기 시작한 때가 처리
-   시작입니다. mget 묶임은 POST /mget으로 캐시를 물었으면 1, 아니면 0이고,
-   묶였으면 캐시 GET 칸은 그 POST /mget의 왕복 시간, mget key 수는 그 key
-   수입니다. 묶이지 않았으면 mget key 수는 "-"입니다. 붙잡힘은 처리가 끝난 뒤 mg_mgr_poll이
-   돌아오기까지이고, 실제 붙잡힘은 처리가 끝난 뒤 응답을 소켓에 다 쓰기까지
-   입니다. 응답은 response_flush가 처리 직후에 쓰고, 다 쓰지 못한 나머지는
-   mongoose가 다음 mg_mgr_poll에서 쓰므로, 다음 묶음이 끝날 때까지 다 쓰지 못한
-   응답의 실제 붙잡힘은 "-"입니다.
-   STAGE_TRACE_FILE이 없으면 적지 않습니다. make verify의 빌드에서는 아무것도
-   하지 않습니다. */
-static void stage_trace_open(void)
-{
-#ifdef STAGE_TRACE
-    stage_trace_state.batch_number = 1;
-    const char *path = getenv("STAGE_TRACE_FILE");
-    if (path == NULL) {
-        return;
-    }
-    stage_trace_state.file = fopen(path, "w");
-    if (stage_trace_state.file == NULL) {
-        fprintf(stderr, "stage trace: cannot open %s\n", path);
-    }
-#endif
-}
-
-static void stage_trace_batch_begin(void)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file != NULL &&
-        stage_trace_state.batch_started_ms == 0) {
-        stage_trace_state.batch_started_ms = stage_trace_now();
-    }
-#endif
-}
-
-static void stage_trace_request_begin(const struct mg_connection *connection,
-                                      const struct mg_http_message *message)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file == NULL) {
-        return;
-    }
-    stage_record_start(stage_kind_find(message), connection->id,
-                       stage_trace_now());
-#else
-    (void)connection;
-    (void)message;
-#endif
-}
-
-/* 대기 묶음 하나를 처리하기 시작한 시각을 적습니다. POST /mget 왕복도 이때부터
-   잽니다. */
-static void stage_trace_chunk_begin(void)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file != NULL) {
-        stage_trace_state.chunk_started_ms = stage_trace_now();
-        stage_trace_state.chunk_mget_ms = STAGE_NOT_ENTERED;
-        stage_trace_state.chunk_keys = 0;
-    }
-#endif
-}
-
-static void stage_trace_chunk_mget_end(size_t key_count)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file != NULL) {
-        stage_trace_state.chunk_mget_ms =
-            stage_trace_now() - stage_trace_state.chunk_started_ms;
-        stage_trace_state.chunk_keys = key_count;
-    }
-#else
-    (void)key_count;
-#endif
-}
-
-/* 대기 목록에서 꺼낸 상세 조회의 기록을 시작합니다. 처리 시작은 그 대기 묶음을
-   처리하기 시작한 시각입니다. */
-static void stage_trace_deferred_begin(const struct mg_connection *connection,
-                                       bool is_bundled)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file == NULL) {
-        return;
-    }
-    stage_record_start("detail", connection->id,
-                       stage_trace_state.chunk_started_ms);
-    struct stage_record *record = &stage_trace_state.current;
-    if (is_bundled) {
-        record->is_bundled = true;
-        record->mget_keys = stage_trace_state.chunk_keys;
-        record->stage_ms[STAGE_CACHE_GET] = stage_trace_state.chunk_mget_ms;
-    }
-#else
-    (void)connection;
-    (void)is_bundled;
-#endif
-}
-
-static void stage_trace_stage_begin(enum stage stage)
-{
-    (void)stage;
-#ifdef STAGE_TRACE
-    stage_trace_state.stage_started_ms = stage_trace_now();
-#endif
-}
-
-static void stage_trace_stage_end(enum stage stage)
-{
-#ifdef STAGE_TRACE
-    stage_trace_state.current.stage_ms[stage] =
-        stage_trace_now() - stage_trace_state.stage_started_ms;
-#else
-    (void)stage;
-#endif
-}
-
-/* 붙잡힘은 묶음이 끝나야 알 수 있으므로, 요청의 기록을 묶음 끝까지 모읍니다. */
-static void stage_trace_request_end(void)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file == NULL) {
-        return;
-    }
-    struct stage_batch *batch = &stage_trace_state.batch;
-    struct stage_record *record = &stage_trace_state.current;
-    record->finished_ms = stage_trace_now();
-    record->waited_ms = record->started_ms - stage_trace_state.batch_started_ms;
-    if (batch->request_count < STAGE_BATCH_MAX) {
-        batch->records[batch->request_count] = *record;
-    } else {
-        stage_trace_state.dropped_count++;
-    }
-    batch->request_count++;
-#endif
-}
-
-/* 연결의 send 버퍼가 비었으면, 그 연결에서 아직 보내지 않은 응답을 모두 지금
-   보낸 것으로 적습니다. response_flush와 MG_EV_WRITE가 부릅니다. */
-static void stage_trace_sent(const struct mg_connection *connection)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file == NULL || connection->send.len != 0) {
-        return;
-    }
-    double now = stage_trace_now();
-    stage_batch_sent(&stage_trace_state.batch, connection->id, now);
-    stage_batch_sent(&stage_trace_state.previous, connection->id, now);
-#else
-    (void)connection;
-#endif
-}
-
-/* 앞 묶음의 줄을 적고, 지금 묶음의 붙잡힘과 요청 수를 정해 앞 묶음으로
-   옮깁니다. */
-static void stage_trace_batch_end(void)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file == NULL) {
-        return;
-    }
-    double now = stage_trace_now();
-    stage_batch_write(&stage_trace_state.previous);
-    struct stage_batch *batch = &stage_trace_state.batch;
-    struct stage_batch *previous = &stage_trace_state.previous;
-    previous->request_count = batch->request_count;
-    for (size_t i = 0; i < batch->request_count && i < STAGE_BATCH_MAX; i++) {
-        batch->records[i].held_ms = now - batch->records[i].finished_ms;
-        batch->records[i].batch_size = batch->request_count;
-        previous->records[i] = batch->records[i];
-    }
-    batch->request_count = 0;
-    stage_trace_state.batch_started_ms = 0;
-    stage_trace_state.batch_number++;
-#endif
-}
-
-static void stage_trace_close(void)
-{
-#ifdef STAGE_TRACE
-    if (stage_trace_state.file == NULL) {
-        return;
-    }
-    stage_batch_write(&stage_trace_state.previous);
-    if (stage_trace_state.dropped_count > 0) {
-        fprintf(stage_trace_state.file, "dropped %llu\n",
-                stage_trace_state.dropped_count);
-    }
-    fclose(stage_trace_state.file);
-    stage_trace_state.file = NULL;
-#endif
-}
-
-#ifdef STAGE_TRACE
-/* mg_millis는 ms 단위로 잘리므로 구간 시간은 단조 시계로 직접 잽니다. */
-static double stage_trace_now(void)
-{
-    struct timespec clock_value;
-    clock_gettime(CLOCK_MONOTONIC, &clock_value);
-
-    return (double)clock_value.tv_sec * MS_PER_SECOND +
-           (double)clock_value.tv_nsec / NS_PER_MS;
-}
-
-/* 지금 기록할 요청을 비운 상태로 시작합니다. */
-static void stage_record_start(const char *kind, unsigned long connection_id,
-                               double started_ms)
-{
-    if (stage_trace_state.batch_started_ms == 0) {
-        stage_trace_state.batch_started_ms = started_ms;
-    }
-    struct stage_record *record = &stage_trace_state.current;
-    record->kind = kind;
-    record->connection_id = connection_id;
-    record->batch_number = stage_trace_state.batch_number;
-    record->started_ms = started_ms;
-    record->sent_ms = 0;
-    record->is_bundled = false;
-    record->mget_keys = 0;
-    for (int i = 0; i < STAGE_COUNT; i++) {
-        record->stage_ms[i] = STAGE_NOT_ENTERED;
-    }
-}
-
-/* request_handle과 같은 순서로 경로를 나눕니다. stats는 cache_bench.py가 측정
-   구간의 앞뒤에서 부르므로, 요약 스크립트가 측정 구간을 고르는 표시가 됩니다. */
-static const char *stage_kind_find(const struct mg_http_message *message)
-{
-    if (mg_match(message->uri, mg_str("/stats"), NULL)) {
-        return "stats";
-    }
-    if (mg_match(message->uri, mg_str("/products"), NULL)) {
-        return "list";
-    }
-    if (path_is_product(message->uri)) {
-        return method_is(message, "GET") ? "detail" : "change";
-    }
-
-    return "other";
-}
-
-static void stage_batch_sent(struct stage_batch *batch,
-                             unsigned long connection_id, double now)
-{
-    for (size_t i = 0; i < batch->request_count && i < STAGE_BATCH_MAX; i++) {
-        struct stage_record *record = &batch->records[i];
-        if (record->connection_id == connection_id && record->sent_ms == 0) {
-            record->sent_ms = now;
-        }
-    }
-}
-
-static void stage_batch_write(const struct stage_batch *batch)
-{
-    for (size_t i = 0; i < batch->request_count && i < STAGE_BATCH_MAX; i++) {
-        stage_record_write(&batch->records[i]);
-    }
-}
-
-static void stage_record_write(const struct stage_record *record)
-{
-    FILE *file = stage_trace_state.file;
-    fprintf(file, "stage %llu %s %.3f %.3f", record->batch_number, record->kind,
-            record->waited_ms, record->finished_ms - record->started_ms);
-    for (int i = 0; i < STAGE_COUNT; i++) {
-        if (record->stage_ms[i] < 0) {
-            fputs(" -", file);
-        } else {
-            fprintf(file, " %.3f", record->stage_ms[i]);
-        }
-    }
-    fprintf(file, " %.3f", record->held_ms);
-    if (record->sent_ms == 0) {
-        fputs(" -", file);
-    } else {
-        fprintf(file, " %.3f", record->sent_ms - record->finished_ms);
-    }
-    if (record->is_bundled) {
-        fprintf(file, " 1 %zu", record->mget_keys);
-    } else {
-        fputs(" 0 -", file);
-    }
-    fprintf(file, " %zu\n", record->batch_size);
-}
-#endif

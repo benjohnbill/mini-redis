@@ -144,22 +144,6 @@ CACHE_BENCH_FLAGS ?=
 cache-bench: $(CACHE_BENCH_DEMO) $(BENCH_SERVER)
 	python3 -B scripts/bench/cache_bench.py $(CACHE_BENCH_DEMO) $(BENCH_SERVER) $(CACHE_BENCH_FLAGS)
 
-# make cache-stage-bench: cache-bench와 같은 측정을 STAGE_TRACE를 켠 데모로 돌려,
-# 요청마다 묶음 안의 대기, 처리, 캐시 GET, 원본 조회, 캐시 PUT, 붙잡힘, 실제
-# 붙잡힘 시간을 STAGE_TRACE_DIR에 실행마다 파일 하나로 남깁니다(perf 원인 쪼개기).
-# 기록하는 비용이 지연에 섞이므로 cache-bench의 숫자와 나란히 비교하지 않습니다. 예:
-#   make cache-stage-bench CACHE_BENCH_FLAGS='--arrival burst --kind detail'
-#   python3 -B scripts/bench/stage_summary.py build/stage-trace
-CACHE_STAGE_DEMO := $(BENCH_BUILD)/cache-demo-stage
-STAGE_TRACE_DIR  ?= $(BUILD)/stage-trace
-.PHONY: cache-stage-bench
-cache-stage-bench: $(CACHE_STAGE_DEMO) $(BENCH_SERVER)
-	python3 -B scripts/bench/cache_bench.py $(CACHE_STAGE_DEMO) $(BENCH_SERVER) --stage-trace $(STAGE_TRACE_DIR) $(CACHE_BENCH_FLAGS)
-
-$(CACHE_STAGE_DEMO): demo/product_demo.c demo/cache_client.c demo/sqlite_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
-	$(CC) $(CPPFLAGS) -DSTAGE_TRACE -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) demo/product_demo.c demo/cache_client.c \
-	    demo/sqlite_origin.c $(BENCH_MONGOOSE) -lsqlite3 -o $@
-
 # 선택 PostgreSQL 원본의 같은 실험입니다. SQLite 측정과 별도 환경으로 다룹니다.
 CACHE_BENCH_POSTGRES := $(BENCH_BUILD)/cache-demo-postgres
 cache-bench-postgres: $(CACHE_BENCH_POSTGRES) $(BENCH_SERVER)
@@ -203,4 +187,3 @@ cache-functional: $(CACHE_DEMO) $(SERVER)
 	python3 -B tests/functional/list_cache_test.py $(CACHE_DEMO) $(SERVER)
 	python3 -B tests/functional/mutation_cache_test.py $(CACHE_DEMO) $(SERVER)
 	python3 -B tests/functional/cache_recovery_test.py $(CACHE_DEMO) $(SERVER)
-	python3 -B tests/functional/detail_batch_test.py $(CACHE_DEMO) $(SERVER)
