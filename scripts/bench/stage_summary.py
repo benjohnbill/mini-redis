@@ -37,7 +37,7 @@ import sys
 
 import open_loop
 
-COLUMNS = ("대기", "처리", "캐시 GET", "SQLite 조회", "캐시 PUT", "붙잡힘",
+COLUMNS = ("대기", "처리", "캐시 GET", "원본 조회", "캐시 PUT", "붙잡힘",
            "실제 붙잡힘")
 GET_INDEX = COLUMNS.index("캐시 GET")
 BATCH_LABEL = "묶음 요청 수"
