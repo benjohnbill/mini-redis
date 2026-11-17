@@ -138,8 +138,11 @@ $(CACHE_DEMO): demo/product_demo.c demo/cache_client.c demo/sqlite_origin.c demo
 # sanitizer를 끈 빌드를 build/bench/에 따로 만들고, 시간 수치는 make verify와 CI에
 # 넣지 않습니다. 측정 계획과 출력은 scripts/bench/cache_bench.py가 정합니다.
 CACHE_BENCH_DEMO := $(BENCH_BUILD)/cache-demo
+# 장비에 맞춘 부하나 기록 파일은 플래그로 넘깁니다. 예:
+#   make cache-bench CACHE_BENCH_FLAGS='--rate 300 --connections 16 --output x.json'
+CACHE_BENCH_FLAGS ?=
 cache-bench: $(CACHE_BENCH_DEMO) $(BENCH_SERVER)
-	python3 -B scripts/bench/cache_bench.py $(CACHE_BENCH_DEMO) $(BENCH_SERVER)
+	python3 -B scripts/bench/cache_bench.py $(CACHE_BENCH_DEMO) $(BENCH_SERVER) $(CACHE_BENCH_FLAGS)
 
 # 선택 PostgreSQL 원본의 같은 실험입니다. SQLite 측정과 별도 환경으로 다룹니다.
 CACHE_BENCH_POSTGRES := $(BENCH_BUILD)/cache-demo-postgres
