@@ -3,14 +3,17 @@
 
 사용법: python3 -B scripts/bench/cache_bench.py build/bench/cache-demo \\
             build/bench/mini-redis [--quick] [--self-check] [--scenario 이름 ...]
+            [--rate 초당요청] [--connections 연결수] [--output 파일]
 
 실험마다 같은 seed로 상품 10,000개를 새로 만들고, 새 mini-redis와 새 데모를 띄웁니다.
 cache off와 on에 같은 요청 계획을 쓰고, 준비 구간과 측정 구간을 나눕니다. off와 on은
 회마다 번갈아 실행합니다. 측정은 지연(p50·p95·p99), 성공 처리량, HTTP 오류, timeout,
 적중률, 원본 조회 횟수와 감소율을 회마다 출력하고, 회마다 값의 중앙값과 범위를
 더합니다. --output JSON에는 측정한 commit과 회마다 값을 숫자로 적습니다. 기본값은
-연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회입니다. --quick은 준비 1초,
-측정 3초, 1회로 함수만 확인할 때 씁니다. 시간 수치는
+연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회입니다. 연결 수와 초당 요청 수는
+장비에 맞게 --connections와 --rate로 바꾸고, 개선 전후에 같은 값을 씁니다. --output으로
+기록용 결과를 남기는 측정은 3회 이상이어야 합니다. --quick은 준비 1초, 측정 3초,
+1회로 함수만 확인할 때 씁니다. 시간 수치는
 합격 기준이 아니며 make verify와 CI에서 실행하지 않습니다.
 """
 
@@ -40,6 +43,7 @@ RATE = 500
 WARMUP_SECONDS = 10
 MEASURE_SECONDS = 30
 RUNS = 3
+RECORD_RUNS_MIN = 3  # 통일안의 "조건당 최소 3회"입니다
 START_TIMEOUT = 10.0
 STOP_TIMEOUT = 30.0
 SEED_TIMEOUT = 120.0
@@ -229,10 +233,11 @@ class Plan:
                                  headers=(("Content-Type", "application/json"),))
 
 
-def execute(port, plan, seconds):
+def execute(port, plan, seconds, load):
+    connection_count, rate = load
     run = open_loop.Run(port, seconds * open_loop.NS_PER_SECOND, strict=False)
-    connections = run.connections_open(CONNECTIONS)
-    interval = open_loop.NS_PER_SECOND * CONNECTIONS // RATE
+    connections = run.connections_open(connection_count)
+    interval = open_loop.NS_PER_SECOND * connection_count // rate
     for connection in connections:
         run.stream_add([connection], interval, plan.request)
     latencies = run.run()
@@ -254,7 +259,7 @@ def stats_delta(before, after, name):
 
 
 def run_once(demo_binary, redis_binary, mode, scenario, ttl, warmup, measure,
-             database):
+             database, load):
     kind, spread, ratio = ALL_SCENARIOS[scenario]
     subprocess.run([demo_binary, "--db", database, "--seed", str(SEED),
                     "--count", str(COUNT)], check=True,
@@ -272,9 +277,10 @@ def run_once(demo_binary, redis_binary, mode, scenario, ttl, warmup, measure,
         demo = Process([demo_binary, "--db", database, "--port", str(port),
                         *cache_arguments], port)
         demo.wait_until_listening()
-        execute(port, Plan(kind, spread, ratio, SEED + 1), warmup)
+        execute(port, Plan(kind, spread, ratio, SEED + 1), warmup, load)
         before = stats_read(port)
-        run, latencies = execute(port, Plan(kind, spread, ratio), measure)
+        run, latencies = execute(port, Plan(kind, spread, ratio), measure,
+                                 load)
         after = stats_read(port)
         checked = correctness_check(demo_binary, database, port) if ratio else 0
     finally:
@@ -328,6 +334,14 @@ def record_numbers(record, seconds):
             "cache_hits": stats_delta(before, after, "cache_hits"),
             "origin_queries": stats_delta(before, after, "origin_queries"),
             "checked": record["checked"]}
+
+
+def positive_int(text):
+    value = int(text)
+    if value <= 0:
+        raise argparse.ArgumentTypeError("1 이상이어야 합니다")
+
+    return value
 
 
 def git_state():
@@ -444,6 +458,10 @@ def main():
     parser.add_argument("--warmup", type=int)
     parser.add_argument("--measure", type=int)
     parser.add_argument("--runs", type=int)
+    parser.add_argument("--rate", type=positive_int, default=RATE,
+                        help="초당 요청 수")
+    parser.add_argument("--connections", type=positive_int,
+                        default=CONNECTIONS, help="연결 수")
     parser.add_argument("--output")
     parser.add_argument("--db", help="PostgreSQL 연결 문자열. 없으면 임시 SQLite 파일")
     arguments = parser.parse_args()
@@ -456,6 +474,9 @@ def main():
     warmup = arguments.warmup if arguments.warmup is not None else warmup
     measure = arguments.measure if arguments.measure is not None else measure
     runs = arguments.runs if arguments.runs is not None else runs
+    if arguments.output and runs < RECORD_RUNS_MIN:
+        raise SystemExit(f"--output으로 남기는 측정은 {RECORD_RUNS_MIN}회 이상이어야 "
+                         f"합니다(지금 {runs}회)")
     ttls = arguments.ttl or [60, 2]
     scenarios = arguments.scenario or list(ALL_SCENARIOS)
     if arguments.kind:
@@ -466,8 +487,8 @@ def main():
     print(f"commit: {commit}" + (" (커밋하지 않은 변경 있음)" if dirty else ""))
     print(f"machine: {platform.platform()}, python {platform.python_version()}, "
           f"sqlite {sqlite3.sqlite_version}")
-    print(f"input: 상품 {COUNT}개 seed {SEED}, 연결 {CONNECTIONS}, "
-          f"초당 {RATE}요청, 준비 {warmup}s, 측정 {measure}s, {runs}회, TTL {ttls}")
+    print(f"input: 상품 {COUNT}개 seed {SEED}, 연결 {arguments.connections}, "
+          f"초당 {arguments.rate}요청, 준비 {warmup}s, 측정 {measure}s, {runs}회, TTL {ttls}")
     results = {}
     with tempfile.TemporaryDirectory() as directory:
         database = arguments.db or os.path.join(directory, "products.sqlite")
@@ -477,7 +498,8 @@ def main():
         with open(arguments.output, "w", encoding="utf-8") as output:
             json.dump({"commit": commit, "dirty": dirty,
                        "inputs": {"count": COUNT, "seed": SEED,
-                                  "connections": CONNECTIONS, "rate": RATE,
+                                  "connections": arguments.connections,
+                                  "rate": arguments.rate,
                                   "warmup": warmup, "measure": measure,
                                   "runs": runs, "ttl": ttls,
                                   "scenarios": scenarios,
@@ -498,13 +520,14 @@ def run_all(arguments, scenarios, ttls, warmup, measure, runs, demo_binary,
             key = f"{scenario} ttl {ttl}s"
             print(f"\n### {key} 시작", flush=True)
             results[key] = {"off": [], "on": []}
+            load = (arguments.connections, arguments.rate)
             # off를 모두 잰 뒤에 on을 재면 그동안 바뀐 머신 상태가 한쪽에만
             # 들어가므로, 회마다 off와 on을 번갈아 잽니다.
             for _ in range(runs):
                 for mode in ("off", "on"):
                     results[key][mode].append(run_once(
                         demo_binary, redis_binary, mode, scenario, ttl,
-                        warmup, measure, database))
+                        warmup, measure, database, load))
             report(key, measure, results)
 
 
