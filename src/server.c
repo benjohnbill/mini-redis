@@ -471,8 +471,10 @@ static void request_handle(struct mg_connection *connection,
     headers_received_at_set(connection, false, 0);
 }
 
-/* Content-Length에 적은 길이만큼 body를 받았으면 true입니다. 헤더가 없으면 body가
-   없는 요청이라 true입니다. mongoose가 헤더를 읽을 때 값이 10진수 숫자인지
+/* Content-Length에 적은 길이와 받은 body 길이가 정확히 같을 때만 true입니다.
+   요청은 선언한 길이를 정확히 받았을 때만 처리합니다. mongoose는 선언한 길이까지만
+   body로 자르므로 받은 쪽이 더 긴 경우는 없고, 짧은 경우는 client가 보내다 끊은
+   요청입니다. 헤더가 없으면 body가 없는 요청이라 true입니다. mongoose가 헤더를 읽을 때 값이 10진수 숫자인지
    검사하므로 여기서는 숫자만 읽습니다. body 상한보다 큰 길이는 헤더 검사에서
    413으로 이미 걸렀습니다. */
 static bool body_is_complete(struct mg_http_message *message)
@@ -488,7 +490,7 @@ static bool body_is_complete(struct mg_http_message *message)
         }
     }
 
-    return message->body.len >= declared;
+    return message->body.len == declared;
 }
 
 /* 요청의 TTL 헤더를 읽어, 첫 번째 값과 개수와 헤더를 다 받은 시각을 묶습니다.
