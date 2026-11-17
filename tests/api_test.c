@@ -12,6 +12,8 @@
 #define EXPIRES_AT 1000
 /* key 한 줄 "k\n"의 바이트 수입니다. */
 #define MGET_LINE_LEN 2
+/* POST /mset 항목 "k\n1\nv\n"의 바이트 수입니다. */
+#define MSET_ITEM_LEN 6
 
 /* C 문자열 리터럴로 메서드와 경로를 넘깁니다. body는 주소와 길이로 받습니다. */
 static struct api_response request(struct store *store, const char *method,
@@ -46,6 +48,41 @@ static void expect_mget_body(struct api_response *response, const void *body,
     TEST_CHECK(response->body_len == body_len &&
                memcmp(response->body, body, body_len) == 0);
     api_response_destroy(response);
+}
+
+/* now 시각에 POST /mset을 보냅니다. ttl이 NULL이면 TTL 헤더 없이 보냅니다. */
+static struct api_response mset(struct store *store, uint64_t now,
+                                const char *ttl, const void *body,
+                                size_t body_len)
+{
+    struct api_ttl_header ttl_header = {.received_at = now};
+    if (ttl != NULL) {
+        ttl_header.text = ttl;
+        ttl_header.text_len = strlen(ttl);
+        ttl_header.count = 1;
+    }
+    return api_handle(store, now, "POST", strlen("POST"), "/mset",
+                      strlen("/mset"), &ttl_header, body, body_len);
+}
+
+/* 저장 성공 응답(204, body 없음)인지 확인합니다. */
+static void expect_no_content(struct api_response response)
+{
+    TEST_CHECK(response.status == 204);
+    TEST_MSG("상태 코드: %d", response.status);
+    TEST_CHECK(response.body_len == 0);
+}
+
+/* "k\n1\nv\n"을 item_count번 이어 붙인 POST /mset body를 만듭니다. 부른 쪽이
+   해제합니다. */
+static char *mset_body_create(size_t item_count)
+{
+    char *body = malloc(item_count * MSET_ITEM_LEN);
+    for (size_t i = 0; body != NULL && i < item_count; i++) {
+        memcpy(body + i * MSET_ITEM_LEN, "k\n1\nv\n", MSET_ITEM_LEN);
+    }
+
+    return body;
 }
 
 /* "k\n"을 line_count번 이어 붙인 body를 만듭니다. 부른 쪽이 해제합니다. */
@@ -657,6 +694,189 @@ static void mget_path_with_slash_or_query_returns_404_route_not_found(void)
     store_destroy(store);
 }
 
+static void mset_stores_every_item_and_returns_204(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response =
+        mset(store, ANY_NOW, NULL, "a\n1\n1\nb\n2\n22\n", 13);
+    struct api_response stored = mget(store, ANY_NOW, "a\nb", 3);
+
+    expect_no_content(response);
+    expect_mget_body(&stored, "1\n1\n2\n22\n", 9);
+    store_destroy(store);
+}
+
+static void mset_binary_value_keeps_newline_and_nul(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response =
+        mset(store, ANY_NOW, NULL, "bin\n6\nx\ny\0z\n\n", 13);
+    struct api_response stored = mget(store, ANY_NOW, "bin", 3);
+
+    expect_no_content(response);
+    expect_mget_body(&stored, "6\nx\ny\0z\n\n", 9);
+    store_destroy(store);
+}
+
+static void mset_duplicate_key_keeps_last_value(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response =
+        mset(store, ANY_NOW, NULL, "k\n1\na\nk\n1\nb\n", 12);
+    struct api_response stored = mget(store, ANY_NOW, "k", 1);
+
+    expect_no_content(response);
+    expect_mget_body(&stored, "1\nb\n", 4);
+    store_destroy(store);
+}
+
+static void mset_ttl_applies_to_every_key(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    /* TTL 1초를 시각 0에 받았으므로 두 key 모두 EXPIRES_AT에 만료됩니다. */
+    struct api_response response =
+        mset(store, 0, "1", "a\n1\n1\nb\n1\n2\n", 12);
+    struct api_response before = mget(store, EXPIRES_AT - 1, "a\nb", 3);
+    struct api_response at_expiry = mget(store, EXPIRES_AT, "a\nb", 3);
+
+    expect_no_content(response);
+    expect_mget_body(&before, "1\n1\n1\n2\n", 8);
+    expect_mget_body(&at_expiry, "-\n-\n", 4);
+    store_destroy(store);
+}
+
+static void mset_bad_ttl_returns_400_and_stores_nothing(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response =
+        mset(store, ANY_NOW, "0", "a\n1\n1\nb\n1\n2\n", 12);
+    struct api_response stored = mget(store, ANY_NOW, "a\nb", 3);
+
+    expect_error(response, 400, "{\"error\":\"bad_ttl\"}");
+    expect_mget_body(&stored, "-\n-\n", 4);
+    store_destroy(store);
+}
+
+static void mset_accepts_64_keys_and_rejects_65_without_storing(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    char *at_limit = mset_body_create(API_MSET_KEYS_MAX);
+    char *over_limit = mset_body_create(API_MSET_KEYS_MAX + 1);
+    TEST_ASSERT(at_limit != NULL && over_limit != NULL);
+
+    struct api_response rejected =
+        mset(store, ANY_NOW, NULL, over_limit,
+             (API_MSET_KEYS_MAX + 1) * MSET_ITEM_LEN);
+    struct api_response after_rejected = mget(store, ANY_NOW, "k", 1);
+    struct api_response accepted =
+        mset(store, ANY_NOW, NULL, at_limit, API_MSET_KEYS_MAX * MSET_ITEM_LEN);
+    struct api_response after_accepted = mget(store, ANY_NOW, "k", 1);
+
+    expect_error(rejected, 400, "{\"error\":\"too_many_keys\"}");
+    expect_mget_body(&after_rejected, "-\n", 2);
+    expect_no_content(accepted);
+    expect_mget_body(&after_accepted, "1\nv\n", 4);
+    free(over_limit);
+    free(at_limit);
+    store_destroy(store);
+}
+
+/* 앞 항목 "a\n1\n1\n"은 맞고 뒤 항목만 틀린 body들입니다. */
+static void mset_malformed_later_item_returns_400_and_stores_nothing(void)
+{
+    static const char *const bodies[] = {
+        "a\n1\n1\nb\n5\n22\n",  /* 길이가 남은 body보다 김 */
+        "a\n1\n1\nb\n2\n22",    /* value 뒤의 \n이 없음 */
+        "a\n1\n1\nb\n2x\n22\n", /* 길이에 숫자가 아닌 글자 */
+        "a\n1\n1\nb\n\n22\n",   /* 길이가 빔 */
+        "a\n1\n1\nb",           /* 길이 줄이 없음 */
+    };
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    for (size_t i = 0; i < sizeof bodies / sizeof bodies[0]; i++) {
+        struct api_response response =
+            mset(store, ANY_NOW, NULL, bodies[i], strlen(bodies[i]));
+        expect_error(response, 400, "{\"error\":\"bad_request\"}");
+        TEST_MSG("body %zu번", i);
+    }
+    struct api_response stored = mget(store, ANY_NOW, "a", 1);
+
+    expect_mget_body(&stored, "-\n", 2);
+    store_destroy(store);
+}
+
+static void mset_bad_later_key_returns_400_and_stores_nothing(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response broken =
+        mset(store, ANY_NOW, NULL, "a\n1\n1\n%G1\n1\n1\n", 14);
+    struct api_response raw_question_mark =
+        mset(store, ANY_NOW, NULL, "a\n1\n1\nb?c\n1\n1\n", 14);
+    struct api_response empty =
+        mset(store, ANY_NOW, NULL, "a\n1\n1\n\n1\n1\n", 11);
+    struct api_response stored = mget(store, ANY_NOW, "a", 1);
+
+    expect_error(broken, 400, "{\"error\":\"bad_key_encoding\"}");
+    expect_error(raw_question_mark, 400, "{\"error\":\"bad_key_encoding\"}");
+    expect_error(empty, 400, "{\"error\":\"empty_key\"}");
+    expect_mget_body(&stored, "-\n", 2);
+    store_destroy(store);
+}
+
+static void mset_without_items_returns_400_bad_request(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response = mset(store, ANY_NOW, NULL, NULL, 0);
+
+    expect_error(response, 400, "{\"error\":\"bad_request\"}");
+    store_destroy(store);
+}
+
+static void mset_other_method_returns_405_with_allow_post(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response response = request(store, "PUT", "/mset", NULL, 0);
+
+    expect_error(response, 405, "{\"error\":\"method_not_allowed\"}");
+    TEST_ASSERT(response.allow != NULL);
+    TEST_CHECK(strcmp(response.allow, "POST") == 0);
+    TEST_MSG("Allow: %s", response.allow);
+    store_destroy(store);
+}
+
+static void mset_path_with_slash_or_query_returns_404_route_not_found(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+
+    struct api_response slash =
+        request(store, "POST", "/mset/", "a\n1\n1\n", 6);
+    struct api_response query =
+        request(store, "POST", "/mset?x=1", "a\n1\n1\n", 6);
+
+    expect_error(slash, 404, "{\"error\":\"route_not_found\"}");
+    expect_error(query, 404, "{\"error\":\"route_not_found\"}");
+    store_destroy(store);
+}
+
 TEST_LIST = {
     {"[T9] 저장한 key를 조회하면 200과 저장한 value를 돌려준다",
      get_after_put_returns_200_and_value},
@@ -753,5 +973,31 @@ TEST_LIST = {
      mget_other_method_returns_405_with_allow_post},
     {"/mget/와 /mget?x=1은 404 route_not_found를 돌려준다",
      mget_path_with_slash_or_query_returns_404_route_not_found},
+    {"POST /mset은 모든 항목을 저장하고 204를 돌려준다",
+     mset_stores_every_item_and_returns_204},
+    {"POST /mset은 \\n과 \\0이 든 value를 길이만큼 그대로 저장한다",
+     mset_binary_value_keeps_newline_and_nul},
+    {"POST /mset에 같은 key가 여러 번 오면 마지막 value가 남는다",
+     mset_duplicate_key_keeps_last_value},
+    {"POST /mset의 TTL은 모든 key에 같은 만료 시각을 붙인다",
+     mset_ttl_applies_to_every_key},
+    {"POST /mset의 TTL이 잘못되면 400 bad_ttl을 돌려주고 아무 key도 저장하지 "
+     "않는다",
+     mset_bad_ttl_returns_400_and_stores_nothing},
+    {"POST /mset은 key 64개를 받고, 65개는 400 too_many_keys로 거절하며 아무 "
+     "key도 저장하지 않는다",
+     mset_accepts_64_keys_and_rejects_65_without_storing},
+    {"POST /mset의 뒤 항목 모양이 틀리면 400 bad_request를 돌려주고 앞 key도 "
+     "저장하지 않는다",
+     mset_malformed_later_item_returns_400_and_stores_nothing},
+    {"POST /mset의 뒤 key 인코딩이 틀리거나 비면 400을 돌려주고 앞 key도 "
+     "저장하지 않는다",
+     mset_bad_later_key_returns_400_and_stores_nothing},
+    {"POST /mset body에 항목이 없으면 400 bad_request를 돌려준다",
+     mset_without_items_returns_400_bad_request},
+    {"/mset에 POST가 아닌 메서드를 보내면 405와 Allow: POST를 돌려준다",
+     mset_other_method_returns_405_with_allow_post},
+    {"/mset/와 /mset?x=1은 404 route_not_found를 돌려준다",
+     mset_path_with_slash_or_query_returns_404_route_not_found},
     {NULL, NULL},
 };

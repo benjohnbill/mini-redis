@@ -435,6 +435,24 @@ def mget_values_over_limit_are_rejected(server):
     expect((status, body), (400, b'{"error":"response_too_large"}'), "합계 16 MiB + 1바이트")
 
 
+def mset_stores_items_with_one_ttl(server):
+    """실제 서버에 TTL 헤더를 붙여 POST /mset을 보내, 모든 key가 저장되고 같은 보관
+    기간으로 만료되는지 봅니다."""
+    connection = http.client.HTTPConnection(HOST, server.port, timeout=REQUEST_TIMEOUT)
+    try:
+        connection.request("POST", "/mset", body=b"mset-a\n1\n1\nmset-bin\n6\nx\ny\x00z\n\n",
+                           headers={"TTL": "1"})
+        response = connection.getresponse()
+        expect((response.status, response.read()), (204, b""), "POST /mset 응답")
+    finally:
+        connection.close()
+    expect(mget_request(server, b"mset-a\nmset-bin")[3], b"1\n1\n6\nx\ny\x00z\n\n", "만료 전 body")
+
+    time.sleep(1.2)
+
+    expect(mget_request(server, b"mset-a\nmset-bin")[3], b"-\n-\n", "만료 뒤 body")
+
+
 # 서버를 끄는 테스트는 마지막에 둡니다.
 TESTS = [
     ("[T5] (기능) 실제 서버에 저장한 value를 조회로 돌려받는다", put_then_get_returns_value),
@@ -464,6 +482,8 @@ TESTS = [
     ("(기능) /mget에 POST가 아닌 메서드는 405와 Allow: POST를 받는다", mget_other_method_returns_405_with_allow_post),
     ("(기능) POST /mget은 value 합계 16 MiB까지 돌려주고, 넘으면 400 response_too_large를 받는다",
      mget_values_over_limit_are_rejected),
+    ("(기능) POST /mset은 모든 key를 저장하고 TTL 헤더 하나로 같은 보관 기간을 붙인다",
+     mset_stores_items_with_one_ttl),
     ("(기능) 서버를 끄면 sanitizer 오류 없이 0으로 끝난다", stop_exits_zero_without_sanitizer_errors),
     ("(기능) 서버 출력에 mongoose가 요청마다 찍는 줄이 없고 오류만 남는다", output_has_no_per_request_lines),
 ]
