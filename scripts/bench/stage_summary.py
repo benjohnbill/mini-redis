@@ -7,7 +7,9 @@
 기록 한 줄은 데모(demo/product_demo.c의 stage_trace_*)가 요청 하나마다 적습니다.
 
     stage <묶음 번호> <종류> <대기> <처리> <캐시 GET> <원본 조회> <캐시 PUT>
-          <붙잡힘> <실제 붙잡힘> <묶음 요청 수>
+          <붙잡힘> <실제 붙잡힘> <mget 묶임> <mget key 수> <묶음 요청 수>
+
+자동 묶기 전의 기록에는 mget 묶임과 mget key 수 칸이 없고, 그 기록도 읽습니다.
 
 시간은 ms이고 지나지 않은 구간과 알 수 없는 값은 "-"입니다. 구간마다 그 구간을
 지난 요청만 셉니다. 그래서 원본 조회와 캐시 PUT의 개수는 캐시에서 찾지 못한
@@ -36,12 +38,16 @@ COLUMNS = ("대기", "처리", "캐시 GET", "SQLite 조회", "캐시 PUT", "붙
            "실제 붙잡힘")
 GET_INDEX = COLUMNS.index("캐시 GET")
 BATCH_LABEL = "묶음 요청 수"
+MGET_KEYS_LABEL = "mget key 수 (묶인 요청)"
+# 자동 묶기 전의 기록은 mget 묶임과 mget key 수 칸이 없습니다.
+FIELD_COUNTS = (3 + len(COLUMNS) + 1, 3 + len(COLUMNS) + 3)
 PERCENTS = (50, 90, 95, 99)
 RUN_SUFFIX = re.compile(r"-\d+$")
 STAGE_PREFIX = "stage "
 DROPPED_PREFIX = "dropped "
 
-Record = collections.namedtuple("Record", "batch kind times batch_size")
+Record = collections.namedtuple("Record",
+                                "batch kind times batch_size mget_keys")
 
 
 class Trace:
@@ -62,13 +68,17 @@ class Trace:
         if not line.startswith(STAGE_PREFIX):
             return
         fields = line.split()
-        if len(fields) != 3 + len(COLUMNS) + 1:
+        if len(fields) not in FIELD_COUNTS:
             raise SystemExit(f"{self.path}:{line_number}: 칸 수가 다릅니다: "
                              f"{line.rstrip()}")
         times = [None if field == "-" else float(field)
                  for field in fields[3:3 + len(COLUMNS)]]
+        # 묶이지 않은 요청과 자동 묶기 전의 기록은 mget key 수가 None입니다.
+        mget_keys = None
+        if len(fields) == FIELD_COUNTS[1] and fields[-3] == "1":
+            mget_keys = int(fields[-2])
         self.records.append(Record((self.path, int(fields[1])), fields[2],
-                                   times, int(fields[-1])))
+                                   times, int(fields[-1]), mget_keys))
 
     def measured(self, use_all):
         """첫 stats와 둘째 stats 사이의 요청입니다. stats가 둘보다 적으면 모두입니다."""
@@ -149,6 +159,8 @@ def table_print(name, traces, kind, use_all):
     for label, values in zip(COLUMNS, columns):
         row_print(f"{label} (ms)", values, 3)
     row_print(BATCH_LABEL, [record.batch_size for record in records], 0)
+    row_print(MGET_KEYS_LABEL, [record.mget_keys for record in records
+                                if record.mget_keys is not None], 0)
 
 
 def batch_get_print(name, traces, kind, use_all):
