@@ -19,8 +19,12 @@
 
 저장은 응답을 먼저 보낸 뒤에 하므로, 그 시간은 요청의 처리 시간에 들지 않습니다.
 그 저장을 맡긴 요청들의 캐시 PUT 칸에도 같은 시간이 적혀서, 캐시 PUT 칸의 개수는
-저장 왕복 수가 아닙니다. 실제 PUT과 mset의 횟수와 시간은 표 아래의 저장 왕복
-표로 봅니다. store 줄이 없는 옛 기록은 그 표가 나오지 않습니다.
+저장 왕복 수가 아닙니다. 묶음 끝 저장의 시간은 표 아래의 "상세 조회 묶음 끝 저장"
+표로 봅니다. 이 표는 단건 GET 경로와 목록·검색의 PUT을 담지 않으므로, 전체 PUT과
+mset의 수는 /stats의 cache_puts와 cache_msets 증가분(cache_bench.py --output의 같은
+이름 칸)으로 비교합니다. 한 묶음에서 기록 상한을 넘어 빠진 저장은 파일 끝의
+"dropped_stores <수>"로 세고 경고합니다. store 줄이 없는 옛 기록은 그 표가 나오지
+않습니다.
 
 시간은 ms이고 지나지 않은 구간과 알 수 없는 값은 "-"입니다. 구간마다 그 구간을
 지난 요청만 셉니다. 그래서 원본 조회와 캐시 PUT의 개수는 캐시에서 찾지 못한
@@ -64,6 +68,7 @@ RUN_SUFFIX = re.compile(r"-\d+$")
 STAGE_PREFIX = "stage "
 STORE_PREFIX = "store "
 DROPPED_PREFIX = "dropped "
+DROPPED_STORES_PREFIX = "dropped_stores "
 # 묶음 끝의 캐시 저장 왕복 하나입니다. kind는 put 또는 mset입니다.
 Store = collections.namedtuple("Store", "batch kind key_count stored_ms")
 
@@ -80,6 +85,7 @@ class Trace:
         self.records = []
         self.stores = []
         self.dropped = 0
+        self.dropped_stores = 0
         with open(path, encoding="utf-8") as trace_file:
             for line_number, line in enumerate(trace_file, 1):
                 self.line_read(line, line_number)
@@ -87,6 +93,9 @@ class Trace:
     def line_read(self, line, line_number):
         if line.startswith(DROPPED_PREFIX):
             self.dropped += int(line[len(DROPPED_PREFIX):])
+            return
+        if line.startswith(DROPPED_STORES_PREFIX):
+            self.dropped_stores += int(line[len(DROPPED_STORES_PREFIX):])
             return
         if line.startswith(STORE_PREFIX):
             fields = line.split()
@@ -174,13 +183,17 @@ def stores_select(traces, use_all):
     return selected
 
 
-def stores_print(stores):
-    """묶음 끝의 저장 왕복을 put과 mset으로 나눠 횟수, 시간, key 수를 냅니다.
-    요청별 캐시 PUT 칸은 함께 기다린 저장 시간을 요청마다 적은 것이라, 저장
-    왕복 수와 시간의 합은 이 표로 봅니다."""
-    if not stores:
+def stores_print(stores, dropped_stores):
+    """상세 조회 묶음 끝의 저장을 put과 mset으로 나눠 시간과 key 수를 냅니다.
+    이 표는 묶음 끝 저장의 시간을 보는 표입니다. 단건 GET 경로와 목록·검색의
+    PUT은 담지 않으므로, 전체 PUT과 mset의 수는 /stats의 cache_puts와
+    cache_msets 증가분(cache_bench.py --output의 같은 이름 칸)으로 봅니다."""
+    if not stores and not dropped_stores:
         return
-    print("\n묶음 끝 저장 왕복 (store 줄, 개수 = 실제 왕복 수)")
+    print("\n상세 조회 묶음 끝 저장 (store 줄, 단건 경로와 목록·검색의 PUT은 빠짐)")
+    if dropped_stores:
+        print(f"주의: 한 묶음의 저장이 많아 store 줄을 남기지 못한 저장이 "
+              f"{dropped_stores}개 있습니다")
     print()
     header_print("값", "개수")
     for kind in ("put", "mset"):
@@ -189,7 +202,7 @@ def stores_print(stores):
     row_print("mset key 수", [store.key_count for store in stores
                               if store.kind == "mset"], 0)
     total = sum(store.stored_ms for store in stores)
-    print(f"\n저장 왕복 {len(stores):,}번, 시간 합 {total:.3f} ms")
+    print(f"\n묶음 끝 저장 {len(stores):,}번, 시간 합 {total:.3f} ms")
 
 
 def row_print(label, values, digits):
@@ -224,7 +237,8 @@ def table_print(name, traces, kind, use_all):
     row_print(BATCH_LABEL, [record.batch_size for record in records], 0)
     row_print(MGET_KEYS_LABEL, [record.mget_keys for record in records
                                 if record.mget_keys is not None], 0)
-    stores_print(stores_select(traces, use_all))
+    stores_print(stores_select(traces, use_all),
+                 sum(trace.dropped_stores for trace in traces))
 
 
 def round_trips(members):

@@ -129,6 +129,8 @@ struct stage_trace {
     size_t chunk_first_record;
     double store_started_ms;
     unsigned long long dropped_count;
+    /* 한 묶음에서 STAGE_STORE_MAX를 넘어 store 줄로 남기지 못한 저장의 수입니다. */
+    unsigned long long dropped_store_count;
     struct stage_record current;
     struct stage_batch batch;
     struct stage_batch previous;
@@ -1547,7 +1549,12 @@ static void product_delete(struct mg_connection *connection, struct demo *demo,
      store <묶음 번호> <put|mset> <key 수> <저장 시간>
 
    그 저장을 맡긴 요청들의 캐시 PUT 칸에도 같은 저장 시간을 적으므로, 캐시 PUT
-   칸의 개수는 저장 왕복 수가 아닙니다. 왕복 수와 시간의 합은 store 줄로 셉니다.
+   칸의 개수는 저장 왕복 수가 아닙니다. store 줄은 상세 조회 묶음 끝의 저장만
+   담습니다. 상세 요청이 하나라 단건 GET 경로를 탄 요청의 PUT과 목록·검색의
+   PUT은 요청 줄의 캐시 PUT 칸에만 있습니다. 그래서 전체 PUT과 mset의 수는 store
+   줄이 아니라 /stats의 cache_puts와 cache_msets로 셉니다. 한 묶음에서
+   STAGE_STORE_MAX를 넘은 저장은 store 줄을 남기지 못하고, 파일 끝에
+   "dropped_stores <수>"로 셉니다.
 
    묶음은 mg_mgr_poll 한 번이 처리한 요청들이고, 묶음 번호는 몇 번째
    mg_mgr_poll인지입니다(1부터). 대기는 묶음이 시작된 뒤 처리가 시작되기까지,
@@ -1720,7 +1727,8 @@ static bool stage_trace_store_begin(const struct demo *demo)
     return true;
 }
 
-/* 묶음 끝의 캐시 저장 왕복 하나를 store 줄로 남기고, 그 시간을 이 대기 묶음에서
+/* 상세 조회 묶음 끝의 캐시 저장 왕복 하나를 store 줄로 남기고, 그 시간을 이 대기
+   묶음에서
    저장을 맡긴 요청들의 캐시 PUT 칸에도 적습니다. 그 요청들의 기록은 응답을 보낼
    때 이미 batch.records에 들어갔습니다. 요청들은 저장 왕복 하나를 함께
    기다렸으므로 모두 같은 시간을 적고, 그래서 캐시 PUT 칸의 개수는 저장 왕복 수가
@@ -1738,6 +1746,8 @@ static void stage_trace_store_end(bool is_traced, size_t key_count)
             (struct stage_store){.batch_number = stage_trace_state.batch_number,
                                  .key_count = key_count,
                                  .stored_ms = stored_ms};
+    } else {
+        stage_trace_state.dropped_store_count++;
     }
     size_t end = batch->request_count < STAGE_BATCH_MAX ? batch->request_count
                                                         : STAGE_BATCH_MAX;
@@ -1827,6 +1837,10 @@ static void stage_trace_close(void)
     if (stage_trace_state.dropped_count > 0) {
         fprintf(stage_trace_state.file, "dropped %llu\n",
                 stage_trace_state.dropped_count);
+    }
+    if (stage_trace_state.dropped_store_count > 0) {
+        fprintf(stage_trace_state.file, "dropped_stores %llu\n",
+                stage_trace_state.dropped_store_count);
     }
     fclose(stage_trace_state.file);
     stage_trace_state.file = NULL;
