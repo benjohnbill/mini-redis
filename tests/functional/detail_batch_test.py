@@ -20,6 +20,8 @@ BURST_CONNECTIONS = 16
 BURST_TRIALS = 50
 MIXED_IDS = [1, 2, 3, 2, 10000, 10001, 4, 1, 5, 6, 7, 8, 9, 3, 11, 12]
 REPEATED_ID = 13
+# 다른 확인이 쓰지 않아 캐시에 아직 없는 상품들입니다. 시도마다 하나씩 씁니다.
+FRESH_IDS = range(500, 500 + BURST_TRIALS)
 ORIGIN_IDS = [21, 22, 23, 21, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
 UPDATED_ID = 40
 
@@ -91,6 +93,33 @@ def repeated_product_in_one_bundle(cached, off):
     # 모두 key를 하나만 담습니다.
     expect(after['cache_mget_keys'] - before['cache_mget_keys'],
            after['cache_mgets'] - before['cache_mgets'], '묶음당 key 1개')
+    missed_bundle_loads_once(cached, off)
+
+
+def missed_bundle_loads_once(cached, off):
+    """캐시에 없는 상품을 동시에 요청해, POST /mget이 실제로 미스를 낸 시도에서
+    원본 조회와 캐시 저장이 한 번씩만 일어나는지 봅니다. 단건 GET이 하나도 없는
+    시도만 셉니다. 단건 GET이 먼저 캐시를 채우면 뒤의 mget이 적중해서, 중복 미스
+    처리가 깨져 있어도 횟수가 1로 나오기 때문입니다. 단건 GET이 없으면 첫 조회가
+    mget이고, 캐시에 없는 상품이라 그 mget은 반드시 미스입니다. 그런 시도가 나올
+    때까지 상품을 바꿔 다시 보냅니다(이 확인을 만들 때 잰 비율은 약 3번에 1번)."""
+    counters = ('cache_mgets', 'cache_mget_keys', 'cache_gets',
+                'cache_get_errors', 'origin_queries', 'cache_puts')
+    for product_id in FRESH_IDS:
+        paths = detail_paths([product_id] * BURST_CONNECTIONS)
+        _, before = read_json(cached, '/stats')
+        responses = burst(cached, paths)
+        _, after = read_json(cached, '/stats')
+        delta = {name: after[name] - before[name] for name in counters}
+        single_gets = delta['cache_gets'] - delta['cache_mget_keys']
+        if (delta['cache_mgets'] >= 1 and single_gets == 0 and
+                delta['cache_get_errors'] == 0):
+            expect(responses, expected_bodies(off, paths[:1]) * BURST_CONNECTIONS,
+                   '미스 묶음의 응답')
+            expect((delta['origin_queries'], delta['cache_puts']), (1, 1),
+                   '미스 묶음의 원본 조회와 캐시 저장 횟수')
+            return
+    raise AssertionError(f'{BURST_TRIALS}번 보내도 mget이 미스를 낸 시도가 없었습니다')
 
 
 def detail_after_update_in_same_poll_sees_new_value(cached):
@@ -170,7 +199,8 @@ def main():
             bundled_details_match_cache_off(cached, off)
             print('PASS: 묶은 상세 조회의 응답은 cache off의 응답과 바이트까지 같다')
             repeated_product_in_one_bundle(cached, off)
-            print('PASS: 같은 상품이 한 묶음에 여러 번 와도 모두 같은 응답을 받는다')
+            print('PASS: 같은 상품이 한 묶음에 여러 번 와도 모두 같은 응답을 받고, '
+                  '캐시에 없으면 원본 조회와 저장은 한 번만 한다')
             detail_after_update_in_same_poll_sees_new_value(cached)
             print('PASS: 같은 poll에서 수정 뒤에 온 상세 조회는 새 값을 받는다')
             closed_connections_in_bundle_are_dropped(cached, off)
