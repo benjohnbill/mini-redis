@@ -13,6 +13,15 @@
 자동 묶기 전의 기록에는 mget 묶임, mget key 수, mget 번호 칸이 없고, mget 번호를
 적기 전의 기록에는 mget 번호 칸이 없습니다. 그 기록들도 읽습니다.
 
+상세 조회 묶음 끝의 캐시 저장 왕복은 하나마다 따로 적습니다.
+
+    store <묶음 번호> <put|mset> <key 수> <저장 시간>
+
+저장은 응답을 먼저 보낸 뒤에 하므로, 그 시간은 요청의 처리 시간에 들지 않습니다.
+그 저장을 맡긴 요청들의 캐시 PUT 칸에도 같은 시간이 적혀서, 캐시 PUT 칸의 개수는
+저장 왕복 수가 아닙니다. 실제 PUT과 mset의 횟수와 시간은 표 아래의 저장 왕복
+표로 봅니다. store 줄이 없는 옛 기록은 그 표가 나오지 않습니다.
+
 시간은 ms이고 지나지 않은 구간과 알 수 없는 값은 "-"입니다. 구간마다 그 구간을
 지난 요청만 셉니다. 그래서 원본 조회와 캐시 PUT의 개수는 캐시에서 찾지 못한
 요청의 수이고, 실제 붙잡힘의 개수가 적으면 그만큼 응답을 쓴 시각을 놓친 것입니다.
@@ -53,7 +62,10 @@ MGET_INDEX = 3 + len(COLUMNS)
 PERCENTS = (50, 90, 95, 99)
 RUN_SUFFIX = re.compile(r"-\d+$")
 STAGE_PREFIX = "stage "
+STORE_PREFIX = "store "
 DROPPED_PREFIX = "dropped "
+# 묶음 끝의 캐시 저장 왕복 하나입니다. kind는 put 또는 mset입니다.
+Store = collections.namedtuple("Store", "batch kind key_count stored_ms")
 
 Record = collections.namedtuple("Record",
                                 "batch kind times batch_size mget_keys "
@@ -66,6 +78,7 @@ class Trace:
     def __init__(self, path):
         self.path = path
         self.records = []
+        self.stores = []
         self.dropped = 0
         with open(path, encoding="utf-8") as trace_file:
             for line_number, line in enumerate(trace_file, 1):
@@ -74,6 +87,11 @@ class Trace:
     def line_read(self, line, line_number):
         if line.startswith(DROPPED_PREFIX):
             self.dropped += int(line[len(DROPPED_PREFIX):])
+            return
+        if line.startswith(STORE_PREFIX):
+            fields = line.split()
+            self.stores.append(Store((self.path, int(fields[1])), fields[2],
+                                     int(fields[3]), float(fields[4])))
             return
         if not line.startswith(STAGE_PREFIX):
             return
@@ -144,6 +162,36 @@ def records_select(traces, kind, use_all):
     return selected, windowed
 
 
+def stores_select(traces, use_all):
+    """측정 구간에 든 묶음의 저장 왕복입니다. store 줄은 그 묶음의 요청 줄 뒤에
+    오므로, 측정 구간의 요청이 속한 묶음 번호로 고릅니다."""
+    selected = []
+    for trace in traces:
+        records, _ = trace.measured(use_all)
+        batches = {record.batch for record in records}
+        selected += [store for store in trace.stores if store.batch in batches]
+
+    return selected
+
+
+def stores_print(stores):
+    """묶음 끝의 저장 왕복을 put과 mset으로 나눠 횟수, 시간, key 수를 냅니다.
+    요청별 캐시 PUT 칸은 함께 기다린 저장 시간을 요청마다 적은 것이라, 저장
+    왕복 수와 시간의 합은 이 표로 봅니다."""
+    if not stores:
+        return
+    print("\n묶음 끝 저장 왕복 (store 줄, 개수 = 실제 왕복 수)")
+    print()
+    header_print("값", "개수")
+    for kind in ("put", "mset"):
+        row_print(f"{kind} 시간 (ms)",
+                  [store.stored_ms for store in stores if store.kind == kind], 3)
+    row_print("mset key 수", [store.key_count for store in stores
+                              if store.kind == "mset"], 0)
+    total = sum(store.stored_ms for store in stores)
+    print(f"\n저장 왕복 {len(stores):,}번, 시간 합 {total:.3f} ms")
+
+
 def row_print(label, values, digits):
     cells = ([f"{value:.{digits}f}" for value in percentiles(values)] if values
              else ["-"] * len(PERCENTS))
@@ -176,6 +224,7 @@ def table_print(name, traces, kind, use_all):
     row_print(BATCH_LABEL, [record.batch_size for record in records], 0)
     row_print(MGET_KEYS_LABEL, [record.mget_keys for record in records
                                 if record.mget_keys is not None], 0)
+    stores_print(stores_select(traces, use_all))
 
 
 def round_trips(members):

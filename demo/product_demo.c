@@ -59,6 +59,9 @@ enum stage { STAGE_CACHE_GET, STAGE_ORIGIN, STAGE_CACHE_PUT, STAGE_COUNT };
 #include <time.h>
 
 #define STAGE_BATCH_MAX 1024
+/* mg_mgr_poll 한 번에 기록하는 묶음 끝 저장의 상한입니다. 대기 목록은
+   PENDING_MAX개이고 MGET_KEYS_MAX개씩 나눠 처리하므로 저장은 몇 번뿐입니다. */
+#define STAGE_STORE_MAX 16
 #define STAGE_NOT_ENTERED (-1.0)
 #define MS_PER_SECOND 1000.0
 #define NS_PER_MS 1000000.0
@@ -87,11 +90,21 @@ struct stage_record {
     bool is_store_deferred;
 };
 
-/* mg_mgr_poll 한 번이 처리한 요청들입니다. request_count는 기록하지 못한
-   요청까지 셉니다. */
+/* 묶음 끝의 캐시 저장 왕복 하나입니다. key가 2개 이상이면 POST /mset, 1개면
+   PUT입니다. */
+struct stage_store {
+    unsigned long long batch_number;
+    size_t key_count;
+    double stored_ms;
+};
+
+/* mg_mgr_poll 한 번이 처리한 요청들과 그 사이의 묶음 끝 저장 왕복들입니다.
+   request_count는 기록하지 못한 요청까지 셉니다. */
 struct stage_batch {
     size_t request_count;
     struct stage_record records[STAGE_BATCH_MAX];
+    size_t store_count;
+    struct stage_store stores[STAGE_STORE_MAX];
 };
 
 /* 데모 백엔드는 스레드 하나로 요청을 처리하므로 기록 상태도 하나입니다.
@@ -313,7 +326,7 @@ static void stage_trace_deferred_begin(const struct mg_connection *connection,
                                        bool is_bundled);
 static void stage_trace_store_defer(void);
 static bool stage_trace_store_begin(const struct demo *demo);
-static void stage_trace_store_end(bool is_traced);
+static void stage_trace_store_end(bool is_traced, size_t key_count);
 static void stage_trace_request_end(void);
 static void stage_trace_sent(const struct mg_connection *connection);
 static void stage_trace_batch_end(void);
@@ -801,7 +814,7 @@ static void pending_stores_run(struct demo *demo,
     } else {
         cache_client_mset(&demo->cache, store_keys, store_bodies, store_count);
     }
-    stage_trace_store_end(is_traced);
+    stage_trace_store_end(is_traced, store_count);
 }
 
 static void pending_reply_by_get(struct demo *demo,
@@ -1528,6 +1541,14 @@ static void product_delete(struct mg_connection *connection, struct demo *demo,
            <붙잡힘> <실제 붙잡힘> <mget 묶임> <mget key 수> <mget 번호>
            <묶음 요청 수>
 
+   상세 조회 묶음 끝에서 캐시에 저장한 왕복은 하나마다 아래 줄을 그 묶음의 요청
+   줄들 뒤에 적습니다. 저장할 key가 2개 이상이면 mset, 1개면 put입니다.
+
+     store <묶음 번호> <put|mset> <key 수> <저장 시간>
+
+   그 저장을 맡긴 요청들의 캐시 PUT 칸에도 같은 저장 시간을 적으므로, 캐시 PUT
+   칸의 개수는 저장 왕복 수가 아닙니다. 왕복 수와 시간의 합은 store 줄로 셉니다.
+
    묶음은 mg_mgr_poll 한 번이 처리한 요청들이고, 묶음 번호는 몇 번째
    mg_mgr_poll인지입니다(1부터). 대기는 묶음이 시작된 뒤 처리가 시작되기까지,
    처리는 처리 시작부터 응답을 만들 때까지입니다. 대기 목록에 넣은 상세 조회는
@@ -1699,10 +1720,12 @@ static bool stage_trace_store_begin(const struct demo *demo)
     return true;
 }
 
-/* 묶음 끝의 캐시 저장 시간을, 이 대기 묶음에서 저장을 맡긴 요청들의 캐시 PUT
-   칸에 적습니다. 그 요청들의 기록은 응답을 보낼 때 이미 batch.records에
-   들어갔습니다. 저장 여러 번을 함께 기다렸으므로 모두 같은 시간을 적습니다. */
-static void stage_trace_store_end(bool is_traced)
+/* 묶음 끝의 캐시 저장 왕복 하나를 store 줄로 남기고, 그 시간을 이 대기 묶음에서
+   저장을 맡긴 요청들의 캐시 PUT 칸에도 적습니다. 그 요청들의 기록은 응답을 보낼
+   때 이미 batch.records에 들어갔습니다. 요청들은 저장 왕복 하나를 함께
+   기다렸으므로 모두 같은 시간을 적고, 그래서 캐시 PUT 칸의 개수는 저장 왕복 수가
+   아닙니다. 저장은 응답을 만든 뒤라 이 시간은 요청의 처리 시간에 들지 않습니다. */
+static void stage_trace_store_end(bool is_traced, size_t key_count)
 {
 #ifdef STAGE_TRACE
     if (!is_traced || stage_trace_state.file == NULL) {
@@ -1710,6 +1733,12 @@ static void stage_trace_store_end(bool is_traced)
     }
     double stored_ms = stage_trace_now() - stage_trace_state.store_started_ms;
     struct stage_batch *batch = &stage_trace_state.batch;
+    if (batch->store_count < STAGE_STORE_MAX) {
+        batch->stores[batch->store_count++] =
+            (struct stage_store){.batch_number = stage_trace_state.batch_number,
+                                 .key_count = key_count,
+                                 .stored_ms = stored_ms};
+    }
     size_t end = batch->request_count < STAGE_BATCH_MAX ? batch->request_count
                                                         : STAGE_BATCH_MAX;
     for (size_t i = stage_trace_state.chunk_first_record; i < end; i++) {
@@ -1719,6 +1748,7 @@ static void stage_trace_store_end(bool is_traced)
     }
 #else
     (void)is_traced;
+    (void)key_count;
 #endif
 }
 
@@ -1776,7 +1806,12 @@ static void stage_trace_batch_end(void)
         batch->records[i].batch_size = batch->request_count;
         previous->records[i] = batch->records[i];
     }
+    previous->store_count = batch->store_count;
+    for (size_t i = 0; i < batch->store_count; i++) {
+        previous->stores[i] = batch->stores[i];
+    }
     batch->request_count = 0;
+    batch->store_count = 0;
     stage_trace_state.batch_started_ms = 0;
     stage_trace_state.batch_number++;
 #endif
@@ -1863,6 +1898,12 @@ static void stage_batch_write(const struct stage_batch *batch)
 {
     for (size_t i = 0; i < batch->request_count && i < STAGE_BATCH_MAX; i++) {
         stage_record_write(&batch->records[i]);
+    }
+    for (size_t i = 0; i < batch->store_count; i++) {
+        const struct stage_store *store = &batch->stores[i];
+        fprintf(stage_trace_state.file, "store %llu %s %zu %.3f\n",
+                store->batch_number, store->key_count >= 2 ? "mset" : "put",
+                store->key_count, store->stored_ms);
     }
 }
 
