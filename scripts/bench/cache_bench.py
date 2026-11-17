@@ -4,7 +4,6 @@
 사용법: python3 -B scripts/bench/cache_bench.py build/bench/cache-demo \\
             build/bench/mini-redis [--quick] [--self-check] [--scenario 이름 ...]
             [--rate 초당요청] [--connections 연결수] [--output 파일]
-            [--arrival burst|even] [--stage-trace 폴더]
 
 실험마다 같은 seed로 상품 10,000개를 새로 만들고, 새 mini-redis와 새 데모를 띄웁니다.
 cache off와 on에 같은 요청 계획을 쓰고, 준비 구간과 측정 구간을 나눕니다. off와 on은
@@ -16,11 +15,6 @@ cache off와 on에 같은 요청 계획을 쓰고, 준비 구간과 측정 구�
 기록용 결과를 남기는 측정은 3회 이상이어야 합니다. --quick은 준비 1초, 측정 3초,
 1회로 함수만 확인할 때 씁니다. 시간 수치는
 합격 기준이 아니며 make verify와 CI에서 실행하지 않습니다.
---arrival burst(기본)는 연결마다 같은 시각에 시작하는 시간표를 두어, 연결 수만큼의
-요청이 한꺼번에 도착합니다. --arrival even은 시간표 하나가 1/rate초마다 요청을 하나씩
-내고 연결들에 차례로 맡깁니다. --stage-trace 폴더는 STAGE_TRACE를 켠 데모(make
-cache-stage-bench)에 실행마다 <폴더>/<시나리오>-ttl<TTL>-<off|on>-<회>.log를
-STAGE_TRACE_FILE로 넘깁니다.
 """
 
 import argparse
@@ -46,8 +40,6 @@ COUNT = 10_000
 SEED = 1
 CONNECTIONS = 32
 RATE = 500
-# 몰릴 때와 평상시를 비교하려고, 기본값은 기존과 같음
-ARRIVALS = ("burst", "even")
 WARMUP_SECONDS = 10
 MEASURE_SECONDS = 30
 RUNS = 3
@@ -80,11 +72,11 @@ ALL_SCENARIOS = scenario_grid()
 class Process:
     """port를 정해 띄우는 서버 하나입니다. 로그는 끝날 때까지 파일에 둡니다."""
 
-    def __init__(self, command, port, env=None):
+    def __init__(self, command, port):
         self.port = port
         self.log = tempfile.TemporaryFile()
         self.process = subprocess.Popen(command, stdout=self.log,
-                                        stderr=self.log, env=env)
+                                        stderr=self.log)
 
     def wait_until_listening(self):
         deadline = time.monotonic() + START_TIMEOUT
@@ -242,18 +234,12 @@ class Plan:
 
 
 def execute(port, plan, seconds, load):
-    connection_count, rate, arrival = load
+    connection_count, rate = load
     run = open_loop.Run(port, seconds * open_loop.NS_PER_SECOND, strict=False)
     connections = run.connections_open(connection_count)
-    if arrival == "burst":
-        # 연결마다 시간표를 두면 모든 시간표가 같은 시각에 시작하므로, 연결
-        # 수만큼의 요청이 한꺼번에 도착합니다.
-        interval = open_loop.NS_PER_SECOND * connection_count // rate
-        for connection in connections:
-            run.stream_add([connection], interval, plan.request)
-    else:
-        run.stream_add(connections, open_loop.NS_PER_SECOND // rate,
-                       plan.request)
+    interval = open_loop.NS_PER_SECOND * connection_count // rate
+    for connection in connections:
+        run.stream_add([connection], interval, plan.request)
     latencies = run.run()
 
     return run, latencies
@@ -273,7 +259,7 @@ def stats_delta(before, after, name):
 
 
 def run_once(demo_binary, redis_binary, mode, scenario, ttl, warmup, measure,
-             database, load, trace_path=None):
+             database, load):
     kind, spread, ratio = ALL_SCENARIOS[scenario]
     subprocess.run([demo_binary, "--db", database, "--seed", str(SEED),
                     "--count", str(COUNT)], check=True,
@@ -288,12 +274,8 @@ def run_once(demo_binary, redis_binary, mode, scenario, ttl, warmup, measure,
             redis.wait_until_listening()
             cache_arguments += ["--cache-url", f"http://{HOST}:{cache_port}"]
         port = free_port()
-        # 정확성 대조용 데모에는 넘기지 않아, 기록 파일에는 측정한 데모만 남습니다.
-        demo_env = None
-        if trace_path is not None:
-            demo_env = {**os.environ, "STAGE_TRACE_FILE": trace_path}
         demo = Process([demo_binary, "--db", database, "--port", str(port),
-                        *cache_arguments], port, demo_env)
+                        *cache_arguments], port)
         demo.wait_until_listening()
         execute(port, Plan(kind, spread, ratio, SEED + 1), warmup, load)
         before = stats_read(port)
@@ -351,10 +333,6 @@ def record_numbers(record, seconds):
             "cache_gets": stats_delta(before, after, "cache_gets"),
             "cache_hits": stats_delta(before, after, "cache_hits"),
             "origin_queries": stats_delta(before, after, "origin_queries"),
-            # 자동 묶기 전의 데모는 이 두 칸이 없어 0입니다.
-            "cache_mgets": after.get("cache_mgets", 0) - before.get("cache_mgets", 0),
-            "cache_mget_keys": (after.get("cache_mget_keys", 0) -
-                                before.get("cache_mget_keys", 0)),
             "checked": record["checked"]}
 
 
@@ -484,16 +462,10 @@ def main():
                         help="초당 요청 수")
     parser.add_argument("--connections", type=positive_int,
                         default=CONNECTIONS, help="연결 수")
-    parser.add_argument("--arrival", choices=ARRIVALS, default="burst",
-                        help="요청이 도착하는 모양. 기본 burst")
     parser.add_argument("--output")
     parser.add_argument("--db", help="PostgreSQL 연결 문자열. 없으면 임시 SQLite 파일")
-    parser.add_argument("--stage-trace", metavar="DIR",
-                        help="STAGE_TRACE 데모가 실행마다 구간 기록을 남길 폴더")
     arguments = parser.parse_args()
     self_check()
-    if arguments.stage_trace:
-        os.makedirs(arguments.stage_trace, exist_ok=True)
     demo_binary = os.path.abspath(arguments.demo)
     redis_binary = os.path.abspath(arguments.redis)
     warmup, measure, runs = (WARMUP_SECONDS, MEASURE_SECONDS, RUNS)
@@ -516,8 +488,7 @@ def main():
     print(f"machine: {platform.platform()}, python {platform.python_version()}, "
           f"sqlite {sqlite3.sqlite_version}")
     print(f"input: 상품 {COUNT}개 seed {SEED}, 연결 {arguments.connections}, "
-          f"초당 {arguments.rate}요청, 도착 {arguments.arrival}, 준비 {warmup}s, "
-          f"측정 {measure}s, {runs}회, TTL {ttls}")
+          f"초당 {arguments.rate}요청, 준비 {warmup}s, 측정 {measure}s, {runs}회, TTL {ttls}")
     results = {}
     with tempfile.TemporaryDirectory() as directory:
         database = arguments.db or os.path.join(directory, "products.sqlite")
@@ -529,7 +500,6 @@ def main():
                        "inputs": {"count": COUNT, "seed": SEED,
                                   "connections": arguments.connections,
                                   "rate": arguments.rate,
-                                  "arrival": arguments.arrival,
                                   "warmup": warmup, "measure": measure,
                                   "runs": runs, "ttl": ttls,
                                   "scenarios": scenarios,
@@ -550,19 +520,14 @@ def run_all(arguments, scenarios, ttls, warmup, measure, runs, demo_binary,
             key = f"{scenario} ttl {ttl}s"
             print(f"\n### {key} 시작", flush=True)
             results[key] = {"off": [], "on": []}
-            load = (arguments.connections, arguments.rate, arguments.arrival)
+            load = (arguments.connections, arguments.rate)
             # off를 모두 잰 뒤에 on을 재면 그동안 바뀐 머신 상태가 한쪽에만
             # 들어가므로, 회마다 off와 on을 번갈아 잽니다.
-            for run_index in range(runs):
+            for _ in range(runs):
                 for mode in ("off", "on"):
-                    trace_path = None
-                    if arguments.stage_trace:
-                        trace_path = os.path.join(
-                            arguments.stage_trace,
-                            f"{scenario}-ttl{ttl}-{mode}-{run_index + 1}.log")
                     results[key][mode].append(run_once(
                         demo_binary, redis_binary, mode, scenario, ttl,
-                        warmup, measure, database, load, trace_path))
+                        warmup, measure, database, load))
             report(key, measure, results)
 
 

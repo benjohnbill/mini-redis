@@ -2,7 +2,6 @@
 
 #include <assert.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,15 +12,6 @@
 /* 405 응답의 Allow 헤더 값입니다. key_action_parse가 받는 메서드와 같습니다. */
 #define ALLOWED_METHODS "GET, PUT, DELETE"
 #define MILLIS_PER_SECOND 1000
-#define MGET_PATH "/mget"
-#define MGET_PATH_LEN (sizeof MGET_PATH - 1)
-#define MGET_ALLOWED_METHODS "POST"
-/* POST /mget 응답에서 없는 key 하나의 자리입니다. */
-#define MGET_MISSING "-\n"
-/* "<value 바이트 길이>\n"의 최대 길이입니다. size_t 20자리와 \n, '\0'이
-   들어갑니다. */
-#define MGET_LENGTH_TEXT_MAX 24
-#define BUFFER_CAPACITY_INITIAL 256
 
 /* 지원하는 메서드가 store에 하는 일입니다. */
 enum key_action {
@@ -31,33 +21,6 @@ enum key_action {
     KEY_ACTION_DELETE,
 };
 
-/* POST /mget body에서 푼 key 하나가 푼 key 버퍼에서 차지하는 자리입니다. */
-struct mget_key {
-    size_t start;
-    size_t len;
-};
-
-/* 응답 body를 이어 붙이며 늘어나는 버퍼입니다. */
-struct byte_buffer {
-    char *data;
-    size_t len;
-    size_t capacity;
-};
-
-static bool path_is_mget(const char *path, size_t path_len);
-static struct api_response
-mget_request_handle(struct store *store, uint64_t now, const char *method,
-                    size_t method_len, const char *body, size_t body_len);
-static size_t mget_line_count(const char *body, size_t body_len);
-static const char *mget_keys_parse(const char *body, size_t body_len,
-                                   char *decoded, struct mget_key *keys);
-static struct api_response
-mget_values_collect(struct store *store, uint64_t now, const char *decoded,
-                    const struct mget_key *keys, size_t key_count);
-static bool mget_value_append(struct byte_buffer *buffer, const void *value,
-                              size_t value_len);
-static bool byte_buffer_append(struct byte_buffer *buffer, const void *bytes,
-                               size_t bytes_len);
 static bool path_is_keys(const char *path, size_t path_len);
 static enum key_action key_action_parse(const char *method, size_t method_len);
 static bool method_is(const char *method, size_t method_len, const char *name);
@@ -99,10 +62,6 @@ struct api_response api_handle(struct store *store, uint64_t now,
                                const void *body, size_t body_len)
 {
     assert(ttl_header != NULL);
-    if (path_is_mget(path, path_len)) {
-        return mget_request_handle(store, now, method, method_len, body,
-                                   body_len);
-    }
     if (!path_is_keys(path, path_len)) {
         return response_error(404, ERROR_BODY("route_not_found"));
     }
@@ -151,187 +110,6 @@ struct api_response api_reject_timeout(void)
 struct api_response api_reject_connection(void)
 {
     return response_error(503, ERROR_BODY("too_many_connections"));
-}
-
-void api_response_destroy(struct api_response *response)
-{
-    if (response->owned_body == NULL) {
-        return;
-    }
-    free(response->owned_body);
-    response->owned_body = NULL;
-    response->body = NULL;
-    response->body_len = 0;
-}
-
-/* query가 붙은 /mget?x나 /mget/는 이 경로가 아닙니다. */
-static bool path_is_mget(const char *path, size_t path_len)
-{
-    return path_len == MGET_PATH_LEN && memcmp(path, MGET_PATH, path_len) == 0;
-}
-
-/* 메서드, key 개수, key마다의 인코딩, value 합계 순서로 검사하고 처음 걸린
-   오류 하나로 답합니다. 요청의 모양이 틀린 오류를 저장된 데이터에 따라 달라지는
-   response_too_large보다 먼저 알립니다. */
-static struct api_response
-mget_request_handle(struct store *store, uint64_t now, const char *method,
-                    size_t method_len, const char *body, size_t body_len)
-{
-    if (!method_is(method, method_len, "POST")) {
-        struct api_response response =
-            response_error(405, ERROR_BODY("method_not_allowed"));
-        response.allow = MGET_ALLOWED_METHODS;
-        return response;
-    }
-    size_t key_count = mget_line_count(body, body_len);
-    if (key_count == 0) {
-        return response_error(400, ERROR_BODY("bad_request"));
-    }
-    if (key_count > API_MGET_KEYS_MAX) {
-        return response_error(400, ERROR_BODY("too_many_keys"));
-    }
-    /* 푼 key는 인코딩된 줄보다 길지 않으므로 body 길이면 모든 key가 담깁니다.
-       key가 하나 이상이면 body는 1바이트 이상입니다. */
-    char *decoded = malloc(body_len);
-    if (decoded == NULL) {
-        return response_error(500, ERROR_BODY("out_of_memory"));
-    }
-    struct mget_key keys[API_MGET_KEYS_MAX];
-    const char *error_body = mget_keys_parse(body, body_len, decoded, keys);
-    struct api_response response =
-        error_body != NULL
-            ? response_error(400, error_body)
-            : mget_values_collect(store, now, decoded, keys, key_count);
-    free(decoded);
-
-    return response;
-}
-
-/* body의 key 수입니다. 줄은 \n으로 끝나고 마지막 줄만 \n이 없어도 됩니다.
-   그래서 "a\n"은 1개, "\n"은 빈 줄 1개, 빈 body는 0개입니다. */
-static size_t mget_line_count(const char *body, size_t body_len)
-{
-    if (body_len == 0) {
-        return 0;
-    }
-    size_t line_count = body[body_len - 1] == '\n' ? 0 : 1;
-    for (size_t i = 0; i < body_len; i++) {
-        if (body[i] == '\n') {
-            line_count++;
-        }
-    }
-
-    return line_count;
-}
-
-/* 줄마다 /keys/<key>와 같은 규칙으로 key를 풀어 decoded에 이어 쓰고, 그 자리를
-   keys에 적습니다. 앞 줄부터 보고 처음 걸린 오류의 body를 돌려주며, 모두 맞으면
-   NULL을 돌려줍니다. keys는 mget_line_count가 센 개수만큼 자리가 있어야
-   합니다. */
-static const char *mget_keys_parse(const char *body, size_t body_len,
-                                   char *decoded, struct mget_key *keys)
-{
-    size_t line_start = 0;
-    size_t written = 0;
-    for (size_t i = 0; line_start < body_len; i++) {
-        const char *line = body + line_start;
-        const char *line_end = memchr(line, '\n', body_len - line_start);
-        size_t line_len = line_end == NULL ? body_len - line_start
-                                           : (size_t)(line_end - line);
-        size_t key_len = 0;
-        if (!key_decode(line, line_len, decoded + written, &key_len)) {
-            return ERROR_BODY("bad_key_encoding");
-        }
-        if (key_len == 0) {
-            return ERROR_BODY("empty_key");
-        }
-        keys[i].start = written;
-        keys[i].len = key_len;
-        written += key_len;
-        line_start += line_len + 1;
-    }
-
-    return NULL;
-}
-
-/* key 순서대로 "<바이트 길이>\n<value>\n"을, 없거나 만료된 key는 "-\n"을 이어
-   붙입니다. 같은 key가 여러 번 오면 매번 붙입니다. value 합계가
-   API_MGET_VALUES_MAX를 넘으면 만든 버퍼를 버리고 400을 돌려줍니다. */
-static struct api_response
-mget_values_collect(struct store *store, uint64_t now, const char *decoded,
-                    const struct mget_key *keys, size_t key_count)
-{
-    struct byte_buffer buffer = {0};
-    size_t values_len = 0;
-    bool is_appended = true;
-    for (size_t i = 0; i < key_count && is_appended; i++) {
-        const void *value = NULL;
-        size_t value_len = 0;
-        if (!store_get(store, now, decoded + keys[i].start, keys[i].len, &value,
-                       &value_len)) {
-            is_appended =
-                byte_buffer_append(&buffer, MGET_MISSING, strlen(MGET_MISSING));
-            continue;
-        }
-        values_len += value_len;
-        if (values_len > API_MGET_VALUES_MAX) {
-            free(buffer.data);
-            return response_error(400, ERROR_BODY("response_too_large"));
-        }
-        /* 빌린 value는 다음 store 호출 전에 응답 버퍼로 복사합니다(ADR
-           get-lends-value-until-next-change). */
-        is_appended = mget_value_append(&buffer, value, value_len);
-    }
-    if (!is_appended) {
-        free(buffer.data);
-        return response_error(500, ERROR_BODY("out_of_memory"));
-    }
-    struct api_response response = {.status = 200,
-                                    .content_type = "application/octet-stream",
-                                    .body = buffer.data,
-                                    .body_len = buffer.len,
-                                    .owned_body = buffer.data};
-
-    return response;
-}
-
-static bool mget_value_append(struct byte_buffer *buffer, const void *value,
-                              size_t value_len)
-{
-    char length_text[MGET_LENGTH_TEXT_MAX];
-    int length_text_len =
-        snprintf(length_text, sizeof length_text, "%zu\n", value_len);
-
-    return byte_buffer_append(buffer, length_text, (size_t)length_text_len) &&
-           byte_buffer_append(buffer, value, value_len) &&
-           byte_buffer_append(buffer, "\n", 1);
-}
-
-/* 모자라면 용량을 두 배씩 늘립니다. 메모리가 없으면 false를 돌려주고, 이미 쓴
-   내용은 그대로 둡니다. */
-static bool byte_buffer_append(struct byte_buffer *buffer, const void *bytes,
-                               size_t bytes_len)
-{
-    if (bytes_len == 0) {
-        return true;
-    }
-    if (buffer->len + bytes_len > buffer->capacity) {
-        size_t capacity =
-            buffer->capacity == 0 ? BUFFER_CAPACITY_INITIAL : buffer->capacity;
-        while (capacity < buffer->len + bytes_len) {
-            capacity *= 2;
-        }
-        char *data = realloc(buffer->data, capacity);
-        if (data == NULL) {
-            return false;
-        }
-        buffer->data = data;
-        buffer->capacity = capacity;
-    }
-    memcpy(buffer->data + buffer->len, bytes, bytes_len);
-    buffer->len += bytes_len;
-
-    return true;
 }
 
 /* `/keys/`로 시작해야 합니다. 끝에 /가 없는 `/keys`도 경로 오류입니다. */

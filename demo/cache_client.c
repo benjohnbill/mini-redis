@@ -1,5 +1,4 @@
 #include "cache_client.h"
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -8,39 +7,17 @@
 #define RECOVER_INTERVAL_MS 1000
 /* URL 인코딩은 바이트 하나를 %XX 세 글자로 늘립니다. */
 #define URL_ENCODED_BYTES_MAX 3
-#define ENCODED_KEY_MAX (CACHE_KEY_MAX * URL_ENCODED_BYTES_MAX)
-#define KEYS_PATH "/keys/"
-#define MGET_PATH "/mget"
-/* POST /mget 응답에서 없는 key 하나의 자리입니다(docs/api.md). */
-#define MGET_MISSING "-\n"
-#define MGET_MISSING_LEN 2
-#define DECIMAL_BASE 10
 
 static bool namespace_new(struct cache_client *cache);
 static int cache_request(struct cache_client *cache, const char *method,
                          const char *key, const char *body);
-static size_t key_encode(const struct cache_client *cache, const char *key,
-                         char *encoded, size_t encoded_size);
-static int cache_exchange(struct cache_client *cache, const char *method,
-                          const char *path, size_t path_len, const char *body,
-                          size_t body_len);
 static void request_state_reset(struct cache_client *cache);
 static void cache_event_handle(struct mg_connection *connection, int event,
                                void *event_data);
-static bool reason_is(const struct mg_http_message *message,
-                      const char *reason);
 static void response_body_copy(struct cache_client *cache,
                                const struct mg_http_message *message);
 static bool request_send(struct cache_client *cache, const char *method,
-                         const char *path, size_t path_len, const char *body,
-                         size_t body_len);
-static char *mget_body_create(const struct cache_client *cache,
-                              const char *const *keys, size_t key_count,
-                              size_t *body_len);
-static bool mget_response_parse(const char *text, size_t text_len,
-                                size_t key_count, char **bodies);
-static size_t mget_value_parse(const char *text, size_t text_len, char **body);
-static void bodies_free(char **bodies, size_t key_count);
+                         const char *key, const char *body);
 static void cache_suspend(struct cache_client *cache);
 static void cache_connection_close(struct cache_client *cache);
 
@@ -88,52 +65,6 @@ char *cache_client_get(struct cache_client *cache, const char *key)
     }
 
     return NULL;
-}
-
-enum cache_mget_result cache_client_mget(struct cache_client *cache,
-                                         const char *const *keys,
-                                         size_t key_count, char **bodies)
-{
-    for (size_t i = 0; i < key_count; i++) {
-        bodies[i] = NULL;
-    }
-    if (!cache->active) {
-        cache->bypasses += key_count;
-        return CACHE_MGET_BYPASSED;
-    }
-    size_t request_len = 0;
-    char *request = mget_body_create(cache, keys, key_count, &request_len);
-    int status = 0;
-    if (request != NULL) {
-        cache->mgets++;
-        cache->mget_keys += key_count;
-        status = cache_exchange(cache, "POST", MGET_PATH, strlen(MGET_PATH),
-                                request, request_len);
-        free(request);
-    }
-    /* 거절된 묶음은 부른 쪽이 key마다 GET으로 다시 물으므로 gets에 더하지
-       않습니다. */
-    if (status == 400) {
-        return CACHE_MGET_TOO_LARGE;
-    }
-    cache->gets += key_count;
-    if (status == 200 &&
-        mget_response_parse(cache->body, cache->body_len, key_count, bodies)) {
-        for (size_t i = 0; i < key_count; i++) {
-            if (bodies[i] != NULL) {
-                cache->hits++;
-            } else {
-                cache->misses++;
-            }
-        }
-        return CACHE_MGET_DONE;
-    }
-    /* 깨진 응답도 GET 실패와 같게 봅니다. */
-    bodies_free(bodies, key_count);
-    cache->get_errors += key_count;
-    cache_suspend(cache);
-
-    return CACHE_MGET_FAILED;
 }
 
 void cache_client_set(struct cache_client *cache, const char *key,
@@ -200,44 +131,8 @@ static bool namespace_new(struct cache_client *cache)
     return true;
 }
 
-/* /keys/<인코딩한 key>에 요청을 보냅니다. key를 인코딩할 수 없으면 보내지
-   못한 요청처럼 상태 0입니다. */
 static int cache_request(struct cache_client *cache, const char *method,
                          const char *key, const char *body)
-{
-    char path[sizeof KEYS_PATH + ENCODED_KEY_MAX];
-    size_t prefix_len = strlen(KEYS_PATH);
-    memcpy(path, KEYS_PATH, prefix_len);
-    size_t encoded_len =
-        key_encode(cache, key, path + prefix_len, sizeof path - prefix_len);
-    size_t path_len = encoded_len == 0 ? 0 : prefix_len + encoded_len;
-
-    return cache_exchange(cache, method, path, path_len, body,
-                          body == NULL ? 0 : strlen(body));
-}
-
-/* "demo:<실행 식별자>:<key>"를 퍼센트 인코딩해 encoded에 쓰고 그 길이를
-   돌려줍니다. 담을 수 없으면 0입니다. */
-static size_t key_encode(const struct cache_client *cache, const char *key,
-                         char *encoded, size_t encoded_size)
-{
-    char full_key[CACHE_KEY_MAX];
-    int length = snprintf(full_key, sizeof full_key, "demo:%s:%s",
-                          cache->namespace, key);
-    if (length < 0 || (size_t)length >= sizeof full_key) {
-        return 0;
-    }
-    size_t encoded_len =
-        mg_url_encode(full_key, (size_t)length, encoded, encoded_size);
-
-    return encoded_len >= encoded_size ? 0 : encoded_len;
-}
-
-/* 요청 하나를 보내고 응답이나 기한을 기다려 상태 코드를 돌려줍니다. path_len이
-   0이면 보내지 못한 요청처럼 상태 0입니다. */
-static int cache_exchange(struct cache_client *cache, const char *method,
-                          const char *path, size_t path_len, const char *body,
-                          size_t body_len)
 {
     uint64_t deadline = mg_millis() + (uint64_t)cache->timeout_ms;
     request_state_reset(cache);
@@ -245,8 +140,7 @@ static int cache_exchange(struct cache_client *cache, const char *method,
         cache->connection = mg_http_connect(&cache->manager, cache->url,
                                             cache_event_handle, cache);
     }
-    if (cache->connection == NULL || path_len == 0 ||
-        !request_send(cache, method, path, path_len, body, body_len)) {
+    if (cache->connection == NULL || !request_send(cache, method, key, body)) {
         cache->done = true;
     }
     /* Poll only the client manager: product handlers must never reenter. */
@@ -272,11 +166,8 @@ static void request_state_reset(struct cache_client *cache)
     cache->status = 0;
     free(cache->body);
     cache->body = NULL;
-    cache->body_len = 0;
 }
 
-/* 404는 key_not_found일 때만, 400은 POST /mget의 response_too_large일 때만
-   그 상태로 남깁니다. 다른 이유의 404와 400은 캐시 오류(상태 0)입니다. */
 static void cache_event_handle(struct mg_connection *connection, int event,
                                void *event_data)
 {
@@ -284,10 +175,12 @@ static void cache_event_handle(struct mg_connection *connection, int event,
     if (event == MG_EV_HTTP_MSG && cache->pending) {
         struct mg_http_message *message = event_data;
         cache->status = mg_http_status(message);
-        if ((cache->status == 404 && !reason_is(message, "key_not_found")) ||
-            (cache->status == 400 &&
-             !reason_is(message, "response_too_large"))) {
-            cache->status = 0;
+        if (cache->status == 404) {
+            char *reason = mg_json_get_str(message->body, "$.error");
+            if (reason == NULL || strcmp(reason, "key_not_found") != 0) {
+                cache->status = 0;
+            }
+            free(reason);
         }
         if (cache->status == 200) {
             response_body_copy(cache, message);
@@ -305,15 +198,6 @@ static void cache_event_handle(struct mg_connection *connection, int event,
     }
 }
 
-static bool reason_is(const struct mg_http_message *message, const char *reason)
-{
-    char *actual = mg_json_get_str(message->body, "$.error");
-    bool is_same = actual != NULL && strcmp(actual, reason) == 0;
-    free(actual);
-
-    return is_same;
-}
-
 /* Copies the body as a NUL-terminated string; no memory turns the hit into an
    error. */
 static void response_body_copy(struct cache_client *cache,
@@ -326,114 +210,34 @@ static void response_body_copy(struct cache_client *cache,
     }
     memcpy(cache->body, message->body.buf, message->body.len);
     cache->body[message->body.len] = '\0';
-    cache->body_len = message->body.len;
 }
 
 static bool request_send(struct cache_client *cache, const char *method,
-                         const char *path, size_t path_len, const char *body,
-                         size_t body_len)
+                         const char *key, const char *body)
 {
+    char full_key[CACHE_KEY_MAX];
+    int length = snprintf(full_key, sizeof full_key, "demo:%s:%s",
+                          cache->namespace, key);
+    if (length < 0 || (size_t)length >= sizeof full_key) {
+        return false;
+    }
+    char encoded[CACHE_KEY_MAX * URL_ENCODED_BYTES_MAX];
+    size_t encoded_len =
+        mg_url_encode(full_key, (size_t)length, encoded, sizeof encoded);
+    if (encoded_len == 0 || encoded_len >= sizeof encoded) {
+        return false;
+    }
     struct mg_str host = mg_url_host(cache->url);
+    size_t body_len = body == NULL ? 0 : strlen(body);
     if (mg_printf(cache->connection,
-                  "%s %.*s HTTP/1.1\r\nHost: %.*s:%hu\r\n"
+                  "%s /keys/%.*s HTTP/1.1\r\nHost: %.*s:%hu\r\n"
                   "Content-Length: %zu\r\nTTL: %d\r\n\r\n",
-                  method, (int)path_len, path, (int)host.len, host.buf,
+                  method, (int)encoded_len, encoded, (int)host.len, host.buf,
                   mg_url_port(cache->url), body_len, cache->ttl_seconds) == 0) {
         return false;
     }
 
     return body_len == 0 || mg_send(cache->connection, body, body_len);
-}
-
-/* key마다 /keys/<key>와 같은 인코딩을 한 줄씩 이은 POST /mget body를
-   만듭니다. 인코딩한 key에는 \n이 없습니다. 담을 수 없는 key가 있거나 메모리가
-   없으면 NULL입니다. */
-static char *mget_body_create(const struct cache_client *cache,
-                              const char *const *keys, size_t key_count,
-                              size_t *body_len)
-{
-    char encoded[ENCODED_KEY_MAX];
-    char *body = NULL;
-    size_t written = 0;
-    for (size_t i = 0; i < key_count; i++) {
-        size_t encoded_len =
-            key_encode(cache, keys[i], encoded, sizeof encoded);
-        char *grown =
-            encoded_len == 0 ? NULL : realloc(body, written + encoded_len + 1);
-        if (grown == NULL) {
-            free(body);
-            return NULL;
-        }
-        body = grown;
-        memcpy(body + written, encoded, encoded_len);
-        written += encoded_len;
-        body[written++] = '\n';
-    }
-    *body_len = written;
-
-    return body;
-}
-
-/* POST /mget 응답을 key 순서대로 "<길이>\n<바이트>\n" 또는 "-\n"으로 읽어
-   bodies에 둡니다. key 수와 맞지 않거나 형식이 깨졌으면 false를 돌려주며, 이미
-   만든 body는 부른 쪽이 bodies_free로 해제합니다. */
-static bool mget_response_parse(const char *text, size_t text_len,
-                                size_t key_count, char **bodies)
-{
-    size_t offset = 0;
-    for (size_t i = 0; i < key_count; i++) {
-        if (text_len - offset >= MGET_MISSING_LEN &&
-            memcmp(text + offset, MGET_MISSING, MGET_MISSING_LEN) == 0) {
-            offset += MGET_MISSING_LEN;
-            continue;
-        }
-        size_t used =
-            mget_value_parse(text + offset, text_len - offset, &bodies[i]);
-        if (used == 0) {
-            return false;
-        }
-        offset += used;
-    }
-
-    return offset == text_len;
-}
-
-/* "<10진수 길이>\n<바이트>\n" 하나를 읽어 바이트를 '\0'으로 끝나는 새 body로
-   *body에 두고, 읽은 바이트 수를 돌려줍니다. 형식이 깨졌거나 메모리가 없으면
-   0입니다. */
-static size_t mget_value_parse(const char *text, size_t text_len, char **body)
-{
-    size_t offset = 0;
-    size_t value_len = 0;
-    while (offset < text_len && text[offset] >= '0' && text[offset] <= '9') {
-        size_t digit = (size_t)(text[offset] - '0');
-        if (value_len > (SIZE_MAX - digit) / DECIMAL_BASE) {
-            return 0;
-        }
-        value_len = value_len * DECIMAL_BASE + digit;
-        offset++;
-    }
-    if (offset == 0 || offset >= text_len || text[offset] != '\n' ||
-        value_len >= text_len - offset - 1 ||
-        text[offset + 1 + value_len] != '\n') {
-        return 0;
-    }
-    *body = malloc(value_len + 1);
-    if (*body == NULL) {
-        return 0;
-    }
-    memcpy(*body, text + offset + 1, value_len);
-    (*body)[value_len] = '\0';
-
-    return offset + 1 + value_len + 1;
-}
-
-static void bodies_free(char **bodies, size_t key_count)
-{
-    for (size_t i = 0; i < key_count; i++) {
-        free(bodies[i]);
-        bodies[i] = NULL;
-    }
 }
 
 static void cache_suspend(struct cache_client *cache)
@@ -452,5 +256,4 @@ static void cache_connection_close(struct cache_client *cache)
     }
     free(cache->body);
     cache->body = NULL;
-    cache->body_len = 0;
 }
