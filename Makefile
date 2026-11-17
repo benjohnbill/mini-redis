@@ -152,13 +152,18 @@ $(BENCH_BUILD)/siphash_2_4.o: vendor/siphash/siphash.c | $(BENCH_BUILD)
 # (실험 브랜치 CJG-hash-bench 전용). 설정마다 src/*.c를 -D로 따로 컴파일한 바이너리를
 # 만들고, 회마다 세 설정을 번갈아 실행합니다. 설정 순서에 따른 차이가 한쪽에 몰리지
 # 않게 하기 위해서입니다.
-REHASH_SETTINGS := 4_2 8_2 2_1
+# REHASH_KEYS는 넣을 key 수의 목록입니다. 예(효율 측정):
+#   make rehash-micro REHASH_SETTINGS='4_2 2_1' REHASH_KEYS='100000 1048576 4194304'
+REHASH_SETTINGS ?= 4_2 8_2 2_1
+REHASH_KEYS     ?= 4194304
 REHASH_ROUNDS   ?= 3
 REHASH_BINS     := $(REHASH_SETTINGS:%=$(BENCH_BUILD)/rehash_micro_%)
 .PHONY: rehash-micro
 rehash-micro: $(REHASH_BINS)
-	@for round in $$(seq $(REHASH_ROUNDS)); do \
-	    for bin in $(REHASH_BINS); do printf 'round=%s ' $$round; ./$$bin; done; \
+	@for keys in $(REHASH_KEYS); do \
+	    for round in $$(seq $(REHASH_ROUNDS)); do \
+	        for bin in $(REHASH_BINS); do printf 'round=%s ' $$round; ./$$bin $$keys; done; \
+	    done; \
 	done
 
 $(BENCH_BUILD)/rehash_micro_%: scripts/bench/rehash_micro.c $(filter-out src/server.c src/api.c,$(LIB_SRCS)) | $(BENCH_BUILD)
