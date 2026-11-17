@@ -123,6 +123,31 @@ $(BENCH_BUILD)/%.o: src/%.c | $(BENCH_BUILD)
 $(BENCH_BUILD):
 	mkdir -p $@
 
+# make rehash-micro: rehash 범위(위쪽 경계, 목표, 아래쪽 경계)를 바꾼 store의 저장, 조회
+# 시간과 메모리를 서버 없이 잽니다. make verify와 CI에는 넣지 않습니다. 설정마다
+# src/*.c를 -D로 따로 컴파일한 바이너리를 만들고, 회마다 설정을 번갈아 실행합니다.
+# 설정 순서에 따른 차이가 한쪽에 몰리지 않게 하기 위해서입니다. 설정 하나는
+# <위쪽 경계>_<목표>_<아래쪽 경계>이고, REHASH_KEYS는 넣을 key 수의 목록입니다.
+# 기본값은 측정 기록 rehash-micro/001의 조건입니다. 예(두 설정만):
+#   make rehash-micro REHASH_SETTINGS='4_2_1 1_0.5_0.25' REHASH_KEYS=4194304
+REHASH_SETTINGS ?= 8_4_2 4_2_1 2_1_0.5 1_0.5_0.25 0.5_0.25_0.125
+REHASH_KEYS     ?= 100000 1048576 4194304
+REHASH_ROUNDS   ?= 3
+REHASH_BINS     := $(REHASH_SETTINGS:%=$(BENCH_BUILD)/rehash_micro_%)
+.PHONY: rehash-micro
+rehash-micro: $(REHASH_BINS)
+	@for keys in $(REHASH_KEYS); do \
+	    for round in $$(seq $(REHASH_ROUNDS)); do \
+	        for bin in $(REHASH_BINS); do printf 'round=%s ' $$round; ./$$bin $$keys; done; \
+	    done; \
+	done
+
+$(BENCH_BUILD)/rehash_micro_%: scripts/bench/rehash_micro.c $(filter-out src/server.c src/api.c,$(LIB_SRCS)) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) \
+	    -DMAX_ELEMS_PER_BUCKET=$(word 1,$(subst _, ,$*)) \
+	    -DBEST_ELEMS_PER_BUCKET=$(word 2,$(subst _, ,$*)) \
+	    -DMIN_ELEMS_PER_BUCKET=$(word 3,$(subst _, ,$*)) $^ -o $@
+
 # SQLite는 별도 상품 데모에만 링크합니다.
 CACHE_DEMO := $(BUILD)/cache-demo
 .PHONY: cache-demo cache-functional

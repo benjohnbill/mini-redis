@@ -310,9 +310,16 @@ is_power_of_2 (size_t x) {
 }
 
 /* Element per bucket ratios. */
+/* mini-redis perf: make rehash-micro가 세 값을 빌드할 때 -D로 바꿉니다. */
+#ifndef MIN_ELEMS_PER_BUCKET
 #define MIN_ELEMS_PER_BUCKET  1 /* Elems/bucket < 1: reduce # of buckets. */
+#endif
+#ifndef BEST_ELEMS_PER_BUCKET
 #define BEST_ELEMS_PER_BUCKET 2 /* Ideal elems/bucket. */
+#endif
+#ifndef MAX_ELEMS_PER_BUCKET
 #define MAX_ELEMS_PER_BUCKET  4 /* Elems/bucket > 4: increase # of buckets. */
+#endif
 
 /* Changes the number of buckets in hash table H to match the
    ideal.  This function can fail because of an out-of-memory
