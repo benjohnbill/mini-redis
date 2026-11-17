@@ -267,6 +267,8 @@ static void stage_trace_request_begin(const struct mg_connection *connection,
                                       const struct mg_http_message *message);
 static void stage_trace_stage_begin(enum stage stage);
 static void stage_trace_stage_end(enum stage stage);
+static bool stage_trace_cache_begin(const struct demo *demo, enum stage stage);
+static void stage_trace_cache_end(bool is_traced, enum stage stage);
 static void stage_trace_chunk_begin(void);
 static void stage_trace_chunk_mget_end(size_t key_count);
 static void stage_trace_deferred_begin(const struct mg_connection *connection,
@@ -830,9 +832,9 @@ static void list_send(struct mg_connection *connection, struct demo *demo,
     cache_recover(demo);
     char key[LIST_KEY_MAX];
     list_key_build(demo, &list, key, sizeof key);
-    stage_trace_stage_begin(STAGE_CACHE_GET);
+    bool is_get_traced = stage_trace_cache_begin(demo, STAGE_CACHE_GET);
     char *cached = cache_client_get(&demo->cache, key);
-    stage_trace_stage_end(STAGE_CACHE_GET);
+    stage_trace_cache_end(is_get_traced, STAGE_CACHE_GET);
     if (cached != NULL) {
         body_send(connection, cached);
         free(cached);
@@ -846,9 +848,9 @@ static void list_send(struct mg_connection *connection, struct demo *demo,
         error_send(connection, status, "origin_unavailable");
         return;
     }
-    stage_trace_stage_begin(STAGE_CACHE_PUT);
+    bool is_put_traced = stage_trace_cache_begin(demo, STAGE_CACHE_PUT);
     cache_client_set(&demo->cache, key, body);
-    stage_trace_stage_end(STAGE_CACHE_PUT);
+    stage_trace_cache_end(is_put_traced, STAGE_CACHE_PUT);
     body_send(connection, body);
     free(body);
 }
@@ -1174,9 +1176,9 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
     cache_recover(demo);
     char key[DETAIL_KEY_MAX];
     detail_key_build(product_id, key, sizeof key);
-    stage_trace_stage_begin(STAGE_CACHE_GET);
+    bool is_get_traced = stage_trace_cache_begin(demo, STAGE_CACHE_GET);
     char *cached = cache_client_get(&demo->cache, key);
-    stage_trace_stage_end(STAGE_CACHE_GET);
+    stage_trace_cache_end(is_get_traced, STAGE_CACHE_GET);
     product_reply(connection, demo, product_id, key, cached);
 }
 
@@ -1198,9 +1200,9 @@ static void product_reply(struct mg_connection *connection, struct demo *demo,
         origin_error_send(connection, status);
         return;
     }
-    stage_trace_stage_begin(STAGE_CACHE_PUT);
+    bool is_put_traced = stage_trace_cache_begin(demo, STAGE_CACHE_PUT);
     cache_client_set(&demo->cache, key, body);
-    stage_trace_stage_end(STAGE_CACHE_PUT);
+    stage_trace_cache_end(is_put_traced, STAGE_CACHE_PUT);
     body_send(connection, body);
     free(body);
 }
@@ -1476,6 +1478,27 @@ static void stage_trace_stage_end(enum stage stage)
 #else
     (void)stage;
 #endif
+}
+
+/* 캐시 GET과 PUT은 캐시에 실제로 요청을 보낼 때만 잽니다. 캐시가 꺼졌거나
+   중단되면 cache_client_get과 cache_client_set이 요청 없이 돌아오므로, 그
+   호출까지 세면 왕복하지 않은 요청이 0 ms로 섞입니다. 호출 도중에 캐시가
+   중단될 수 있으므로, 잴지는 호출 전에 정하고 그 값을 끝에 넘깁니다. */
+static bool stage_trace_cache_begin(const struct demo *demo, enum stage stage)
+{
+    if (!demo->cache.active) {
+        return false;
+    }
+    stage_trace_stage_begin(stage);
+
+    return true;
+}
+
+static void stage_trace_cache_end(bool is_traced, enum stage stage)
+{
+    if (is_traced) {
+        stage_trace_stage_end(stage);
+    }
 }
 
 /* 붙잡힘은 묶음이 끝나야 알 수 있으므로, 요청의 기록을 묶음 끝까지 모읍니다. */
