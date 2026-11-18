@@ -26,10 +26,12 @@ def update_request(demo, product_id, body, content_type='application/json'):
 class ScriptedCache:
     """같은 HTTP 경계에서 GET·PUT·DELETE 응답을 따로 정하는 최소 대역입니다."""
 
-    def __init__(self, answers):
+    def __init__(self, answers, idle_close_seconds=2.0):
         import socket
         import threading
         self.answers = answers
+        # 이 시간 동안 요청이 없으면 연결을 닫습니다. mini-redis의 쉬는 시간 기한과 같은 동작입니다
+        self.idle_close_seconds = idle_close_seconds
         self.listener = socket.socket()
         self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener.bind(('127.0.0.1', 0))
@@ -51,7 +53,7 @@ class ScriptedCache:
                 self.handle(connection)
 
     def handle(self, connection):
-        connection.settimeout(2)
+        connection.settimeout(self.idle_close_seconds)
         data = b''
         try:
             while not self.stopped:
