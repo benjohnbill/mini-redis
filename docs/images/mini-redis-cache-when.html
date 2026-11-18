@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>캐시는 언제 유리한가</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@400&display=swap" rel="stylesheet">
+  <!-- 원본입니다. 그림을 바꾸면 이 파일을 고치고 같은 이름의 .png를 다시 만듭니다.
+       숫자: 최종 코드(1a64bd7), TTL 60초, 조회만 하는 조건의 p50. 출처는 ../measurements/cache-demo/010-DA-postgres-final-grid.md입니다.
+       색은 README 배너와 구조 그림에 맞췄습니다. -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --paper: #f3f1ed; --card: #fbfaf8; --ink: #232a3a; --muted: #4f5a6e; --soft: #8a92a3;
+      --line: #dcd8d0; --off: #b9bec8; --on: #2e5aa8;
+      --good: #2f7a4f; --mixed: #a8700f; --bad: #b8322a;
+      --sans: 'Geist', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+      --serif: 'Instrument Serif', 'Noto Serif KR', serif;
+      --mono: 'Geist Mono', ui-monospace, monospace;
+    }
+    body { font-family: var(--sans); background: var(--paper); color: var(--ink); word-break: keep-all; }
+    .frame { width: 1280px; padding: 44px 48px 36px; }
+    .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    h1 { font-family: var(--serif); font-weight: 400; font-size: 34px; letter-spacing: -.02em; margin-bottom: 6px; }
+    .lede { font-size: 16px; color: var(--muted); margin-bottom: 26px; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 20px; display: flex; flex-direction: column; border-top: 5px solid var(--c); }
+    .good { --c: var(--good); } .mixed { --c: var(--mixed); } .bad { --c: var(--bad); }
+    .verdict { display: inline-block; align-self: flex-start; font-size: 13px; font-weight: 700; color: #fff; background: var(--c); border-radius: 999px; padding: 4px 12px; margin-bottom: 12px; }
+    h2 { font-size: 21px; font-weight: 700; margin-bottom: 4px; }
+    .why { font-size: 14.5px; color: var(--muted); line-height: 1.5; min-height: 44px; margin-bottom: 14px; }
+    .path { font-family: var(--sans); font-size: 13.5px; color: var(--ink); background: #efece6; border-radius: 8px; padding: 9px 11px; margin-bottom: 18px; line-height: 1.7; }
+    .path b { color: var(--c); font-weight: 600; }
+    .group { margin-bottom: 14px; }
+    .db code { font-family: var(--mono); font-weight: 500; }
+    .db { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+    .row { display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .lab { font-family: var(--sans); font-size: 12.5px; color: var(--muted); }
+    .track { display: flex; align-items: center; gap: 8px; }
+    .bar { height: 18px; border-radius: 4px; }
+    .bar.off { background: var(--off); } .bar.on { background: var(--on); }
+    .val { font-family: var(--mono); font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+    .delta { font-size: 13px; font-weight: 700; color: var(--c); margin-left: 66px; }
+    .foot { min-height: 64px; margin-top: auto; padding-top: 14px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--muted); line-height: 1.6; }
+    .foot strong { color: var(--ink); }
+    .note { margin-top: 18px; display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; margin-left: 16px; }
+    .legend i { width: 14px; height: 10px; border-radius: 2px; display: inline-block; }
+  </style>
+</head>
+<body>
+<div class="frame">
+  <p class="eyebrow">Performance · cache on vs off</p>
+  <h1>캐시는 언제 유리한가</h1>
+  <p class="lede">같은 요청이 반복될수록 이득이 크고, 매번 다른 요청이면 캐시 확인·저장만 더해집니다.</p>
+
+  <div class="cards">
+    <!-- 1. 반복 -->
+    <section class="card good">
+      <span class="verdict">유리</span>
+      <h2>같은 검색을 반복</h2>
+      <p class="why">모든 요청이 캐시에 적중해 원본 DB를 건너뜁니다.</p>
+      <div class="path">요청 → <b>mini-redis 적중</b> → 응답</div>
+      <div class="group">
+        <div class="db"><code>search-repeated</code></div>
+        <div class="row"><span class="lab">캐시 OFF</span><div class="track"><div class="bar off" style="width:52px"></div><span class="val">6.56 ms</span></div></div>
+        <div class="row"><span class="lab">캐시 ON</span><div class="track"><div class="bar on" style="width:15px"></div><span class="val">1.92 ms</span></div></div>
+        <div class="delta">4.64 ms 빨라짐</div>
+      </div>
+      <p class="foot">적중률 <strong>100%</strong><br>원본 DB 조회 <strong>15,008회 → 0회</strong></p>
+    </section>
+
+    <!-- 2. 상세 -->
+    <section class="card mixed">
+      <span class="verdict">조금 유리</span>
+      <h2>상품 상세 조회</h2>
+      <p class="why">원본 DB 조회가 이미 빨라서 줄일 시간이 적습니다.</p>
+      <div class="path">요청 → <b>적중 약 72%</b> / 나머지는 원본 DB</div>
+      <div class="group">
+        <div class="db"><code>detail-uniform</code></div>
+        <div class="row"><span class="lab">캐시 OFF</span><div class="track"><div class="bar off" style="width:30px"></div><span class="val">3.73 ms</span></div></div>
+        <div class="row"><span class="lab">캐시 ON</span><div class="track"><div class="bar on" style="width:20px"></div><span class="val">2.44 ms</span></div></div>
+        <div class="delta">1.29 ms 빨라짐</div>
+      </div>
+      <p class="foot">보관 시간(TTL)을 2초로 줄이면<br>적중률이 <strong>11%</strong>로 떨어져 차이가 거의 없습니다.</p>
+    </section>
+
+    <!-- 3. 매번 다름 -->
+    <section class="card bad">
+      <span class="verdict">불리</span>
+      <h2>매번 다른 조건으로 검색</h2>
+      <p class="why">재사용할 응답이 없어 캐시 확인·저장만 더해집니다.</p>
+      <div class="path">요청 → <b>미적중</b> → 원본 DB → 캐시 저장 → 응답</div>
+      <div class="group">
+        <div class="db"><code>search-varied</code></div>
+        <div class="row"><span class="lab">캐시 OFF</span><div class="track"><div class="bar off" style="width:127px"></div><span class="val">15.85 ms</span></div></div>
+        <div class="row"><span class="lab">캐시 ON</span><div class="track"><div class="bar on" style="width:191px"></div><span class="val">23.88 ms</span></div></div>
+        <div class="delta">8.03 ms 느려짐</div>
+      </div>
+      <p class="foot">적중률 <strong>0%</strong></p>
+    </section>
+  </div>
+
+  <div class="note">
+    <span>PostgreSQL · 최종 코드 · TTL 60초 · 조회만 하는 시나리오 · 응답 시간 중앙값(p50) · 세 카드의 막대는 같은 눈금</span>
+    <span class="legend"><span><i style="background:var(--off)"></i>캐시 OFF</span><span><i style="background:var(--on)"></i>캐시 ON</span></span>
+  </div>
+</div>
+</body>
+</html>

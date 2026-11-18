@@ -4,25 +4,42 @@ mini-redis를 응답 캐시로 쓰는 상품 API 백엔드입니다. 측정 결�
 
 ## 실행
 
-mini-redis와 별도 C 실행 파일입니다. 상세 응답을 실제 mini-redis에 저장하는 캐시 on 모드와 원본만 읽는 off 모드를 제공합니다. SQLite는 이 실행 파일에만 링크하며 `build/mini-redis`에는 링크하지 않습니다.
+상품 데모는 mini-redis와 별도 실행 파일입니다. [서버 빌드 도구](../README.md#빠른-시작)와 SQLite 개발 라이브러리가 필요하며, SQLite는 상품 데모에만 링크합니다. Ubuntu(WSL 포함)에서는 아래 명령으로 설치합니다. macOS에서는 Xcode Command Line Tools에 포함된 SQLite를 씁니다.
 
 ```bash
-make cache-demo
-# 준비 명령은 해당 DB의 products 내용을 트랜잭션 안에서 교체합니다.
-./build/cache-demo --db /tmp/products.sqlite --seed 1 --count 10000
-./build/cache-demo --db /tmp/products.sqlite --port 8081 --cache off
-# 별도 터미널에서 ./build/mini-redis 8080 실행
-./build/cache-demo --db /tmp/products.sqlite --port 8081 --cache on \
-  --cache-url http://127.0.0.1:8080 --ttl-seconds 60 --cache-timeout-ms 100
-# 다른 터미널에서 실행합니다.
-curl http://127.0.0.1:8081/products/1
-curl http://127.0.0.1:8081/stats
-make cache-functional  # 임시 DB와 실제 HTTP 서버를 사용하는 sanitizer 기능 검사
+sudo apt-get install libsqlite3-dev
 ```
+
+레포 루트의 터미널 1에서 두 프로그램을 빌드하고 mini-redis를 실행합니다.
+
+```bash
+make build/mini-redis cache-demo
+./build/mini-redis 8080
+```
+
+터미널 2에서 임시 DB에 상품 10,000개를 넣고 상품 API를 실행합니다.
+
+```bash
+demo_dir=$(mktemp -d)
+./build/cache-demo --db "$demo_dir/products.sqlite" --seed 1 --count 10000
+./build/cache-demo --db "$demo_dir/products.sqlite" --port 8081 --cache on \
+  --cache-url http://127.0.0.1:8080 --ttl-seconds 60
+```
+
+터미널 3에서 같은 상품을 60초 안에 두 번 조회하고 각 조회 뒤 `/stats`를 확인합니다. `origin_queries`는 첫 조회 뒤 1이 되고 두 번째 조회 뒤에도 1입니다.
+
+```bash
+curl http://127.0.0.1:8081/products/1  # 첫 조회: MISS
+curl http://127.0.0.1:8081/stats
+curl http://127.0.0.1:8081/products/1  # 두 번째 조회: HIT
+curl http://127.0.0.1:8081/stats
+```
+
+원본 DB만 조회하려면 상품 API를 `--cache off`로 실행합니다. `make cache-functional`은 임시 DB와 실제 HTTP 서버를 사용하는 sanitizer 기능 검사입니다.
 
 ## 옵션
 
-준비 명령은 상품 테이블을 채우고 끝납니다.
+준비 명령은 지정한 DB의 `products` 테이블 내용을 트랜잭션 안에서 교체하고 끝납니다.
 
 | 준비 옵션 | 받는 값 | 생략하면 |
 |---|---|---|
@@ -151,7 +168,7 @@ PostgreSQL 연결이나 질의가 실패하면 상세·목록은 503 `origin_una
 PostgreSQL 원본으로 잴 때는 PostgreSQL을 측정하는 머신에 직접 설치해 띄우고 유닉스 소켓으로 접속합니다. Docker 컨테이너를 거치면 포트 전달이 원본 조회마다 시간을 더해, 같은 코드에서 캐시 off p50이 약 9 ms에서 12\~19 ms로 커졌습니다([측정 기록](../docs/measurements/cache-demo/005-CJG-b2-baseline.md)). 원본 조회가 느릴수록 캐시를 켠 쪽이 유리해 보이므로, 개선 전후는 같은 방법으로 띄운 PostgreSQL에서 잽니다. Ubuntu(WSL 포함)에서는 아래처럼 띄웁니다.
 
 ```bash
-sudo apt install -y postgresql
+sudo apt install -y postgresql libpq-dev
 sudo systemctl start postgresql
 sudo -u postgres createuser --superuser "$USER"
 createdb mini_redis_bench

@@ -1,0 +1,5873 @@
+{
+  "commit": "1a64bd7991671ec6a68501af19877228b10f1bc8",
+  "dirty": false,
+  "inputs": {
+    "count": 10000,
+    "seed": 1,
+    "connections": 32,
+    "rate": 500,
+    "arrival": "burst",
+    "warmup": 10,
+    "measure": 30,
+    "runs": 3,
+    "ttl": [
+      60,
+      2
+    ],
+    "scenarios": [
+      "detail-uniform",
+      "detail-uniform-99:1",
+      "detail-uniform-90:10",
+      "detail-zoomed",
+      "detail-zoomed-99:1",
+      "detail-zoomed-90:10",
+      "list-repeated",
+      "list-repeated-99:1",
+      "list-repeated-90:10",
+      "list-varied",
+      "list-varied-99:1",
+      "list-varied-90:10",
+      "search-repeated",
+      "search-repeated-99:1",
+      "search-repeated-90:10",
+      "search-varied",
+      "search-varied-99:1",
+      "search-varied-90:10"
+    ],
+    "database": "postgresql://127.0.0.1/mini_redis_baseline"
+  },
+  "results": {
+    "detail-uniform ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.713,
+              "p95_ms": 8.620041,
+              "p99_ms": 15.766541
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.727708,
+              "p95_ms": 9.145125,
+              "p99_ms": 20.825625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.841042,
+              "p95_ms": 8.281,
+              "p99_ms": 12.250083
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.435541,
+              "p95_ms": 5.696416,
+              "p99_ms": 10.007833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14990,
+          "cache_hits": 10751,
+          "origin_queries": 4239,
+          "cache_mgets": 968,
+          "cache_mget_keys": 14706,
+          "cache_puts": 243,
+          "cache_msets": 654,
+          "cache_mset_keys": 3996,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.42775,
+              "p95_ms": 6.19325,
+              "p99_ms": 10.271625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14991,
+          "cache_hits": 10752,
+          "origin_queries": 4239,
+          "cache_mgets": 976,
+          "cache_mget_keys": 14702,
+          "cache_puts": 231,
+          "cache_msets": 667,
+          "cache_mset_keys": 4008,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.563917,
+              "p95_ms": 6.726708,
+              "p99_ms": 13.221167
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14994,
+          "cache_hits": 10755,
+          "origin_queries": 4239,
+          "cache_mgets": 993,
+          "cache_mget_keys": 14734,
+          "cache_puts": 233,
+          "cache_msets": 660,
+          "cache_mset_keys": 4006,
+          "checked": 0
+        }
+      ]
+    },
+    "detail-uniform ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.760459,
+              "p95_ms": 8.082459,
+              "p99_ms": 14.221917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.774334,
+              "p95_ms": 8.757459,
+              "p99_ms": 13.17225
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.611458,
+              "p95_ms": 7.446333,
+              "p99_ms": 10.275333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 4.460708,
+              "p95_ms": 1225.21875,
+              "p99_ms": 2235.967666
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13639,
+          "cache_hits": 1454,
+          "origin_queries": 13529,
+          "cache_mgets": 634,
+          "cache_mget_keys": 13400,
+          "cache_puts": 253,
+          "cache_msets": 600,
+          "cache_mset_keys": 11901,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.928792,
+              "p95_ms": 8.019958,
+              "p99_ms": 10.905833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14981,
+          "cache_hits": 1666,
+          "origin_queries": 13315,
+          "cache_mgets": 691,
+          "cache_mget_keys": 14704,
+          "cache_puts": 287,
+          "cache_msets": 655,
+          "cache_mset_keys": 13028,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.987959,
+              "p95_ms": 8.006375,
+              "p99_ms": 12.45975
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14982,
+          "cache_hits": 1667,
+          "origin_queries": 13315,
+          "cache_mgets": 706,
+          "cache_mget_keys": 14716,
+          "cache_puts": 280,
+          "cache_msets": 664,
+          "cache_mset_keys": 13035,
+          "checked": 0
+        }
+      ]
+    },
+    "detail-uniform-99:1 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 3.783917,
+              "p95_ms": 8.513584,
+              "p99_ms": 16.713834
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 4.081,
+              "p95_ms": 7.533292,
+              "p99_ms": 11.207167
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14862,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 3.772541,
+              "p95_ms": 8.891208,
+              "p99_ms": 13.436916
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 4.417541,
+              "p95_ms": 8.593791,
+              "p99_ms": 10.576166
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14862,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 4.798458,
+              "p95_ms": 16.941958,
+              "p99_ms": 54.100791
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 6.330541,
+              "p95_ms": 17.6155,
+              "p99_ms": 93.529916
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14862,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 2.44875,
+              "p95_ms": 5.944958,
+              "p99_ms": 9.444541
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 3.631958,
+              "p95_ms": 7.505791,
+              "p99_ms": 14.936291
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14854,
+          "cache_hits": 10536,
+          "origin_queries": 4318,
+          "cache_mgets": 1023,
+          "cache_mget_keys": 14510,
+          "cache_puts": 270,
+          "cache_msets": 707,
+          "cache_mset_keys": 4048,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 2.523417,
+              "p95_ms": 8.192334,
+              "p99_ms": 19.818292
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 3.609959,
+              "p95_ms": 9.596834,
+              "p99_ms": 23.182667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14855,
+          "cache_hits": 10537,
+          "origin_queries": 4318,
+          "cache_mgets": 1017,
+          "cache_mget_keys": 14515,
+          "cache_puts": 264,
+          "cache_msets": 704,
+          "cache_mset_keys": 4054,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 2.54875,
+              "p95_ms": 6.189792,
+              "p99_ms": 13.554709
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 3.864834,
+              "p95_ms": 8.4045,
+              "p99_ms": 10.392625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14854,
+          "cache_hits": 10536,
+          "origin_queries": 4318,
+          "cache_mgets": 1017,
+          "cache_mget_keys": 14509,
+          "cache_puts": 269,
+          "cache_msets": 704,
+          "cache_mset_keys": 4049,
+          "checked": 12
+        }
+      ]
+    },
+    "detail-uniform-99:1 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 3.743709,
+              "p95_ms": 8.382625,
+              "p99_ms": 14.029209
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 4.074417,
+              "p95_ms": 9.129584,
+              "p99_ms": 12.409875
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14862,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 3.838125,
+              "p95_ms": 8.938709,
+              "p99_ms": 16.3555
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 4.270042,
+              "p95_ms": 9.188084,
+              "p99_ms": 14.727084
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14862,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 3.711,
+              "p95_ms": 8.074375,
+              "p99_ms": 15.312
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 4.444583,
+              "p95_ms": 8.977833,
+              "p99_ms": 13.458375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14862,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 4.147333,
+              "p95_ms": 8.528041,
+              "p99_ms": 10.672375
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 5.166875,
+              "p95_ms": 8.631041,
+              "p99_ms": 11.985458
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14850,
+          "cache_hits": 1675,
+          "origin_queries": 13175,
+          "cache_mgets": 781,
+          "cache_mget_keys": 14522,
+          "cache_puts": 324,
+          "cache_msets": 748,
+          "cache_mset_keys": 12851,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 4.037959,
+              "p95_ms": 8.590875,
+              "p99_ms": 12.074
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 5.04675,
+              "p95_ms": 12.1305,
+              "p99_ms": 14.268042
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14849,
+          "cache_hits": 1674,
+          "origin_queries": 13175,
+          "cache_mgets": 761,
+          "cache_mget_keys": 14497,
+          "cache_puts": 334,
+          "cache_msets": 737,
+          "cache_mset_keys": 12841,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14862,
+              "p50_ms": 4.046666,
+              "p95_ms": 8.511208,
+              "p99_ms": 14.025916
+            },
+            "write": {
+              "count": 146,
+              "p50_ms": 4.978541,
+              "p95_ms": 8.788583,
+              "p99_ms": 10.798375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14848,
+          "cache_hits": 1673,
+          "origin_queries": 13175,
+          "cache_mgets": 777,
+          "cache_mget_keys": 14510,
+          "cache_puts": 324,
+          "cache_msets": 749,
+          "cache_mset_keys": 12851,
+          "checked": 12
+        }
+      ]
+    },
+    "detail-uniform-90:10 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 3.576375,
+              "p95_ms": 8.040458,
+              "p99_ms": 13.651792
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 3.906292,
+              "p95_ms": 8.998042,
+              "p99_ms": 16.836667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13523,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 4.490334,
+              "p95_ms": 9.654167,
+              "p99_ms": 14.632917
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 5.009084,
+              "p95_ms": 10.241959,
+              "p99_ms": 14.778667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13523,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 4.958583,
+              "p95_ms": 10.801083,
+              "p99_ms": 53.938083
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 5.399792,
+              "p95_ms": 11.481792,
+              "p99_ms": 134.972625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13523,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 2.936042,
+              "p95_ms": 6.852875,
+              "p99_ms": 10.488542
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 3.45075,
+              "p95_ms": 7.505625,
+              "p99_ms": 9.977
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13519,
+          "cache_hits": 8719,
+          "origin_queries": 4800,
+          "cache_mgets": 1644,
+          "cache_mget_keys": 12886,
+          "cache_puts": 589,
+          "cache_msets": 993,
+          "cache_mset_keys": 4211,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 3.908208,
+              "p95_ms": 9.796083,
+              "p99_ms": 17.502333
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 4.574458,
+              "p95_ms": 11.1035,
+              "p99_ms": 26.220583
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13518,
+          "cache_hits": 8718,
+          "origin_queries": 4800,
+          "cache_mgets": 1658,
+          "cache_mget_keys": 12963,
+          "cache_puts": 569,
+          "cache_msets": 996,
+          "cache_mset_keys": 4231,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 3.904416,
+              "p95_ms": 9.889041,
+              "p99_ms": 17.406791
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 4.518875,
+              "p95_ms": 10.348166,
+              "p99_ms": 14.60475
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13518,
+          "cache_hits": 8719,
+          "origin_queries": 4799,
+          "cache_mgets": 1677,
+          "cache_mget_keys": 12958,
+          "cache_puts": 582,
+          "cache_msets": 995,
+          "cache_mset_keys": 4217,
+          "checked": 12
+        }
+      ]
+    },
+    "detail-uniform-90:10 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 4.413833,
+              "p95_ms": 9.596875,
+              "p99_ms": 13.77075
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 4.937167,
+              "p95_ms": 10.567917,
+              "p99_ms": 15.377458
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13523,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 4.470417,
+              "p95_ms": 9.562667,
+              "p99_ms": 12.402125
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 4.9445,
+              "p95_ms": 10.101459,
+              "p99_ms": 13.325042
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13523,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 4.506417,
+              "p95_ms": 10.1745,
+              "p99_ms": 15.228208
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 4.992833,
+              "p95_ms": 11.514292,
+              "p99_ms": 17.472208
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13523,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 5.180792,
+              "p95_ms": 11.403167,
+              "p99_ms": 18.966542
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 5.722125,
+              "p95_ms": 11.715917,
+              "p99_ms": 20.563833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13518,
+          "cache_hits": 1408,
+          "origin_queries": 12110,
+          "cache_mgets": 1592,
+          "cache_mget_keys": 12991,
+          "cache_puts": 530,
+          "cache_msets": 1532,
+          "cache_mset_keys": 11580,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 5.130334,
+              "p95_ms": 11.790959,
+              "p99_ms": 22.702667
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 5.733,
+              "p95_ms": 13.526875,
+              "p99_ms": 38.291667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13518,
+          "cache_hits": 1410,
+          "origin_queries": 12108,
+          "cache_mgets": 1602,
+          "cache_mget_keys": 13016,
+          "cache_puts": 504,
+          "cache_msets": 1543,
+          "cache_mset_keys": 11604,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13523,
+              "p50_ms": 4.94375,
+              "p95_ms": 10.588542,
+              "p99_ms": 15.064875
+            },
+            "write": {
+              "count": 1485,
+              "p50_ms": 5.532959,
+              "p95_ms": 11.525459,
+              "p99_ms": 17.361084
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13518,
+          "cache_hits": 1409,
+          "origin_queries": 12109,
+          "cache_mgets": 1604,
+          "cache_mget_keys": 13010,
+          "cache_puts": 520,
+          "cache_msets": 1541,
+          "cache_mset_keys": 11589,
+          "checked": 12
+        }
+      ]
+    },
+    "detail-zoomed ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.787125,
+              "p95_ms": 7.519709,
+              "p99_ms": 10.610167
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.639875,
+              "p95_ms": 7.502208,
+              "p99_ms": 10.537625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.563167,
+              "p95_ms": 7.597834,
+              "p99_ms": 11.210917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.1905,
+              "p95_ms": 4.789875,
+              "p99_ms": 8.047417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14975,
+          "cache_hits": 11677,
+          "origin_queries": 3298,
+          "cache_mgets": 966,
+          "cache_mget_keys": 14644,
+          "cache_puts": 282,
+          "cache_msets": 590,
+          "cache_mset_keys": 3016,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.117291,
+              "p95_ms": 5.09825,
+              "p99_ms": 8.65025
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14970,
+          "cache_hits": 11672,
+          "origin_queries": 3298,
+          "cache_mgets": 957,
+          "cache_mget_keys": 14638,
+          "cache_puts": 277,
+          "cache_msets": 592,
+          "cache_mset_keys": 3021,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.081875,
+              "p95_ms": 5.140333,
+              "p99_ms": 8.052333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14970,
+          "cache_hits": 11672,
+          "origin_queries": 3298,
+          "cache_mgets": 973,
+          "cache_mget_keys": 14645,
+          "cache_puts": 285,
+          "cache_msets": 592,
+          "cache_mset_keys": 3013,
+          "checked": 0
+        }
+      ]
+    },
+    "detail-zoomed ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.60825,
+              "p95_ms": 7.728958,
+              "p99_ms": 12.023333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.538083,
+              "p95_ms": 7.552541,
+              "p99_ms": 11.0095
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.799125,
+              "p95_ms": 8.069458,
+              "p99_ms": 14.88925
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.41675,
+              "p95_ms": 7.1835,
+              "p99_ms": 9.664833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14957,
+          "cache_hits": 3403,
+          "origin_queries": 11554,
+          "cache_mgets": 701,
+          "cache_mget_keys": 14637,
+          "cache_puts": 296,
+          "cache_msets": 646,
+          "cache_mset_keys": 11258,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.587958,
+              "p95_ms": 6.987333,
+              "p99_ms": 9.974417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14955,
+          "cache_hits": 3401,
+          "origin_queries": 11554,
+          "cache_mgets": 689,
+          "cache_mget_keys": 14623,
+          "cache_puts": 295,
+          "cache_msets": 647,
+          "cache_mset_keys": 11259,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.470875,
+              "p95_ms": 7.471167,
+              "p99_ms": 13.291042
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14956,
+          "cache_hits": 3402,
+          "origin_queries": 11554,
+          "cache_mgets": 686,
+          "cache_mget_keys": 14621,
+          "cache_puts": 311,
+          "cache_msets": 632,
+          "cache_mset_keys": 11243,
+          "checked": 0
+        }
+      ]
+    },
+    "detail-zoomed-99:1 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 3.993083,
+              "p95_ms": 8.22175,
+              "p99_ms": 11.111333
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 4.539125,
+              "p95_ms": 8.868625,
+              "p99_ms": 21.389541
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14824,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 3.766292,
+              "p95_ms": 8.592834,
+              "p99_ms": 13.107459
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 4.072,
+              "p95_ms": 8.9205,
+              "p99_ms": 12.513459
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14824,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 3.9385,
+              "p95_ms": 8.615417,
+              "p99_ms": 12.542625
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 4.619625,
+              "p95_ms": 10.4725,
+              "p99_ms": 16.26725
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14824,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 2.47225,
+              "p95_ms": 5.871584,
+              "p99_ms": 9.173334
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 3.373375,
+              "p95_ms": 6.1245,
+              "p99_ms": 13.318375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14780,
+          "cache_hits": 11383,
+          "origin_queries": 3397,
+          "cache_mgets": 1077,
+          "cache_mget_keys": 14437,
+          "cache_puts": 301,
+          "cache_msets": 649,
+          "cache_mset_keys": 3096,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 2.2665,
+              "p95_ms": 5.562083,
+              "p99_ms": 8.066083
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 3.50375,
+              "p95_ms": 6.445333,
+              "p99_ms": 11.154042
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14776,
+          "cache_hits": 11379,
+          "origin_queries": 3397,
+          "cache_mgets": 1065,
+          "cache_mget_keys": 14424,
+          "cache_puts": 291,
+          "cache_msets": 653,
+          "cache_mset_keys": 3106,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 2.321666,
+              "p95_ms": 5.856958,
+              "p99_ms": 9.032958
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 3.443833,
+              "p95_ms": 7.513291,
+              "p99_ms": 10.321291
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14780,
+          "cache_hits": 11383,
+          "origin_queries": 3397,
+          "cache_mgets": 1071,
+          "cache_mget_keys": 14428,
+          "cache_puts": 284,
+          "cache_msets": 657,
+          "cache_mset_keys": 3113,
+          "checked": 12
+        }
+      ]
+    },
+    "detail-zoomed-99:1 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 4.028625,
+              "p95_ms": 11.465458,
+              "p99_ms": 95.22225
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 4.680875,
+              "p95_ms": 13.833041,
+              "p99_ms": 77.058291
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14824,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 3.042542,
+              "p95_ms": 6.601084,
+              "p99_ms": 9.579334
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 3.581709,
+              "p95_ms": 7.40025,
+              "p99_ms": 10.61325
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14824,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 3.000792,
+              "p95_ms": 7.061875,
+              "p99_ms": 16.96025
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 3.280458,
+              "p95_ms": 7.258125,
+              "p99_ms": 12.601667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14824,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 3.258375,
+              "p95_ms": 7.591708,
+              "p99_ms": 13.199625
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 3.922458,
+              "p95_ms": 7.362875,
+              "p99_ms": 13.829833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14765,
+          "cache_hits": 3351,
+          "origin_queries": 11414,
+          "cache_mgets": 800,
+          "cache_mget_keys": 14386,
+          "cache_puts": 331,
+          "cache_msets": 756,
+          "cache_mset_keys": 11083,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 2.772666,
+              "p95_ms": 6.856458,
+              "p99_ms": 16.626291
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 3.247958,
+              "p95_ms": 7.176625,
+              "p99_ms": 18.502375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14765,
+          "cache_hits": 3351,
+          "origin_queries": 11414,
+          "cache_mgets": 765,
+          "cache_mget_keys": 14346,
+          "cache_puts": 346,
+          "cache_msets": 743,
+          "cache_mset_keys": 11068,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 14824,
+              "p50_ms": 2.906041,
+              "p95_ms": 6.604791,
+              "p99_ms": 10.032583
+            },
+            "write": {
+              "count": 184,
+              "p50_ms": 3.613458,
+              "p95_ms": 8.121166,
+              "p99_ms": 10.648833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14764,
+          "cache_hits": 3350,
+          "origin_queries": 11414,
+          "cache_mgets": 786,
+          "cache_mget_keys": 14359,
+          "cache_puts": 339,
+          "cache_msets": 757,
+          "cache_mset_keys": 11075,
+          "checked": 12
+        }
+      ]
+    },
+    "detail-zoomed-90:10 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 4.620625,
+              "p95_ms": 10.011792,
+              "p99_ms": 17.870167
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 4.9305,
+              "p95_ms": 11.114792,
+              "p99_ms": 21.696834
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13496,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 3.617417,
+              "p95_ms": 7.684167,
+              "p99_ms": 10.690583
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 3.829,
+              "p95_ms": 8.1245,
+              "p99_ms": 11.704167
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13496,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 3.383417,
+              "p95_ms": 7.94725,
+              "p99_ms": 12.355458
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 3.674042,
+              "p95_ms": 8.391417,
+              "p99_ms": 13.468125
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13496,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 2.718959,
+              "p95_ms": 6.446125,
+              "p99_ms": 10.670417
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 3.254042,
+              "p95_ms": 6.9215,
+              "p99_ms": 13.215625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13469,
+          "cache_hits": 9459,
+          "origin_queries": 4010,
+          "cache_mgets": 1716,
+          "cache_mget_keys": 12844,
+          "cache_puts": 634,
+          "cache_msets": 896,
+          "cache_mset_keys": 3376,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 2.684958,
+              "p95_ms": 6.676791,
+              "p99_ms": 9.472875
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 3.356,
+              "p95_ms": 7.197125,
+              "p99_ms": 10.324541
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13469,
+          "cache_hits": 9459,
+          "origin_queries": 4010,
+          "cache_mgets": 1725,
+          "cache_mget_keys": 12855,
+          "cache_puts": 631,
+          "cache_msets": 897,
+          "cache_mset_keys": 3379,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 3.596875,
+              "p95_ms": 8.351334,
+              "p99_ms": 11.281834
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 4.392334,
+              "p95_ms": 8.819334,
+              "p99_ms": 11.580417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13469,
+          "cache_hits": 9459,
+          "origin_queries": 4010,
+          "cache_mgets": 1726,
+          "cache_mget_keys": 12890,
+          "cache_puts": 617,
+          "cache_msets": 902,
+          "cache_mset_keys": 3393,
+          "checked": 12
+        }
+      ]
+    },
+    "detail-zoomed-90:10 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 4.502625,
+              "p95_ms": 9.514458,
+              "p99_ms": 12.593875
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 4.979666,
+              "p95_ms": 10.507333,
+              "p99_ms": 13.231458
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13496,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 4.574667,
+              "p95_ms": 9.477875,
+              "p99_ms": 15.962667
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 5.080792,
+              "p95_ms": 9.876375,
+              "p99_ms": 17.145458
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13496,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 4.124917,
+              "p95_ms": 8.537792,
+              "p99_ms": 11.259584
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 4.512209,
+              "p95_ms": 8.868625,
+              "p99_ms": 13.102917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13496,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 4.978,
+              "p95_ms": 10.578417,
+              "p99_ms": 17.679875
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 5.5755,
+              "p95_ms": 11.089125,
+              "p99_ms": 17.112583
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13465,
+          "cache_hits": 2875,
+          "origin_queries": 10590,
+          "cache_mgets": 1664,
+          "cache_mget_keys": 12935,
+          "cache_puts": 541,
+          "cache_msets": 1522,
+          "cache_mset_keys": 10049,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 4.975292,
+              "p95_ms": 12.910708,
+              "p99_ms": 232.759958
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 5.632208,
+              "p95_ms": 15.76175,
+              "p99_ms": 174.502417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13466,
+          "cache_hits": 2809,
+          "origin_queries": 10657,
+          "cache_mgets": 1655,
+          "cache_mget_keys": 12943,
+          "cache_puts": 520,
+          "cache_msets": 1527,
+          "cache_mset_keys": 10136,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 13496,
+              "p50_ms": 4.613,
+              "p95_ms": 9.647167,
+              "p99_ms": 17.153583
+            },
+            "write": {
+              "count": 1512,
+              "p50_ms": 5.144917,
+              "p95_ms": 9.990208,
+              "p99_ms": 14.961917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13466,
+          "cache_hits": 2876,
+          "origin_queries": 10590,
+          "cache_mgets": 1666,
+          "cache_mget_keys": 12955,
+          "cache_puts": 532,
+          "cache_msets": 1521,
+          "cache_mset_keys": 10058,
+          "checked": 12
+        }
+      ]
+    },
+    "list-repeated ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 4.830917,
+              "p95_ms": 9.853834,
+              "p99_ms": 13.845459
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 4.435458,
+              "p95_ms": 9.328042,
+              "p99_ms": 12.840167
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 4.607458,
+              "p95_ms": 9.202917,
+              "p99_ms": 12.623125
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 1.967375,
+              "p95_ms": 4.82375,
+              "p99_ms": 7.882667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 15008,
+          "origin_queries": 0,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 1.974042,
+              "p95_ms": 4.864917,
+              "p99_ms": 7.973542
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 15008,
+          "origin_queries": 0,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 1.96625,
+              "p95_ms": 4.612292,
+              "p99_ms": 6.403333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 15008,
+          "origin_queries": 0,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ]
+    },
+    "list-repeated ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 4.501125,
+              "p95_ms": 9.036417,
+              "p99_ms": 12.047
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 5.180209,
+              "p95_ms": 11.529,
+              "p99_ms": 16.590417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 4.552,
+              "p95_ms": 9.984458,
+              "p99_ms": 17.119042
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 2.011792,
+              "p95_ms": 4.779708,
+              "p99_ms": 8.454667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 14993,
+          "origin_queries": 15,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 1.979833,
+              "p95_ms": 4.918042,
+              "p99_ms": 6.813625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 14993,
+          "origin_queries": 15,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 2.077042,
+              "p95_ms": 4.603792,
+              "p99_ms": 6.399917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 14993,
+          "origin_queries": 15,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ]
+    },
+    "list-repeated-99:1 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 4.765625,
+              "p95_ms": 9.262875,
+              "p99_ms": 11.759375
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 5.411333,
+              "p95_ms": 8.82075,
+              "p99_ms": 10.523083
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 7.367958,
+              "p95_ms": 4316.948791,
+              "p99_ms": 4943.394208
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 7.798125,
+              "p95_ms": 4802.722125,
+              "p99_ms": 5001.625375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 4.364208,
+              "p95_ms": 8.991166,
+              "p99_ms": 11.675875
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 4.798041,
+              "p95_ms": 9.162291,
+              "p99_ms": 11.492083
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 2.129834,
+              "p95_ms": 5.423542,
+              "p99_ms": 7.441334
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.618792,
+              "p95_ms": 7.114334,
+              "p99_ms": 9.552375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14744,
+          "origin_queries": 132,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 132,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 2.205625,
+              "p95_ms": 6.403125,
+              "p99_ms": 34.183666
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.350333,
+              "p95_ms": 7.937583,
+              "p99_ms": 19.059375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14744,
+          "origin_queries": 132,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 132,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 1.855,
+              "p95_ms": 3.9485,
+              "p99_ms": 5.796083
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 2.608041,
+              "p95_ms": 5.387583,
+              "p99_ms": 9.258041
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14745,
+          "origin_queries": 131,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 131,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "list-repeated-99:1 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 3.935375,
+              "p95_ms": 7.60025,
+              "p99_ms": 9.310458
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 4.177958,
+              "p95_ms": 8.405958,
+              "p99_ms": 9.914791
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 3.833083,
+              "p95_ms": 7.527583,
+              "p99_ms": 10.245875
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 4.171375,
+              "p95_ms": 7.902333,
+              "p99_ms": 12.800917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 4.637833,
+              "p95_ms": 9.185625,
+              "p99_ms": 10.95975
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 5.010958,
+              "p95_ms": 9.719375,
+              "p99_ms": 10.389375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 1.832334,
+              "p95_ms": 4.1875,
+              "p99_ms": 6.30425
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 2.7505,
+              "p95_ms": 5.437584,
+              "p99_ms": 6.530084
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14745,
+          "origin_queries": 131,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 131,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 2.085375,
+              "p95_ms": 4.689917,
+              "p99_ms": 6.590375
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.199167,
+              "p95_ms": 6.026459,
+              "p99_ms": 7.061167
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14746,
+          "origin_queries": 130,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 130,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14876,
+              "p50_ms": 2.032208,
+              "p95_ms": 4.901666,
+              "p99_ms": 6.479083
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.317416,
+              "p95_ms": 6.723416,
+              "p99_ms": 7.755875
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14744,
+          "origin_queries": 132,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 132,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "list-repeated-90:10 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 5.10675,
+              "p95_ms": 10.118083,
+              "p99_ms": 12.523542
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 5.655458,
+              "p95_ms": 10.392792,
+              "p99_ms": 12.484208
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 5.319459,
+              "p95_ms": 10.69375,
+              "p99_ms": 13.64025
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 5.834792,
+              "p95_ms": 11.434959,
+              "p99_ms": 14.669959
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 5.52175,
+              "p95_ms": 11.112167,
+              "p99_ms": 13.882959
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 6.044334,
+              "p95_ms": 11.616584,
+              "p99_ms": 14.361375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 3.857375,
+              "p95_ms": 8.352875,
+              "p99_ms": 10.650667
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 4.491542,
+              "p95_ms": 8.817167,
+              "p99_ms": 10.915584
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12227,
+          "origin_queries": 1306,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1306,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 3.974083,
+              "p95_ms": 9.235458,
+              "p99_ms": 12.932125
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 4.910791,
+              "p95_ms": 9.985416,
+              "p99_ms": 13.96675
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12224,
+          "origin_queries": 1309,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1309,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 3.937709,
+              "p95_ms": 9.033292,
+              "p99_ms": 13.331709
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 4.767375,
+              "p95_ms": 9.95325,
+              "p99_ms": 15.653834
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12220,
+          "origin_queries": 1313,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1313,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "list-repeated-90:10 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 5.396417,
+              "p95_ms": 11.0005,
+              "p99_ms": 13.507084
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 6.043,
+              "p95_ms": 11.514334,
+              "p99_ms": 14.648
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 5.62925,
+              "p95_ms": 13.059417,
+              "p99_ms": 18.385792
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 6.244084,
+              "p95_ms": 13.381375,
+              "p99_ms": 19.1705
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 5.5415,
+              "p95_ms": 11.441292,
+              "p99_ms": 16.361167
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 6.193708,
+              "p95_ms": 12.199542,
+              "p99_ms": 17.412625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 3.746667,
+              "p95_ms": 9.034208,
+              "p99_ms": 12.761542
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 4.624917,
+              "p95_ms": 9.976792,
+              "p99_ms": 17.248833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12222,
+          "origin_queries": 1311,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1311,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 4.009167,
+              "p95_ms": 9.069167,
+              "p99_ms": 12.669667
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 4.661167,
+              "p95_ms": 9.853208,
+              "p99_ms": 13.157
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12221,
+          "origin_queries": 1312,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1312,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13533,
+              "p50_ms": 3.869416,
+              "p95_ms": 8.711875,
+              "p99_ms": 12.237541
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 4.682166,
+              "p95_ms": 9.5685,
+              "p99_ms": 12.8345
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12222,
+          "origin_queries": 1311,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1311,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "list-varied ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 11.793792,
+              "p95_ms": 23.579167,
+              "p99_ms": 28.438334
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 10.933333,
+              "p95_ms": 21.448042,
+              "p99_ms": 27.59575
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 13.517333,
+              "p95_ms": 26.456292,
+              "p99_ms": 31.1395
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 17.156292,
+              "p95_ms": 35.646917,
+              "p99_ms": 94.774542
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 14.9015,
+              "p95_ms": 30.128125,
+              "p99_ms": 35.828958
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 14.228375,
+              "p95_ms": 28.152959,
+              "p99_ms": 34.73525
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ]
+    },
+    "list-varied ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 11.482959,
+              "p95_ms": 22.530459,
+              "p99_ms": 26.896334
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 10.970583,
+              "p95_ms": 21.175667,
+              "p99_ms": 25.580333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 13.384125,
+              "p95_ms": 25.945666,
+              "p99_ms": 31.258333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 16.8515,
+              "p95_ms": 33.301958,
+              "p99_ms": 39.190416
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 14.94675,
+              "p95_ms": 29.730208,
+              "p99_ms": 34.338208
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 15008,
+              "p50_ms": 14.051542,
+              "p95_ms": 27.6705,
+              "p99_ms": 32.859792
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ]
+    },
+    "list-varied-99:1 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 11.526791,
+              "p95_ms": 23.019666,
+              "p99_ms": 29.450208
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 11.94075,
+              "p95_ms": 22.410458,
+              "p99_ms": 29.873791
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 13.262833,
+              "p95_ms": 25.493166,
+              "p99_ms": 30.881666
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 13.780708,
+              "p95_ms": 26.061375,
+              "p99_ms": 30.96875
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 10.421375,
+              "p95_ms": 20.859375,
+              "p99_ms": 25.715834
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 10.49225,
+              "p95_ms": 21.3825,
+              "p99_ms": 23.459084
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 17.123458,
+              "p95_ms": 34.434292,
+              "p99_ms": 40.422625
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 17.638708,
+              "p95_ms": 34.119792,
+              "p99_ms": 47.301958
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14841,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14841,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 12.236583,
+              "p95_ms": 24.888416,
+              "p99_ms": 29.929916
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 12.513333,
+              "p95_ms": 23.272833,
+              "p99_ms": 30.435208
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14841,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14841,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 14.3025,
+              "p95_ms": 29.194084,
+              "p99_ms": 35.582042
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 13.696125,
+              "p95_ms": 27.363,
+              "p99_ms": 35.348959
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14841,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14841,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "list-varied-99:1 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 11.535667,
+              "p95_ms": 23.6745,
+              "p99_ms": 30.015
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 12.232125,
+              "p95_ms": 22.365333,
+              "p99_ms": 31.289208
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 13.937541,
+              "p95_ms": 26.776291,
+              "p99_ms": 31.809041
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 13.922708,
+              "p95_ms": 26.747375,
+              "p99_ms": 33.619166
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 10.251917,
+              "p95_ms": 20.667,
+              "p99_ms": 26.220083
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 9.972458,
+              "p95_ms": 21.429042,
+              "p99_ms": 33.456292
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 15.976708,
+              "p95_ms": 32.152541,
+              "p99_ms": 37.814458
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 15.482208,
+              "p95_ms": 30.676958,
+              "p99_ms": 37.523166
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14841,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14841,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 12.83925,
+              "p95_ms": 26.30175,
+              "p99_ms": 32.25175
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 12.827333,
+              "p95_ms": 26.968875,
+              "p99_ms": 44.361333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14841,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14841,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 14841,
+              "p50_ms": 13.856,
+              "p95_ms": 27.763875,
+              "p99_ms": 33.088792
+            },
+            "write": {
+              "count": 167,
+              "p50_ms": 13.536959,
+              "p95_ms": 27.493917,
+              "p99_ms": 36.260667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14841,
+          "cache_hits": 0,
+          "origin_queries": 14841,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14841,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "list-varied-90:10 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 9.132208,
+              "p95_ms": 17.84225,
+              "p99_ms": 22.378458
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 9.250791,
+              "p95_ms": 17.876791,
+              "p99_ms": 21.540583
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 14.056167,
+              "p95_ms": 27.330917,
+              "p99_ms": 32.87775
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 14.112709,
+              "p95_ms": 26.448209,
+              "p99_ms": 31.983917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 12.135375,
+              "p95_ms": 23.88275,
+              "p99_ms": 29.630875
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 12.677584,
+              "p95_ms": 23.761125,
+              "p99_ms": 28.546084
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 15.666125,
+              "p95_ms": 31.71,
+              "p99_ms": 39.02075
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 15.792333,
+              "p95_ms": 31.386541,
+              "p99_ms": 37.144583
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13515,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13515,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 14.466167,
+              "p95_ms": 28.281084,
+              "p99_ms": 33.360334
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 14.303667,
+              "p95_ms": 28.385459,
+              "p99_ms": 33.798625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13515,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13515,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 17.044042,
+              "p95_ms": 34.758125,
+              "p99_ms": 41.698625
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 17.064625,
+              "p95_ms": 34.391709,
+              "p99_ms": 40.507542
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13515,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13515,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "list-varied-90:10 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 11.516292,
+              "p95_ms": 23.671917,
+              "p99_ms": 31.349875
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 11.692792,
+              "p95_ms": 23.795209,
+              "p99_ms": 30.829334
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 13.961625,
+              "p95_ms": 27.060167,
+              "p99_ms": 32.882125
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 14.129292,
+              "p95_ms": 27.016209,
+              "p99_ms": 31.958084
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 12.881709,
+              "p95_ms": 25.785334,
+              "p99_ms": 31.982334
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 12.916959,
+              "p95_ms": 25.352292,
+              "p99_ms": 30.3885
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 16.284667,
+              "p95_ms": 32.40975,
+              "p99_ms": 38.595417
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 16.2945,
+              "p95_ms": 32.1615,
+              "p99_ms": 39.947375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13515,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13515,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 14.475875,
+              "p95_ms": 29.033416,
+              "p99_ms": 37.13625
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 14.465958,
+              "p95_ms": 28.71625,
+              "p99_ms": 36.6565
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13515,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13515,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "list": {
+              "count": 13515,
+              "p50_ms": 17.733125,
+              "p95_ms": 36.653958,
+              "p99_ms": 94.455375
+            },
+            "write": {
+              "count": 1493,
+              "p50_ms": 17.978875,
+              "p95_ms": 36.134416,
+              "p99_ms": 122.575458
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13515,
+          "cache_hits": 0,
+          "origin_queries": 13515,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13515,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "search-repeated ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 6.55975,
+              "p95_ms": 12.845833,
+              "p99_ms": 15.773333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 5.48275,
+              "p95_ms": 10.968834,
+              "p99_ms": 13.38475
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 6.562542,
+              "p95_ms": 12.687709,
+              "p99_ms": 15.318125
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 1.918,
+              "p95_ms": 4.303042,
+              "p99_ms": 5.555625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 15008,
+          "origin_queries": 0,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 2.076625,
+              "p95_ms": 4.702292,
+              "p99_ms": 6.263417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 15008,
+          "origin_queries": 0,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 1.885667,
+              "p95_ms": 4.6365,
+              "p99_ms": 8.108083
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 15008,
+          "origin_queries": 0,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ]
+    },
+    "search-repeated ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 5.427583,
+              "p95_ms": 11.286792,
+              "p99_ms": 18.051833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 6.827625,
+              "p95_ms": 13.199166,
+              "p99_ms": 17.236041
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 6.241625,
+              "p95_ms": 12.502541,
+              "p99_ms": 15.186
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 2.054458,
+              "p95_ms": 4.718083,
+              "p99_ms": 6.395542
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 14993,
+          "origin_queries": 15,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 2.12,
+              "p95_ms": 4.65,
+              "p99_ms": 5.947584
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 14993,
+          "origin_queries": 15,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 2.191958,
+              "p95_ms": 5.146583,
+              "p99_ms": 7.129416
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 14993,
+          "origin_queries": 15,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ]
+    },
+    "search-repeated-99:1 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 6.630625,
+              "p95_ms": 12.948917,
+              "p99_ms": 16.179209
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 6.866709,
+              "p95_ms": 13.647167,
+              "p99_ms": 16.582334
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 6.8155,
+              "p95_ms": 13.393333,
+              "p99_ms": 17.049417
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 7.080458,
+              "p95_ms": 13.197,
+              "p99_ms": 16.233583
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 6.721709,
+              "p95_ms": 12.982334,
+              "p99_ms": 16.191417
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 6.698542,
+              "p95_ms": 12.760042,
+              "p99_ms": 14.371334
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 2.233084,
+              "p95_ms": 5.599542,
+              "p99_ms": 7.698792
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.6465,
+              "p95_ms": 6.590959,
+              "p99_ms": 9.186875
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14744,
+          "origin_queries": 132,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 132,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 2.352167,
+              "p95_ms": 5.570417,
+              "p99_ms": 9.482208
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.62225,
+              "p95_ms": 8.075542,
+              "p99_ms": 11.495792
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14746,
+          "origin_queries": 130,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 130,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 2.258,
+              "p95_ms": 5.627667,
+              "p99_ms": 8.554458
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.511208,
+              "p95_ms": 7.04725,
+              "p99_ms": 11.323458
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14745,
+          "origin_queries": 131,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 131,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "search-repeated-99:1 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 6.470083,
+              "p95_ms": 12.834583,
+              "p99_ms": 15.565416
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 6.894083,
+              "p95_ms": 12.80225,
+              "p99_ms": 14.834333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 6.6025,
+              "p95_ms": 13.153875,
+              "p99_ms": 19.563833
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 7.075583,
+              "p95_ms": 13.379,
+              "p99_ms": 19.284291
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 6.53225,
+              "p95_ms": 12.964708,
+              "p99_ms": 15.577208
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 6.923458,
+              "p95_ms": 12.934958,
+              "p99_ms": 14.912667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14876,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 2.300583,
+              "p95_ms": 5.522166,
+              "p99_ms": 7.869916
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.747458,
+              "p95_ms": 6.798583,
+              "p99_ms": 8.071708
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14744,
+          "origin_queries": 132,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 132,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 2.270625,
+              "p95_ms": 5.344709,
+              "p99_ms": 7.089959
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.452209,
+              "p95_ms": 7.351167,
+              "p99_ms": 8.400292
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14744,
+          "origin_queries": 132,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 132,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14876,
+              "p50_ms": 2.227958,
+              "p95_ms": 5.586458,
+              "p99_ms": 7.596708
+            },
+            "write": {
+              "count": 132,
+              "p50_ms": 3.707917,
+              "p95_ms": 6.718958,
+              "p99_ms": 8.977917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14876,
+          "cache_hits": 14745,
+          "origin_queries": 131,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 131,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "search-repeated-90:10 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 8.616,
+              "p95_ms": 17.646666,
+              "p99_ms": 21.819
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 8.869833,
+              "p95_ms": 17.805916,
+              "p99_ms": 22.653
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 9.819583,
+              "p95_ms": 19.292,
+              "p99_ms": 24.025625
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 10.08925,
+              "p95_ms": 19.304458,
+              "p99_ms": 23.51075
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 9.392,
+              "p95_ms": 18.523833,
+              "p99_ms": 22.646167
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 9.998708,
+              "p95_ms": 19.28,
+              "p99_ms": 23.456792
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 4.596334,
+              "p95_ms": 10.810334,
+              "p99_ms": 14.846875
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 5.334625,
+              "p95_ms": 11.785917,
+              "p99_ms": 16.563709
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12215,
+          "origin_queries": 1318,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1318,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 4.68575,
+              "p95_ms": 10.577209,
+              "p99_ms": 14.146959
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 5.304917,
+              "p95_ms": 11.356792,
+              "p99_ms": 15.047667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12219,
+          "origin_queries": 1314,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1314,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 4.587834,
+              "p95_ms": 10.45425,
+              "p99_ms": 13.205292
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 5.257334,
+              "p95_ms": 11.334625,
+              "p99_ms": 14.625959
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12221,
+          "origin_queries": 1312,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1312,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "search-repeated-90:10 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 9.473542,
+              "p95_ms": 18.364042,
+              "p99_ms": 22.228
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 10.170167,
+              "p95_ms": 18.374,
+              "p99_ms": 23.168417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 9.614083,
+              "p95_ms": 18.790375,
+              "p99_ms": 23.828083
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 10.079667,
+              "p95_ms": 19.014,
+              "p99_ms": 24.454292
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 9.363334,
+              "p95_ms": 18.744167,
+              "p99_ms": 22.393834
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 9.784542,
+              "p95_ms": 18.826875,
+              "p99_ms": 22.28875
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13533,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 4.508833,
+              "p95_ms": 10.686708,
+              "p99_ms": 14.019875
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 5.288875,
+              "p95_ms": 11.307291,
+              "p99_ms": 15.203416
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12223,
+          "origin_queries": 1310,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1310,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 4.367375,
+              "p95_ms": 10.497292,
+              "p99_ms": 14.952375
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 5.266792,
+              "p95_ms": 11.278875,
+              "p99_ms": 16.052209
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12230,
+          "origin_queries": 1303,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1303,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13533,
+              "p50_ms": 4.480417,
+              "p95_ms": 10.196208,
+              "p99_ms": 13.483417
+            },
+            "write": {
+              "count": 1475,
+              "p50_ms": 5.2875,
+              "p95_ms": 11.024417,
+              "p99_ms": 14.113167
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13533,
+          "cache_hits": 12219,
+          "origin_queries": 1314,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 1314,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "search-varied ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 16.294083,
+              "p95_ms": 31.694166,
+              "p99_ms": 39.171166
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 15.848042,
+              "p95_ms": 30.859417,
+              "p99_ms": 37.390834
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 15.259167,
+              "p95_ms": 29.379542,
+              "p99_ms": 35.291417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 22.085625,
+              "p95_ms": 46.970791,
+              "p99_ms": 57.272333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 25.365209,
+              "p95_ms": 52.517375,
+              "p99_ms": 62.645542
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 23.882667,
+              "p95_ms": 51.147125,
+              "p99_ms": 64.880917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ]
+    },
+    "search-varied ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 16.086084,
+              "p95_ms": 31.149084,
+              "p99_ms": 39.295459
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 15.361958,
+              "p95_ms": 29.33675,
+              "p99_ms": 34.615833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 15.001541,
+              "p95_ms": 28.653583,
+              "p99_ms": 35.393666
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 20.929833,
+              "p95_ms": 43.835208,
+              "p99_ms": 54.733333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 24.895458,
+              "p95_ms": 52.606958,
+              "p99_ms": 64.991333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15008,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 15008,
+              "p50_ms": 23.099041,
+              "p95_ms": 49.735666,
+              "p99_ms": 61.947625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 15008,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 15007,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ]
+    },
+    "search-varied-99:1 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 17.624709,
+              "p95_ms": 34.710584,
+              "p99_ms": 48.041042
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 15.658542,
+              "p95_ms": 32.019375,
+              "p99_ms": 36.232
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 15.287,
+              "p95_ms": 29.694333,
+              "p99_ms": 35.960333
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 13.067042,
+              "p95_ms": 28.098958,
+              "p99_ms": 32.779833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 16.228666,
+              "p95_ms": 32.423625,
+              "p99_ms": 41.105916
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 14.005791,
+              "p95_ms": 32.631791,
+              "p99_ms": 39.384791
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 22.902416,
+              "p95_ms": 48.422958,
+              "p99_ms": 71.983291
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 21.443333,
+              "p95_ms": 48.955041,
+              "p99_ms": 75.862791
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14858,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14858,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 25.746167,
+              "p95_ms": 54.368625,
+              "p99_ms": 65.991459
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 21.214792,
+              "p95_ms": 58.185584,
+              "p99_ms": 69.602917
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14858,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14858,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 19.527959,
+              "p95_ms": 42.354292,
+              "p99_ms": 52.977875
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 16.274375,
+              "p95_ms": 41.870209,
+              "p99_ms": 53.746125
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14858,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14858,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "search-varied-99:1 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 16.635916,
+              "p95_ms": 32.320125,
+              "p99_ms": 40.332791
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 14.28225,
+              "p95_ms": 29.629833,
+              "p99_ms": 40.26675
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 15.403125,
+              "p95_ms": 29.103625,
+              "p99_ms": 35.23475
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 14.260333,
+              "p95_ms": 30.578167,
+              "p99_ms": 34.317208
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 16.159209,
+              "p95_ms": 32.24925,
+              "p99_ms": 41.808542
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 14.999084,
+              "p95_ms": 31.27325,
+              "p99_ms": 36.455209
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 21.066583,
+              "p95_ms": 42.828333,
+              "p99_ms": 50.834583
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 18.572458,
+              "p95_ms": 41.345291,
+              "p99_ms": 51.117333
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14858,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14858,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 25.609292,
+              "p95_ms": 51.781917,
+              "p99_ms": 61.829375
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 20.325833,
+              "p95_ms": 49.443792,
+              "p99_ms": 62.292833
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14858,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14858,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 14858,
+              "p50_ms": 21.505542,
+              "p95_ms": 44.416792,
+              "p99_ms": 54.860584
+            },
+            "write": {
+              "count": 150,
+              "p50_ms": 18.753834,
+              "p95_ms": 41.655584,
+              "p99_ms": 49.981625
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14858,
+          "cache_hits": 0,
+          "origin_queries": 14858,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 14858,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "search-varied-90:10 ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 15.958791,
+              "p95_ms": 31.020916,
+              "p99_ms": 38.171
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 15.627375,
+              "p95_ms": 30.8675,
+              "p99_ms": 39.44375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 15.236959,
+              "p95_ms": 29.364917,
+              "p99_ms": 36.199792
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 14.924667,
+              "p95_ms": 29.964125,
+              "p99_ms": 35.329667
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 16.241792,
+              "p95_ms": 31.434708,
+              "p99_ms": 38.867167
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 15.952333,
+              "p95_ms": 31.818833,
+              "p99_ms": 38.436292
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 24.190375,
+              "p95_ms": 49.901833,
+              "p99_ms": 58.335083
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 23.6045,
+              "p95_ms": 49.401417,
+              "p99_ms": 58.975458
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13489,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13489,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 22.653875,
+              "p95_ms": 49.312625,
+              "p99_ms": 59.406834
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 22.207125,
+              "p95_ms": 47.899875,
+              "p99_ms": 58.1065
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13489,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13489,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 21.434334,
+              "p95_ms": 49.669709,
+              "p99_ms": 313.903125
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 21.015917,
+              "p95_ms": 52.066625,
+              "p99_ms": 316.915959
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13489,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13489,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    },
+    "search-varied-90:10 ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 15.836917,
+              "p95_ms": 31.80075,
+              "p99_ms": 39.00175
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 15.22275,
+              "p95_ms": 32.092542,
+              "p99_ms": 39.921375
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 15.178375,
+              "p95_ms": 28.993917,
+              "p99_ms": 34.829125
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 14.435458,
+              "p95_ms": 28.7295,
+              "p99_ms": 34.597792
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 15.97675,
+              "p95_ms": 31.420084,
+              "p99_ms": 37.448417
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 15.650334,
+              "p95_ms": 30.459042,
+              "p99_ms": 37.056
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 24.206958,
+              "p95_ms": 50.577,
+              "p99_ms": 60.082833
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 23.751583,
+              "p95_ms": 50.485833,
+              "p99_ms": 61.112417
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13489,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13489,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 22.691041,
+              "p95_ms": 49.0925,
+              "p99_ms": 65.3425
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 22.072833,
+              "p95_ms": 48.421666,
+              "p99_ms": 63.29125
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13489,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13489,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "search": {
+              "count": 13489,
+              "p50_ms": 20.154,
+              "p95_ms": 40.688,
+              "p99_ms": 49.223875
+            },
+            "write": {
+              "count": 1519,
+              "p50_ms": 19.821541,
+              "p95_ms": 40.437541,
+              "p99_ms": 48.159416
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 13489,
+          "cache_hits": 0,
+          "origin_queries": 13489,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 13489,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 12
+        }
+      ]
+    }
+  }
+}
