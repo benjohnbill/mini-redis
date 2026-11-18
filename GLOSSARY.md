@@ -14,6 +14,7 @@ mini-redis 코드와 문서에서 쓰는 이름을 고정합니다. 용어는 gr
 |---|---|---|
 | **store** | key로 value를 넣고, 꺼내고, 지우는 대상입니다. 서버는 하나를 만들고, 테스트는 테스트마다 새로 만듭니다. "해시 테이블"은 `hash.c`의 `struct hash`만 가리키며, store와 섞어 쓰지 않습니다. | `struct store` |
 | **entry** | store 안에서 key 하나와 그 value를 함께 묶은 단위입니다. store가 key와 value의 바이트를 복사해서 갖고, 같은 key에 다시 넣으면 entry가 통째로 바뀝니다. | `struct entry` |
+| **hash seed** | store를 만들 때 무작위로 정하는 16바이트 값입니다. store는 key를 이 값을 섞는 SipHash 1-2로 hash하므로, 서버 밖에서는 key가 떨어질 버킷을 계산할 수 없습니다. | `hash_seed` |
 
 ## 외부 요청
 

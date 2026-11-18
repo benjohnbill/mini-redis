@@ -83,6 +83,7 @@ make format   # 모양 위반을 고치고, 바꾼 줄을 보여 줍니다
    | 만료 시각 | `expires_at` | `ts`, `t`, `expire_time` |
    | 만료 없음 | `STORE_NO_EXPIRY` | `0`, `NO_TTL` |
    | api 층이 받는 TTL 헤더 | `struct api_ttl_header *ttl_header` | `ttl`, `header` |
+   | store의 hash seed | `hash_seed` | `seed`, `key`, `sip_key` |
 
 5. **구조체에는 `typedef`를 붙이지 않고, 숫자 상수에는 이름을 붙입니다**(`REQUEST_MAX`). `struct`가 보여야 값인지 구조체인지 바로 알 수 있기 때문입니다.
 
@@ -143,7 +144,7 @@ make format   # 모양 위반을 고치고, 바꾼 줄을 보여 줍니다
 
 ## 측정 기록
 
-측정 한 번의 결과는 `docs/measurements/<도구>/`에 파일 하나로 남깁니다. `server/`는 `scripts/bench/bench.py`(`make bench`)의 결과이고, `cache-demo/`는 `scripts/bench/cache_bench.py`(`make cache-bench`)의 결과입니다. 같은 도구로 다시 잰 결과를 앞 결과와 나란히 비교하기 위해, 마일스톤이 아니라 도구로 폴더를 나눕니다.
+측정 한 번의 결과는 `docs/measurements/<도구>/`에 파일 하나로 남깁니다. `server/`는 `scripts/bench/bench.py`(`make bench`)의 결과이고, `cache-demo/`는 `scripts/bench/cache_bench.py`(`make cache-bench`)의 결과이고, `rehash-micro/`는 서버 없이 store를 직접 부르는 `scripts/bench/rehash_micro.c`(`make rehash-micro`)의 결과이고, `idle-wakeup/`은 요청이 없는 서버가 1초에 깨어나는 횟수를 재는 `scripts/bench/idle_wakeup.py`(`make idle-wakeup`)의 결과입니다. `hash-micro/`는 hash 함수 후보를 서버 없이 재는 실험 브랜치 `CJG-hash-bench`의 `scripts/bench/hash_micro.c`(`make hash-micro`)의 결과입니다. 이 도구는 쓰지 않는 외부 hash 구현을 함께 두므로 `main`에 넣지 않습니다. 같은 도구로 다시 잰 결과를 앞 결과와 나란히 비교하기 위해, 마일스톤이 아니라 도구로 폴더를 나눕니다.
 
 - **파일 이름:** `<세 자리 번호>-<이니셜>-<주제>.md`(예: `004-CJG-sqlite-grid.md`). 번호는 폴더마다 `001`부터 셉니다. 날짜는 이름에 넣지 않고 frontmatter에 적습니다.
 - **파일 하나는 측정 한 번입니다.** 시나리오는 파일로 나누지 않고 본문의 절로 나눕니다.

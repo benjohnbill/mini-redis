@@ -31,12 +31,15 @@
 
 #define PORT_MAX 65535
 #define LISTEN_URL_MAX 64
+#define RECEIVE_RESERVE_AFTER_BYTES (1024 * 1024)
 /* 아래 세 값은 빌드할 때 정하는 상수입니다(spec Q19). make bench가 조합마다
    -D로 바꿔 다시 빌드합니다(Makefile의 SERVER_FLAGS). */
-/* 요청이 없을 때 루프가 깨어나는 간격입니다. 청소 간격 S가 이보다 짧으면 실제
-   간격이 이 값으로 늘어나므로 S와 같게 둡니다(spec Q17의 "다시 볼 것"). */
-#ifndef POLL_INTERVAL_MS
-#define POLL_INTERVAL_MS 25
+/* 루프가 한 번에 잠드는 시간의 상한입니다. 루프는 다음 청소나 쉬는 연결 닫기가
+   필요한 시각까지 자지만(poll_timeout_decide), 신호가 stop_requested를 확인한
+   뒤와 mg_mgr_poll이 잠들기 전 사이에 오면 그 신호로는 깨어나지 못하므로 이
+   시간 안에 다시 확인합니다. */
+#ifndef POLL_TIMEOUT_MAX_MS
+#define POLL_TIMEOUT_MAX_MS 1000
 #endif
 /* 주기 청소의 간격 S(ms)와 한 번에 지우는 상한 K입니다(spec Q17, Q18). 잰 조합
    가운데 세 시나리오 모두에서 작은 GET의 p99가 10 ms 이하이고 회수 지연이 가장
@@ -54,6 +57,7 @@
    최대 MG_MAX_RECV_SIZE(약 16 MiB)까지 크므로, 128개면 최악 약 2 GiB입니다. */
 #define CONNECTION_MAX 128
 #define TTL_HEADER_NAME "TTL"
+#define DECIMAL_BASE 10
 /* mongoose의 head에서 헤더가 아닌 줄: 요청 줄과 헤더 끝의 빈 줄입니다. */
 #define HEAD_NON_HEADER_LINES 2
 
@@ -105,12 +109,19 @@ static bool message_has_too_many_headers(const struct mg_http_message *message);
 static size_t head_lines_count(struct mg_str head);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
-static bool message_has_full_body(struct mg_http_message *message);
+static bool body_is_complete(struct mg_http_message *message);
 static struct api_ttl_header
 ttl_header_read(const struct mg_connection *connection,
                 const struct mg_http_message *message);
 static size_t target_len(const struct mg_http_message *message);
 static void connection_close_if_idle(struct mg_connection *connection);
+static int poll_timeout_decide(struct mg_mgr *manager,
+                               const struct store *store,
+                               uint64_t sweep_deadline);
+static uint64_t sweep_wake_time_get(const struct store *store,
+                                    uint64_t sweep_deadline);
+static uint64_t idle_wake_time_get(struct mg_mgr *manager);
+static uint64_t time_earlier(uint64_t first, uint64_t second);
 static void sweep_run_if_due(struct store *store, uint64_t *deadline);
 static void sweep_trace(size_t deleted_count);
 
@@ -154,7 +165,7 @@ static void stop_signals_install(void)
     sigaction(SIGINT, &action, NULL);
 }
 
-/* 신호 처리기에서는 플래그만 세웁니다. 루프는 늦어도 POLL_INTERVAL_MS 뒤에 봅니다. */
+/* 신호 처리기에서는 플래그만 세웁니다. 루프는 늦어도 POLL_TIMEOUT_MAX_MS 뒤에 봅니다. */
 static void stop_signal_handle(int signum)
 {
     (void)signum;
@@ -173,7 +184,8 @@ static int server_run(struct store *store, int port)
     /* 0이면 첫 sweep_run_if_due가 "지금 + S"로 정합니다. */
     uint64_t sweep_deadline = 0;
     while (exit_code == 0 && !stop_requested) {
-        mg_mgr_poll(&manager, POLL_INTERVAL_MS);
+        mg_mgr_poll(&manager,
+                    poll_timeout_decide(&manager, store, sweep_deadline));
         /* handler가 모두 끝난 뒤라, 빌려준 value를 가진 handler가 없습니다
            (spec "빌린 value"). */
         sweep_run_if_due(store, &sweep_deadline);
@@ -339,9 +351,9 @@ static const char *status_reason(int status)
 
 /* mongoose는 수신 버퍼가 차면 MG_IO_SIZE(16 KiB)만큼만 늘리고, 늘릴 때마다 새
    버퍼를 할당해 복사합니다. 16 MiB body면 약 1,000번 복사해 ASan 빌드에서 PUT
-   하나에 30초가 걸렸습니다. 그래서 버퍼가 차면 두 배로 늘리되, 헤더가 알린 요청
-   길이보다 크게는 늘리지 않습니다. 메모리는 실제로 받은 바이트의 두 배를 넘지
-   않습니다. MG_EV_READ는 mongoose의 HTTP 처리가 끝난 뒤에 오므로, 버퍼를 옮겨도
+   하나에 30초가 걸렸습니다. 버퍼가 차면 요청 길이까지 두 배씩 늘립니다. body를
+   1 MiB 이상 받은 뒤에는 큰 중간 복사를 피하도록 요청 끝까지 한 번에 확보합니다.
+   MG_EV_READ는 mongoose의 HTTP 처리가 끝난 뒤에 오므로, 버퍼를 옮겨도
    mongoose가 들고 있는 옛 주소가 없습니다. 상한을 넘는 요청은 headers_check가
    이미 닫는 중으로 바꿨으므로 늘리지 않습니다. */
 static void receive_buffer_grow(struct mg_connection *connection)
@@ -357,8 +369,12 @@ static void receive_buffer_grow(struct mg_connection *connection)
     size_t request_len = message.message.len;
     /* chunked 요청은 요청 길이가 헤더 길이뿐이므로, 줄이지 않게 거릅니다. */
     if (request_len > received->size) {
-        mg_iobuf_resize(received,
-                        doubled < request_len ? doubled : request_len);
+        size_t capacity = doubled < request_len ? doubled : request_len;
+        if (received->len >= message.head.len &&
+            received->len - message.head.len >= RECEIVE_RESERVE_AFTER_BYTES) {
+            capacity = request_len;
+        }
+        mg_iobuf_resize(received, capacity);
     }
 }
 
@@ -440,15 +456,15 @@ static size_t head_lines_count(struct mg_str head)
     return line_count;
 }
 
-/* mongoose는 연결을 닫을 때 받다 만 요청도 받은 데까지를 body로 삼아 이 이벤트를
-   부르므로, 거르지 않으면 잘린 body가 저장됩니다. 서버가 오류 응답(408, 411,
-   413, 431, 503)을 보내고 닫는 중인 연결은 is_draining으로, client가 body를 다
-   보내지 않고 끊은 연결은 body 길이로 거릅니다. 끊긴 연결에는 응답을 보낼 수
-   없으므로 응답 없이 버립니다. */
+/* 이미 오류 응답(408, 411, 413, 431, 503)을 보내고 닫는 중인 연결의 요청과, body를
+   선언한 길이만큼 받지 못한 요청은 처리하지 않습니다. mongoose는 연결을 닫을 때
+   받다 만 요청도 받은 데까지를 body로 삼아 이 이벤트를 부르므로, 거르지 않으면
+   잘린 body가 value로 저장되거나 POST /mset의 앞 항목만 저장됩니다. client가 body를
+   보내다 스스로 끊은 경우가 뒤쪽입니다. */
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message)
 {
-    if (connection->is_draining || !message_has_full_body(message)) {
+    if (connection->is_draining || !body_is_complete(message)) {
         return;
     }
     struct store *store = connection->fn_data;
@@ -457,8 +473,10 @@ static void request_handle(struct mg_connection *connection,
         api_handle(store, mg_millis(), message->method.buf, message->method.len,
                    message->uri.buf, target_len(message), &ttl_header,
                    message->body.buf, message->body.len);
-    /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. */
+    /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. 복사했으므로 api
+       층이 응답을 위해 할당한 메모리(POST /mget)는 바로 해제합니다. */
     response_send(connection, &response);
+    api_response_destroy(&response);
     /* mongoose는 이 이벤트 전에 is_resp를 세우고, 세워져 있는 동안 같은 연결의
        다음 요청을 해석하지 않습니다. is_resp를 내리는 것은 mg_http_reply뿐인데
        응답을 mg_printf와 mg_send로 보내므로, 여기서 직접 내립니다. 내리지 않으면
@@ -468,25 +486,26 @@ static void request_handle(struct mg_connection *connection,
     headers_received_at_set(connection, false, 0);
 }
 
-/* 받은 body가 Content-Length만큼인지 봅니다. 평소에는 mongoose가
-   Content-Length만큼 받은 뒤에 요청을 넘기므로 항상 같습니다. 연결이 닫힐 때만
-   mongoose가 body 길이를 받은 바이트 수로 바꿔 넘기므로 짧아집니다(mongoose.c
-   http_cb의 MG_EV_CLOSE). mongoose는 protocol handler를 먼저 부르므로, 우리
-   handler가 MG_EV_CLOSE를 보기 전에 이 요청이 옵니다. 그래서 닫힘을 따로 표시해
-   거를 수 없고, 길이로 거릅니다. Content-Length가 없으면 선언한 길이를 0으로
-   봅니다. mongoose는 헤더 값 앞뒤의 공백을 잘라 두고, 숫자가 아닌
-   Content-Length가 든 요청은 넘기지 않으므로, mg_str_to_num은 mongoose가 읽은
-   길이와 같은 값을 읽습니다. */
-static bool message_has_full_body(struct mg_http_message *message)
+/* Content-Length에 적은 길이와 받은 body 길이가 정확히 같을 때만 true입니다.
+   요청은 선언한 길이를 정확히 받았을 때만 처리합니다. mongoose는 선언한 길이까지만
+   body로 자르므로 받은 쪽이 더 긴 경우는 없고, 짧은 경우는 client가 보내다 끊은
+   요청입니다. 헤더가 없으면 body가 없는 요청이라 true입니다. mongoose가 헤더를 읽을 때 값이 10진수 숫자인지
+   검사하므로 여기서는 숫자만 읽습니다. body 상한보다 큰 길이는 헤더 검사에서
+   413으로 이미 걸렀습니다. */
+static bool body_is_complete(struct mg_http_message *message)
 {
-    struct mg_str *header = mg_http_get_header(message, "Content-Length");
-    size_t declared_len = 0;
-    if (header != NULL &&
-        !mg_str_to_num(*header, 10, &declared_len, sizeof declared_len)) {
-        return false;
+    struct mg_str *length = mg_http_get_header(message, "Content-Length");
+    if (length == NULL) {
+        return true;
+    }
+    size_t declared = 0;
+    for (size_t i = 0; i < length->len && declared <= API_BODY_MAX; i++) {
+        if (length->buf[i] >= '0' && length->buf[i] <= '9') {
+            declared = declared * DECIMAL_BASE + (size_t)(length->buf[i] - '0');
+        }
     }
 
-    return message->body.len == declared_len;
+    return message->body.len == declared;
 }
 
 /* 요청의 TTL 헤더를 읽어, 첫 번째 값과 개수와 헤더를 다 받은 시각을 묶습니다.
@@ -528,7 +547,7 @@ static size_t target_len(const struct mg_http_message *message)
     return (size_t)(message->query.buf + message->query.len - message->uri.buf);
 }
 
-/* mongoose가 루프를 돌 때마다(POLL_INTERVAL_MS 이내) 연결마다 부릅니다. 기한이
+/* mongoose가 루프를 돌 때마다(늦어도 POLL_TIMEOUT_MAX_MS 이내) 연결마다 부릅니다. 기한이
    지났고 요청을 받는 중이면(수신 버퍼에 요청 조각이 남아 있으면) 408을 보내고,
    송신 버퍼가 빈 뒤 mongoose가 닫게 합니다. 이때 시각을 다시 적어 408을 보낼
    시간을 한 번 더 줍니다. 응답 뒤에 쉬는 연결, 응답을 받아 가지 않는 연결, 이미
@@ -548,6 +567,62 @@ static void connection_close_if_idle(struct mg_connection *connection)
     struct api_response response = api_reject_timeout();
     response_send_and_close(connection, &response);
     last_activity_set(connection, mg_millis());
+}
+
+/* 요청이 없는 동안 mg_mgr_poll이 잠들 시간(ms)을 정합니다. 다음 주기 청소가
+   할 일이 생기는 시각, 가장 이른 쉬는 연결 기한, 상한 가운데 가장 이른 시각까지
+   잡니다. 그 사이에 요청이 오면 mongoose가 바로 깨어나고, 다음 바퀴에서 다시
+   정합니다. 요청이 없는 서버가 할 일 없이 깨어나지 않게 하기 위해서입니다. */
+static int poll_timeout_decide(struct mg_mgr *manager,
+                               const struct store *store,
+                               uint64_t sweep_deadline)
+{
+    uint64_t now = mg_millis();
+    uint64_t wake_time = now + POLL_TIMEOUT_MAX_MS;
+    wake_time =
+        time_earlier(wake_time, sweep_wake_time_get(store, sweep_deadline));
+    wake_time = time_earlier(wake_time, idle_wake_time_get(manager));
+
+    return wake_time > now ? (int)(wake_time - now) : 0;
+}
+
+/* 다음 주기 청소가 지울 key가 생기는 시각입니다. 기간이 있는 key가 없으면
+   UINT64_MAX입니다. 가장 이른 만료 시각과 청소 기한 가운데 늦은 쪽을 고릅니다.
+   sweep_run_if_due는 청소 기한 전에는 청소하지 않으므로, 그 전에 깨어나도 할
+   일이 없기 때문입니다. 만료된 key가 계속 생기거나 K개를 넘어 남으면 청소 기한이
+   늦은 쪽이 되어, 지금처럼 S마다 깨어납니다. */
+static uint64_t sweep_wake_time_get(const struct store *store,
+                                    uint64_t sweep_deadline)
+{
+    uint64_t next_expires_at = store_get_next_expires_at(store);
+    if (next_expires_at == STORE_NO_EXPIRY) {
+        return UINT64_MAX;
+    }
+    return next_expires_at > sweep_deadline ? next_expires_at : sweep_deadline;
+}
+
+/* 열린 연결 가운데 쉬는 시간 기한이 가장 먼저 지나는 시각입니다. 연결이 없으면
+   UINT64_MAX입니다. connection_close_if_idle이 닫는 조건(마지막 활동부터
+   IDLE_TIMEOUT_MS)과 같은 시각을 계산합니다. */
+static uint64_t idle_wake_time_get(struct mg_mgr *manager)
+{
+    uint64_t earliest = UINT64_MAX;
+    for (struct mg_connection *connection = manager->conns; connection != NULL;
+         connection = connection->next) {
+        if (connection->is_listening) {
+            continue;
+        }
+        uint64_t idle_deadline =
+            connection_state_get(connection).last_activity + IDLE_TIMEOUT_MS;
+        earliest = time_earlier(earliest, idle_deadline);
+    }
+
+    return earliest;
+}
+
+static uint64_t time_earlier(uint64_t first, uint64_t second)
+{
+    return first < second ? first : second;
 }
 
 /* *deadline이 지났으면 주기 청소를 한 번 하고 *deadline을 다음 기한으로
