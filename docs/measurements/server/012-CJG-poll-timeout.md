@@ -1,10 +1,10 @@
 ---
-seq: 7
+seq: 12
 topic: poll-timeout
 date: 2026-11-18
 who: CJG
 commit: 0c361eb
-previous: 006-CJG-before-poll-timeout.md
+previous: 011-CJG-before-poll-timeout.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make -B build/bench/mini-redis: -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
 command: "python3 -B scripts/bench/bench.py build/bench/mini-redis lab a-quiet f-expire-burst g-expire-steady h-expire-large, 3회"
@@ -12,24 +12,24 @@ milestones: [perf]
 data: none
 ---
 
-# 007 다음에 할 일이 생길 때까지 잠드는 루프
+# 012 다음에 할 일이 생길 때까지 잠드는 루프
 
 ## 앞 기록과 달라진 점
 
 - **코드:** 루프가 25 ms씩 기다리지 않고, 매 바퀴 `poll_timeout_decide`가 정한 시간만큼 잡니다. 다음 주기 청소가 지울 key가 생기는 시각, 가장 이른 쉬는 연결 기한, 상한 1초 가운데 가장 이른 시각까지입니다(`0c361eb`). 매 바퀴 열린 연결을 한 번 훑고 store의 가장 이른 만료 시각을 읽는 계산이 더해졌습니다.
-- **측정 순서:** 이 기록을 006보다 먼저 쟀습니다. 006은 이 기록 바로 뒤에 같은 조건으로 잰 개선 전 숫자입니다.
+- **측정 순서:** 이 기록을 011보다 먼저 쟀습니다. 011은 이 기록 바로 뒤에 같은 조건으로 잰 개선 전 숫자입니다.
 - **머신 상태:** 사용 가능한 메모리는 약 7.2\~7.5 GiB, load average(1분)는 약 1.1\~2.9였습니다.
 
 ## 결론
 
-- **lab과 A, f\~h 모두 작은 GET의 p99가 목표(10 ms) 안입니다.** 매 바퀴 더한 계산이 지연과 처리량을 늘렸다는 신호는 없습니다. lab 처리량은 006이 초당 58,228\~75,641개, 이 기록이 63,272\~70,920개로 범위가 겹칩니다.
+- **lab과 A, f\~h 모두 작은 GET의 p99가 목표(10 ms) 안입니다.** 매 바퀴 더한 계산이 지연과 처리량을 늘렸다는 신호는 없습니다. lab 처리량은 011이 초당 58,228\~75,641개, 이 기록이 63,272\~70,920개로 범위가 겹칩니다.
 - **1회의 A와 g에서 p99가 6 ms대로 튀었습니다.** 같은 회에 client가 늦게 보낸 정도도 A가 max 16.6 ms, g가 max 12.5 ms로 컸고, 2, 3회에서는 다시 2 ms 아래였습니다. 005에서 본 것처럼 측정 client나 WSL이 멈춘 회로 봅니다.
 - **f의 회수 지연이 19\~24 ms에서 14\~16 ms로 줄었습니다.** 루프가 첫 key의 만료 시각에 바로 깨어나 청소를 시작하기 때문으로 봅니다. 회 수가 3회라서 확정하지는 않습니다.
-- **g와 h의 회수 지연은 006과 같은 범위입니다.** key가 계속 만료되는 g에서는 청소 기한이 늦은 쪽이 되어, 루프가 지금처럼 25 ms마다 청소합니다(g의 청소 횟수 401번, 006은 400번).
+- **g와 h의 회수 지연은 011과 같은 범위입니다.** key가 계속 만료되는 g에서는 청소 기한이 늦은 쪽이 되어, 루프가 지금처럼 25 ms마다 청소합니다(g의 청소 횟수 401번, 011은 400번).
 
 ## 결과
 
-`bench.py`의 출력을 3회 모았고, 단위는 ms입니다. 표의 칸은 006과 같습니다.
+`bench.py`의 출력을 3회 모았고, 단위는 ms입니다. 표의 칸은 011과 같습니다.
 
 ### lab (wrk 닫힌 루프)
 

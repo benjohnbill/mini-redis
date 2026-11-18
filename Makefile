@@ -128,6 +128,31 @@ $(BENCH_BUILD)/%.o: src/%.c | $(BENCH_BUILD)
 $(BENCH_BUILD):
 	mkdir -p $@
 
+# make rehash-micro: rehash 범위(위쪽 경계, 목표, 아래쪽 경계)를 바꾼 store의 저장, 조회
+# 시간과 메모리를 서버 없이 잽니다. make verify와 CI에는 넣지 않습니다. 설정마다
+# src/*.c를 -D로 따로 컴파일한 바이너리를 만들고, 회마다 설정을 번갈아 실행합니다.
+# 설정 순서에 따른 차이가 한쪽에 몰리지 않게 하기 위해서입니다. 설정 하나는
+# <위쪽 경계>_<목표>_<아래쪽 경계>이고, REHASH_KEYS는 넣을 key 수의 목록입니다.
+# 기본값은 측정 기록 rehash-micro/001의 조건입니다. 예(두 설정만):
+#   make rehash-micro REHASH_SETTINGS='4_2_1 1_0.5_0.25' REHASH_KEYS=4194304
+REHASH_SETTINGS ?= 8_4_2 4_2_1 2_1_0.5 1_0.5_0.25 0.5_0.25_0.125
+REHASH_KEYS     ?= 100000 1048576 4194304
+REHASH_ROUNDS   ?= 3
+REHASH_BINS     := $(REHASH_SETTINGS:%=$(BENCH_BUILD)/rehash_micro_%)
+.PHONY: rehash-micro
+rehash-micro: $(REHASH_BINS)
+	@for keys in $(REHASH_KEYS); do \
+	    for round in $$(seq $(REHASH_ROUNDS)); do \
+	        for bin in $(REHASH_BINS); do printf 'round=%s ' $$round; ./$$bin $$keys; done; \
+	    done; \
+	done
+
+$(BENCH_BUILD)/rehash_micro_%: scripts/bench/rehash_micro.c $(filter-out src/server.c src/api.c,$(LIB_SRCS)) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) \
+	    -DMAX_ELEMS_PER_BUCKET=$(word 1,$(subst _, ,$*)) \
+	    -DBEST_ELEMS_PER_BUCKET=$(word 2,$(subst _, ,$*)) \
+	    -DMIN_ELEMS_PER_BUCKET=$(word 3,$(subst _, ,$*)) $^ -o $@
+
 # SQLite는 별도 상품 데모에만 링크합니다.
 CACHE_DEMO := $(BUILD)/cache-demo
 .PHONY: cache-demo cache-functional
@@ -148,6 +173,38 @@ CACHE_BENCH_DEMO := $(BENCH_BUILD)/cache-demo
 CACHE_BENCH_FLAGS ?=
 cache-bench: $(CACHE_BENCH_DEMO) $(BENCH_SERVER)
 	python3 -B scripts/bench/cache_bench.py $(CACHE_BENCH_DEMO) $(BENCH_SERVER) $(CACHE_BENCH_FLAGS)
+
+# make cache-stage-bench: cache-bench와 같은 측정을 STAGE_TRACE를 켠 데모로 돌려,
+# 요청마다 묶음 안의 대기, 처리, 캐시 GET, 원본 조회, 캐시 PUT, 붙잡힘, 실제
+# 붙잡힘 시간을 STAGE_TRACE_DIR에 실행마다 파일 하나로 남깁니다(perf 원인 쪼개기).
+# 기록하는 비용이 지연에 섞이므로 cache-bench의 숫자와 나란히 비교하지 않습니다. 예:
+#   make cache-stage-bench CACHE_BENCH_FLAGS='--arrival burst --kind detail'
+#   python3 -B scripts/bench/stage_summary.py build/stage-trace
+CACHE_STAGE_DEMO := $(BENCH_BUILD)/cache-demo-stage
+STAGE_TRACE_DIR  ?= $(BUILD)/stage-trace
+.PHONY: cache-stage-bench
+cache-stage-bench: $(CACHE_STAGE_DEMO) $(BENCH_SERVER)
+	python3 -B scripts/bench/cache_bench.py $(CACHE_STAGE_DEMO) $(BENCH_SERVER) --stage-trace $(STAGE_TRACE_DIR) $(CACHE_BENCH_FLAGS)
+
+$(CACHE_STAGE_DEMO): demo/product_demo.c demo/cache_client.c demo/sqlite_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -DSTAGE_TRACE -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) demo/product_demo.c demo/cache_client.c \
+	    demo/sqlite_origin.c $(BENCH_MONGOOSE) -lsqlite3 -o $@
+
+# make cache-stage-bench-postgres: cache-stage-bench와 같은 구간 기록을 PostgreSQL
+# 원본으로 남깁니다. 원본 조회 구간이 PostgreSQL 왕복을 담습니다. 기록 파일 이름에는
+# DB 종류가 없으므로, SQLite 기록을 덮어쓰지 않게 기본 폴더를 따로 둡니다. 예:
+#   make cache-stage-bench-postgres POSTGRES_URL='postgresql://127.0.0.1/products' \
+#        POSTGRES_BENCH_FLAGS='--arrival burst --kind detail'
+CACHE_STAGE_POSTGRES := $(BENCH_BUILD)/cache-demo-postgres-stage
+STAGE_TRACE_POSTGRES_DIR ?= $(BUILD)/stage-trace-postgres
+.PHONY: cache-stage-bench-postgres
+cache-stage-bench-postgres: $(CACHE_STAGE_POSTGRES) $(BENCH_SERVER)
+	@test -n "$(POSTGRES_URL)" || { echo "POSTGRES_URL을 지정하세요"; exit 1; }
+	python3 -B scripts/bench/cache_bench.py $(CACHE_STAGE_POSTGRES) $(BENCH_SERVER) --db "$(POSTGRES_URL)" --stage-trace $(STAGE_TRACE_POSTGRES_DIR) $(POSTGRES_BENCH_FLAGS)
+
+$(CACHE_STAGE_POSTGRES): demo/product_demo.c demo/cache_client.c demo/postgres_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -DSTAGE_TRACE -I$(MONGOOSE_DIR) -I$(PG_INCLUDEDIR) $(BENCH_CFLAGS) demo/product_demo.c \
+	    demo/cache_client.c demo/postgres_origin.c $(BENCH_MONGOOSE) -L$(PG_LIBDIR) -lpq -o $@
 
 # 선택 PostgreSQL 원본의 같은 실험입니다. SQLite 측정과 별도 환경으로 다룹니다.
 CACHE_BENCH_POSTGRES := $(BENCH_BUILD)/cache-demo-postgres
