@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """상품 목록·검색의 조건 처리와 응답 캐시를 실제 mini-redis로 확인합니다."""
+import json
 import os
+import socket
 import sqlite3
 import sys
 import tempfile
 import time
 
-from api_test import Server, expect
+from api_test import HOST, REQUEST_TIMEOUT, Server, expect
 from cache_test import Demo, command_check, read_json, stopped_check
 
 FIXTURE = [(1, 'Apple', 100), (2, 'apple', 100), (3, '상품 한글', 200),
@@ -14,6 +16,14 @@ FIXTURE = [(1, 'Apple', 100), (2, 'apple', 100), (3, '상품 한글', 200),
 DEFAULTS = '/products'
 FULL_DEFAULTS = ('/products?q=&min_price=0&max_price=1000000000&sort=id'
                  '&offset=0&limit=20')
+LARGE_LIST = '/products?limit=100'
+# client가 읽지 않는 동안 응답 약 5 MB를 쌓아, 데모가 응답을 다 쓰지 못하고
+# 남기게 합니다. 보내는 쪽 소켓 버퍼는 Linux 기본 상한(tcp_wmem) 4 MiB까지
+# 늘어나므로 그보다 많이 쌓아야 합니다. 응답 하나는 약 5 KB입니다.
+PIPELINED_COUNT = 1000
+PIPELINED_PAGES = 100
+RECEIVE_BUFFER = 4096
+UNREAD_SECONDS = 0.5
 
 
 def ids(status_body):
@@ -67,6 +77,48 @@ def different_conditions_are_separate(demo):
     _, after = read_json(demo, '/stats')
     expect(after['origin_queries'] - before['origin_queries'], 6, '조건마다 원본 조회')
     expect(after['cache_misses'] - before['cache_misses'], 6, '조건마다 미적중')
+
+
+def large_list_arrives_whole(demo):
+    status, content_type, body = demo.request('GET', LARGE_LIST)
+    expect((status, content_type), (200, 'application/json'), '큰 목록 상태')
+    items = json.loads(body)['items']
+    expect([item['id'] for item in items], list(range(1, 101)), '큰 목록 100개')
+    expect(demo.request('GET', LARGE_LIST), (status, content_type, body),
+           '큰 목록 적중도 같은 바이트')
+
+
+def unread_large_lists_arrive_in_order(demo):
+    pages = [f'/products?limit=100&offset={100 * i}'
+             for i in range(PIPELINED_PAGES)]
+    bodies = {path: demo.request('GET', path)[2] for path in pages}
+    paths = [pages[i % PIPELINED_PAGES] for i in range(PIPELINED_COUNT)]
+    expected = [(200, bodies[path]) for path in paths]
+    requests = ''.join(f'GET {path} HTTP/1.1\r\nHost: {HOST}\r\n\r\n'
+                       for path in paths)
+    with socket.socket() as raw:
+        raw.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, RECEIVE_BUFFER)
+        raw.settimeout(REQUEST_TIMEOUT)
+        raw.connect((HOST, demo.port))
+        raw.sendall(requests.encode('ascii'))
+        time.sleep(UNREAD_SECONDS)
+        with raw.makefile('rb') as stream:
+            responses = [response_read(stream) for _ in paths]
+    expect(responses, expected, '읽지 않은 동안 쌓인 응답')
+
+
+def response_read(stream):
+    """연결 하나에서 응답 하나를 읽어 상태 코드와 body를 돌려줍니다."""
+    status_line = stream.readline()
+    length = 0
+    while (line := stream.readline()) not in (b'\r\n', b''):
+        name, _, value = line.partition(b':')
+        if name.strip().lower() == b'content-length':
+            length = int(value)
+    body = stream.read(length)
+    expect(len(body), length, f'응답 body 길이: {status_line!r}')
+
+    return int(status_line.split()[1]), body
 
 
 def search_and_range(fixture):
@@ -168,6 +220,10 @@ def main():
             print('PASS: 매개변수 순서와 기본값 표기가 달라도 같은 캐시를 쓴다')
             different_conditions_are_separate(demo)
             print('PASS: 조건이 다른 목록은 서로 다른 응답으로 분리한다')
+            large_list_arrives_whole(demo)
+            print('PASS: limit 100인 큰 목록 응답이 끊기지 않고 적중에도 같은 바이트로 온다')
+            unread_large_lists_arrive_in_order(demo)
+            print('PASS: client가 읽지 않는 동안 쌓인 큰 응답도 남은 바이트까지 순서대로 온다')
             cached = Demo(binary, fixture, arguments)
             demos.append(cached)
             cached.wait_until_listening()
@@ -190,7 +246,7 @@ def main():
             for demo in demos:
                 stopped_check(demo)
             stopped_check(redis)
-    print('list cache functional: 9개 통과')
+    print('list cache functional: 11개 통과')
 
 
 if __name__ == '__main__':

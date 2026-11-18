@@ -134,6 +134,10 @@ make cache-functional-postgres POSTGRES_URL='postgresql://127.0.0.1/products'
 
 PostgreSQL 연결이나 질의가 실패하면 상세·목록은 503 `origin_unavailable`, 수정·삭제는 rollback 뒤 503이며, 시작할 때 원본을 열 수 없으면 종료 코드 1입니다. 기본 빌드, `make verify`, CI는 libpq나 실행 중인 PostgreSQL을 요구하지 않습니다. `/stats`의 `origin` 값이 `sqlite` 또는 `postgresql`입니다. PostgreSQL 테스트는 임시 DB를 만들지 않으므로 지정한 DB의 `products` 내용을 seed 명령이 교체합니다.
 
+## 요청 처리
+
+데모 백엔드는 스레드 하나가 mongoose의 `mg_mgr_poll`을 돌며, 한 poll에 받은 요청을 하나씩 원본·캐시 처리까지 끝냅니다. 요청 하나를 처리한 직후 그 연결의 응답을 `mg_io_send`로 바로 소켓에 쓰고, 다 쓰지 못한 바이트는 mongoose가 다음 poll에서 보냅니다. 그래서 한 poll에 요청이 많이 와도, 앞 요청의 응답이 그 poll의 마지막 요청이 끝날 때까지 붙잡히지 않습니다.
+
 ## 성능 비교
 
 캐시 on/off 비교는 `make cache-bench`가 최적화 빌드로 실행합니다. 기본 입력은 상품 10,000개, 연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회, TTL 60초와 2초입니다. `--quick`은 준비 1초·측정 3초·1회로 경로만 확인합니다. `--kind detail|list|search`, `--scenario 이름`, `--warmup/--measure/--runs`, `--db`(PostgreSQL 연결 문자열)를 받습니다. 측정은 `make verify`와 CI에 넣지 않습니다. 남길 결과는 `--output <기록>.json`으로 저장해 [`docs/measurements/cache-demo/`](../docs/measurements/cache-demo/)에 측정 기록과 함께 둡니다(`CONVENTION.md`의 "측정 기록").
