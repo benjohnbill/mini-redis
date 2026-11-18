@@ -5,7 +5,8 @@
 
 `make bench`가 서버를 build/bench/에 만든 뒤 시나리오를 모두 차례로 돌립니다.
 하나만 돌릴 때는 이 스크립트에 시나리오 이름을 줍니다. 시나리오마다 새 서버를
-띄우고, 끝나면 SIGTERM으로 끕니다.
+띄우고, 끝나면 SIGTERM으로 끕니다. 끄기 직전에 서버의 최대 RSS(/proc의 VmHWM)를
+출력합니다. 시나리오 하나 동안 서버가 차지한 메모리의 최댓값이며, Linux에서만 읽습니다.
 
   lab      key 100,000개를 채운 뒤 작은 GET만 100연결로 보내 p50, p99, 초당
            처리량을 출력합니다(wrk 실험실). 방해가 없을 때의 기준선입니다.
@@ -94,6 +95,10 @@ RECOVERY_MAX_SECONDS = 30  # 열린 루프가 끝난 뒤 청소가 다 지우기
 RECOVERY_POLL_INTERVAL = 0.1
 SWEEP_TRACE_PREFIX = "sweep "
 
+# 메모리
+RSS_PEAK_FIELD = "VmHWM:"
+KIB_PER_MIB = 1024
+
 
 class Server:
     def __init__(self, binary):
@@ -138,6 +143,15 @@ class Server:
                 self.process.kill()
                 self.process.wait()
         return self.process.returncode
+
+    def rss_peak_read(self):
+        """서버가 시작한 뒤 차지한 메모리의 최댓값(VmHWM)을 KiB로 읽습니다. 커널이
+        프로세스마다 세는 값이라 서버를 끄기 전에 읽어야 합니다."""
+        with open(f"/proc/{self.process.pid}/status", encoding="ascii") as status:
+            for line in status:
+                if line.startswith(RSS_PEAK_FIELD):
+                    return int(line.split()[1])
+        raise BenchError(f"/proc/{self.process.pid}/status에 {RSS_PEAK_FIELD}가 없습니다")
 
     def output(self):
         self.errors.seek(0)
@@ -459,6 +473,8 @@ def scenario_run(binary, name):
     try:
         server.wait_until_listening()
         SCENARIOS[name](server)
+        rss_peak_kib = server.rss_peak_read()
+        print(f"최대 RSS: {rss_peak_kib / KIB_PER_MIB:,.1f} MiB", flush=True)
     finally:
         exit_code = server.stop()
     if exit_code != 0:
