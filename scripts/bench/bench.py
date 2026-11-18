@@ -5,7 +5,8 @@
 
 `make bench`가 서버를 build/bench/에 만든 뒤 시나리오를 모두 차례로 돌립니다.
 하나만 돌릴 때는 이 스크립트에 시나리오 이름을 줍니다. 시나리오마다 새 서버를
-띄우고, 끝나면 SIGTERM으로 끕니다.
+띄우고, 끝나면 SIGTERM으로 끕니다. 끄기 직전에 서버의 최대 RSS(/proc의 VmHWM)를
+출력합니다. 시나리오 하나 동안 서버가 차지한 메모리의 최댓값이며, Linux에서만 읽습니다.
 
   lab      key 100,000개를 채운 뒤 작은 GET만 100연결로 보내 p50, p99, 초당
            처리량을 출력합니다(wrk 실험실). 방해가 없을 때의 기준선입니다.
@@ -94,6 +95,10 @@ RECOVERY_MAX_SECONDS = 30  # 열린 루프가 끝난 뒤 청소가 다 지우기
 RECOVERY_POLL_INTERVAL = 0.1
 SWEEP_TRACE_PREFIX = "sweep "
 
+# 메모리
+RSS_PEAK_FIELD = "VmHWM:"
+KIB_PER_MIB = 1024
+
 
 class Server:
     def __init__(self, binary):
@@ -138,6 +143,15 @@ class Server:
                 self.process.kill()
                 self.process.wait()
         return self.process.returncode
+
+    def rss_peak_read(self):
+        """서버가 시작한 뒤 차지한 메모리의 최댓값(VmHWM)을 KiB로 읽습니다. 커널이
+        프로세스마다 세는 값이라 서버를 끄기 전에 읽어야 합니다."""
+        with open(f"/proc/{self.process.pid}/status", encoding="ascii") as status:
+            for line in status:
+                if line.startswith(RSS_PEAK_FIELD):
+                    return int(line.split()[1])
+        raise BenchError(f"/proc/{self.process.pid}/status에 {RSS_PEAK_FIELD}가 없습니다")
 
     def output(self):
         self.errors.seek(0)
@@ -286,9 +300,11 @@ def rehash(server):
 
 def grow_once(server):
     """지금의 hash.c는 버킷당 entry가 4개를 넘을 때 버킷을 늘립니다. 2²²개를 채우면
-    버킷 2²⁰개에 entry가 꼭 4개씩이라서, 새 key 하나를 저장하는 순간 버킷이 2²¹개로
-    늘며 entry 전부를 한 번 옮깁니다. key 수가 2배로 늘 때마다 한 번 생기는 이 멈춤을
-    봅니다. 방해 요청은 측정 동안 저장 한 번뿐입니다."""
+    버킷 2²⁰개에 entry가 꼭 4개씩이라서, 새 key 하나를 저장하는 순간 버킷 2²¹개의
+    새 배열을 만들고 초기화합니다. entry는 그 뒤의 요청마다 나눠 옮깁니다. key 수가
+    2배로 늘 때마다 한 번 생기는 이 멈춤을 봅니다. 방해 요청은 측정 동안 저장 한
+    번뿐입니다. 옮기기를 끝내려면 호출이 약 100만 번 필요해서, 이 시나리오는 옮기기의
+    시작만 봅니다."""
     prefill(server, REHASH_KEY_COUNT)
 
     def grow_request(index):
@@ -459,6 +475,8 @@ def scenario_run(binary, name):
     try:
         server.wait_until_listening()
         SCENARIOS[name](server)
+        rss_peak_kib = server.rss_peak_read()
+        print(f"최대 RSS: {rss_peak_kib / KIB_PER_MIB:,.1f} MiB", flush=True)
     finally:
         exit_code = server.stop()
     if exit_code != 0:

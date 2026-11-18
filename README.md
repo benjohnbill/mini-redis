@@ -103,7 +103,7 @@ M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파�
 ## 알려진 한계
 
 - eviction(메모리가 가득 찰 때 key를 내보내는 정책)은 LMS에 없어 구현하지 않습니다.
-- **key 수가 2배로 늘어나는 순간 서버가 한 번 멈춥니다.** store가 약 13만 개를 넘으면 그 멈춤이 M3의 목표(작은 GET의 p99 10 ms 이하)를 넘고, 400만 개에서는 약 310\~350 ms입니다([측정 결과](docs/milestones/concurrency/spec.md#측정-결과)).
+- **key 수가 2배로 늘어나는 순간 서버가 한 번 짧게 멈춥니다.** entry는 이후 요청마다 나눠 옮기지만, 새 버킷 배열을 만들고 초기화하는 일은 한 번에 합니다. 400만 개에서 그 멈춤이 약 34\~46 ms이고, 작은 GET의 p99는 M3의 목표(10 ms 이하) 안입니다([측정 기록](docs/measurements/server/007-DA-incremental-rehash.md)).
 - **16 MiB value를 저장하는 동안 서버가 약 12 ms 멈춥니다.** 상한 크기의 value를 초당 5번 저장하면 작은 GET의 p99가 목표를 약 1 ms 넘습니다([측정 결과](docs/milestones/concurrency/spec.md#측정-결과)).
 - **요청이 없어도 서버가 초당 40번 깨어납니다.** 주기 청소가 25 ms 간격을 지키기 때문입니다([측정 결과](docs/milestones/expire/spec.md#측정-결과)).
 - **key의 해시에 무작위 seed를 섞지 않습니다.** 같은 버킷에 떨어지는 key를 골라 넣으면 조회가 느려집니다([Redis와 대조](docs/milestones/store/spec.md#redis와-대조)).
