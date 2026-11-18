@@ -69,12 +69,13 @@ class Stream:
     """요청을 interval_ns마다 하나씩 내고, 연결들에 차례로 맡깁니다.
 
     next_request는 몇 번째 요청인지 받아 Request를 돌려주고, 더 보낼 것이 없으면
-    None을 돌려줍니다."""
+    None을 돌려줍니다. 첫 요청은 측정을 시작하고 start_ns 뒤에 냅니다."""
 
-    def __init__(self, connections, interval_ns, next_request):
+    def __init__(self, connections, interval_ns, next_request, start_ns=0):
         self.connections = connections
         self.interval_ns = interval_ns
         self.next_request = next_request
+        self.start_ns = start_ns
         self.index = 0
         self.next_ns = 0
         self.is_finished = False
@@ -121,8 +122,8 @@ class Run:
             opened.append(connection)
         return opened
 
-    def stream_add(self, connections, interval_ns, next_request):
-        self.streams.append(Stream(connections, interval_ns, next_request))
+    def stream_add(self, connections, interval_ns, next_request, start_ns=0):
+        self.streams.append(Stream(connections, interval_ns, next_request, start_ns))
 
     def run(self):
         gc.disable()
@@ -140,7 +141,7 @@ class Run:
         started = time.perf_counter_ns()
         end = started + self.duration_ns
         for stream in self.streams:
-            stream.next_ns = started
+            stream.next_ns = started + stream.start_ns
         while True:
             now = time.perf_counter_ns()
             next_ns = self.streams_release(now, end)
