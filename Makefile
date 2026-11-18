@@ -39,9 +39,9 @@ MONGOOSE_OBJ   := $(BUILD)/mongoose.o
 # 이를 받아들입니다.
 MONGOOSE_FLAGS := -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752
 
-.PHONY: all test functional verify lint format clean bench cache-demo cache-functional cache-bench cache-demo-postgres cache-functional-postgres cache-bench-postgres
+.PHONY: all test functional verify lint format clean bench idle-wakeup cache-demo cache-functional cache-bench cache-demo-postgres cache-functional-postgres cache-bench-postgres
 
-# 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_INTERVAL_MS, SWEEP_INTERVAL_MS,
+# 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_TIMEOUT_MAX_MS, SWEEP_INTERVAL_MS,
 # SWEEP_MAX_COUNT를 빌드할 때 바꿉니다(spec Q19). 예:
 #   make -B build/mini-redis SERVER_FLAGS='-DSWEEP_INTERVAL_MS=50 -DSWEEP_MAX_COUNT=5'
 # 플래그만 바꾸면 make가 다시 빌드하지 않으므로 -B를 함께 씁니다.
@@ -110,6 +110,11 @@ BENCH_MONGOOSE := $(BENCH_BUILD)/mongoose.o
 bench: $(BENCH_SERVER)
 	python3 -B scripts/bench/bench.py $(BENCH_SERVER)
 
+# make idle-wakeup: 요청이 없는 서버가 1초에 몇 번 깨어나는지 잽니다(M7 perf).
+# /proc를 읽으므로 Linux에서만 돕니다. make bench와 같은 서버를 씁니다.
+idle-wakeup: $(BENCH_SERVER)
+	python3 -B scripts/bench/idle_wakeup.py $(BENCH_SERVER)
+
 $(BENCH_SERVER): src/server.c $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) -DSWEEP_TRACE $(SERVER_FLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) $< \
 	    $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) -o $@
@@ -122,6 +127,31 @@ $(BENCH_BUILD)/%.o: src/%.c | $(BENCH_BUILD)
 
 $(BENCH_BUILD):
 	mkdir -p $@
+
+# make rehash-micro: rehash 범위(위쪽 경계, 목표, 아래쪽 경계)를 바꾼 store의 저장, 조회
+# 시간과 메모리를 서버 없이 잽니다. make verify와 CI에는 넣지 않습니다. 설정마다
+# src/*.c를 -D로 따로 컴파일한 바이너리를 만들고, 회마다 설정을 번갈아 실행합니다.
+# 설정 순서에 따른 차이가 한쪽에 몰리지 않게 하기 위해서입니다. 설정 하나는
+# <위쪽 경계>_<목표>_<아래쪽 경계>이고, REHASH_KEYS는 넣을 key 수의 목록입니다.
+# 기본값은 측정 기록 rehash-micro/001의 조건입니다. 예(두 설정만):
+#   make rehash-micro REHASH_SETTINGS='4_2_1 1_0.5_0.25' REHASH_KEYS=4194304
+REHASH_SETTINGS ?= 8_4_2 4_2_1 2_1_0.5 1_0.5_0.25 0.5_0.25_0.125
+REHASH_KEYS     ?= 100000 1048576 4194304
+REHASH_ROUNDS   ?= 3
+REHASH_BINS     := $(REHASH_SETTINGS:%=$(BENCH_BUILD)/rehash_micro_%)
+.PHONY: rehash-micro
+rehash-micro: $(REHASH_BINS)
+	@for keys in $(REHASH_KEYS); do \
+	    for round in $$(seq $(REHASH_ROUNDS)); do \
+	        for bin in $(REHASH_BINS); do printf 'round=%s ' $$round; ./$$bin $$keys; done; \
+	    done; \
+	done
+
+$(BENCH_BUILD)/rehash_micro_%: scripts/bench/rehash_micro.c $(filter-out src/server.c src/api.c,$(LIB_SRCS)) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) \
+	    -DMAX_ELEMS_PER_BUCKET=$(word 1,$(subst _, ,$*)) \
+	    -DBEST_ELEMS_PER_BUCKET=$(word 2,$(subst _, ,$*)) \
+	    -DMIN_ELEMS_PER_BUCKET=$(word 3,$(subst _, ,$*)) $^ -o $@
 
 # SQLite는 별도 상품 데모에만 링크합니다.
 CACHE_DEMO := $(BUILD)/cache-demo

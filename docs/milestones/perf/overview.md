@@ -51,10 +51,10 @@ LMS에 따로 있는 요구사항은 아닙니다. L8(동시성 문제)과 L17(�
 
 | 증상 | 어디서 | 얼마나 | 원인 | 분류 (잠정) | 기존 한계 |
 |---|---|---|---|---|---|
-| 버킷을 늘리는 rehash 한 번에 서버가 멈춤 | [`server/005`](../../measurements/server/005-CJG-baseline.md) E | 작은 GET p99 443\~587 ms, 늘리는 저장 535\~676 ms | | 범용 | 예 |
+| 버킷을 늘리는 rehash 한 번에 서버가 멈춤 | [`server/005`](../../measurements/server/005-CJG-baseline.md) E | 작은 GET p99 443\~587 ms, 늘리는 저장 535\~676 ms | `hash.c`의 `rehash`가 entry 전부를 한 번에 옮김. 나눠 옮기도록 바꾼 뒤 다른 머신에서 p99 233\~250 → 0.21\~0.22 ms([`server/006`](../../measurements/server/006-DA-rehash-baseline.md) → [`server/007`](../../measurements/server/007-DA-incremental-rehash.md)) | 범용 | 예 |
 | 16 MiB value를 저장하는 동안 서버가 멈춤 | [`server/005`](../../measurements/server/005-CJG-baseline.md) B | 작은 GET p99 24\~85 ms, 저장 p50 29\~44 ms | | 범용 | 예 |
 | 측정 client가 멈춘 회에 p99가 튐 | [`server/005`](../../measurements/server/005-CJG-baseline.md) f 3회째, A 2회째 | p99 최대 117 ms, client 늦음 max 최대 43 ms | 측정 client(python)나 WSL로 추정, 확인하지 않음 | 측정 도구 | |
-| 요청이 없어도 서버가 초당 40번 깨어남 | `server/004` | 초당 40번 | | 범용 | 예 |
+| 요청이 없어도 서버가 초당 40번 깨어남 | `server/004`, [`idle-wakeup/001`](../../measurements/idle-wakeup/001-CJG-baseline.md) | 초당 약 40번 | 할 일과 상관없이 `mg_mgr_poll`이 25 ms(`POLL_INTERVAL_MS`)마다 깨어남 | 범용 | 예 |
 | 상세 조회에서 캐시를 켜면 느려짐 | `cache-demo/` 상세 | p50 약 1.4 → 8.6 ms, 적중률 33\~53% | | 미정 | |
 | 다양한 조건에서 cache on의 p95가 튐 | `cache-demo/` 목록·검색 다양 | p95 최대 약 496 ms | 확인하지 않음 | 미정 | |
 | 수정이 섞이면 목록·검색 적중률이 떨어짐 | `cache-demo/` 반복 90:10 | 적중률 약 90% | 목록·검색 캐시 전체를 무효화하는 설계 | 구체 | 예 |
@@ -68,6 +68,10 @@ README의 나머지 한계 가운데 eviction은 LMS에 없어 이 표에 넣지
 | 후보 | client | 요청 패턴 | 실험 브랜치 |
 |---|---|---|---|
 | | | | |
+
+## 실험 아이디어
+
+증상표 밖에서 떠오른 개선 아이디어는 [`ideas/`](ideas/)에 파일 하나씩 둡니다. 파일마다 관찰 대상, 측정 방법, 결과(측정 기록 링크와 결정)를 적습니다.
 
 ## 탐구할 문제
 

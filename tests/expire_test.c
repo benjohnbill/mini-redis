@@ -70,6 +70,8 @@ static struct api_response put_with_ttl_headers(struct store *store,
                                                 size_t count);
 static void expect_bad_ttl(struct store *store, struct api_response response);
 static void expect_ttl_rejected(const char *ttl);
+static void next_expiry_is_none_without_expiring_keys(void);
+static void next_expiry_is_earliest_expiry(void);
 static void store_set_expiring(struct store *store, const char *key,
                                uint64_t expires_at);
 static bool key_is_kept(struct store *store, const char *key);
@@ -500,6 +502,32 @@ static void expect_ttl_rejected(const char *ttl)
     store_destroy(store);
 }
 
+static void next_expiry_is_none_without_expiring_keys(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    TEST_CHECK(store_get_next_expires_at(store) == STORE_NO_EXPIRY);
+    TEST_ASSERT(store_set(store, "forever", 7, "v", 1, STORE_NO_EXPIRY));
+
+    TEST_CHECK(store_get_next_expires_at(store) == STORE_NO_EXPIRY);
+
+    store_destroy(store);
+}
+
+static void next_expiry_is_earliest_expiry(void)
+{
+    struct store *store = store_create();
+    TEST_ASSERT(store != NULL);
+    store_set_expiring(store, "late", 3000);
+    store_set_expiring(store, "early", 1000);
+    TEST_CHECK(store_get_next_expires_at(store) == 1000);
+
+    TEST_CHECK(store_delete(store, 0, "early", 5));
+    TEST_CHECK(store_get_next_expires_at(store) == 3000);
+
+    store_destroy(store);
+}
+
 static void store_set_expiring(struct store *store, const char *key,
                                uint64_t expires_at)
 {
@@ -621,5 +649,9 @@ TEST_LIST = {
     {"기간이 있는 key를 많이 넣고 무작위로 지우고 덮어써도 남은 key를 모두 "
      "조회하고 만료 순서대로 청소된다",
      sweep_order_survives_random_changes},
+    {"기간이 있는 key가 없으면 다음 만료 시각은 만료 없음이다",
+     next_expiry_is_none_without_expiring_keys},
+    {"다음 만료 시각은 남아 있는 기간 있는 key 가운데 가장 이른 만료 시각이다",
+     next_expiry_is_earliest_expiry},
     {NULL, NULL},
 };

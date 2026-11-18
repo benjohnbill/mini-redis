@@ -33,10 +33,12 @@
 #define LISTEN_URL_MAX 64
 /* 아래 세 값은 빌드할 때 정하는 상수입니다(spec Q19). make bench가 조합마다
    -D로 바꿔 다시 빌드합니다(Makefile의 SERVER_FLAGS). */
-/* 요청이 없을 때 루프가 깨어나는 간격입니다. 청소 간격 S가 이보다 짧으면 실제
-   간격이 이 값으로 늘어나므로 S와 같게 둡니다(spec Q17의 "다시 볼 것"). */
-#ifndef POLL_INTERVAL_MS
-#define POLL_INTERVAL_MS 25
+/* 루프가 한 번에 잠드는 시간의 상한입니다. 루프는 다음 청소나 쉬는 연결 닫기가
+   필요한 시각까지 자지만(poll_timeout_decide), 신호가 stop_requested를 확인한
+   뒤와 mg_mgr_poll이 잠들기 전 사이에 오면 그 신호로는 깨어나지 못하므로 이
+   시간 안에 다시 확인합니다. */
+#ifndef POLL_TIMEOUT_MAX_MS
+#define POLL_TIMEOUT_MAX_MS 1000
 #endif
 /* 주기 청소의 간격 S(ms)와 한 번에 지우는 상한 K입니다(spec Q17, Q18). 잰 조합
    가운데 세 시나리오 모두에서 작은 GET의 p99가 10 ms 이하이고 회수 지연이 가장
@@ -110,6 +112,13 @@ ttl_header_read(const struct mg_connection *connection,
                 const struct mg_http_message *message);
 static size_t target_len(const struct mg_http_message *message);
 static void connection_close_if_idle(struct mg_connection *connection);
+static int poll_timeout_decide(struct mg_mgr *manager,
+                               const struct store *store,
+                               uint64_t sweep_deadline);
+static uint64_t sweep_wake_time_get(const struct store *store,
+                                    uint64_t sweep_deadline);
+static uint64_t idle_wake_time_get(struct mg_mgr *manager);
+static uint64_t time_earlier(uint64_t first, uint64_t second);
 static void sweep_run_if_due(struct store *store, uint64_t *deadline);
 static void sweep_trace(size_t deleted_count);
 
@@ -153,7 +162,7 @@ static void stop_signals_install(void)
     sigaction(SIGINT, &action, NULL);
 }
 
-/* 신호 처리기에서는 플래그만 세웁니다. 루프는 늦어도 POLL_INTERVAL_MS 뒤에 봅니다. */
+/* 신호 처리기에서는 플래그만 세웁니다. 루프는 늦어도 POLL_TIMEOUT_MAX_MS 뒤에 봅니다. */
 static void stop_signal_handle(int signum)
 {
     (void)signum;
@@ -172,7 +181,8 @@ static int server_run(struct store *store, int port)
     /* 0이면 첫 sweep_run_if_due가 "지금 + S"로 정합니다. */
     uint64_t sweep_deadline = 0;
     while (exit_code == 0 && !stop_requested) {
-        mg_mgr_poll(&manager, POLL_INTERVAL_MS);
+        mg_mgr_poll(&manager,
+                    poll_timeout_decide(&manager, store, sweep_deadline));
         /* handler가 모두 끝난 뒤라, 빌려준 value를 가진 handler가 없습니다
            (spec "빌린 value"). */
         sweep_run_if_due(store, &sweep_deadline);
@@ -504,7 +514,7 @@ static size_t target_len(const struct mg_http_message *message)
     return (size_t)(message->query.buf + message->query.len - message->uri.buf);
 }
 
-/* mongoose가 루프를 돌 때마다(POLL_INTERVAL_MS 이내) 연결마다 부릅니다. 기한이
+/* mongoose가 루프를 돌 때마다(늦어도 POLL_TIMEOUT_MAX_MS 이내) 연결마다 부릅니다. 기한이
    지났고 요청을 받는 중이면(수신 버퍼에 요청 조각이 남아 있으면) 408을 보내고,
    송신 버퍼가 빈 뒤 mongoose가 닫게 합니다. 이때 시각을 다시 적어 408을 보낼
    시간을 한 번 더 줍니다. 응답 뒤에 쉬는 연결, 응답을 받아 가지 않는 연결, 이미
@@ -524,6 +534,62 @@ static void connection_close_if_idle(struct mg_connection *connection)
     struct api_response response = api_reject_timeout();
     response_send_and_close(connection, &response);
     last_activity_set(connection, mg_millis());
+}
+
+/* 요청이 없는 동안 mg_mgr_poll이 잠들 시간(ms)을 정합니다. 다음 주기 청소가
+   할 일이 생기는 시각, 가장 이른 쉬는 연결 기한, 상한 가운데 가장 이른 시각까지
+   잡니다. 그 사이에 요청이 오면 mongoose가 바로 깨어나고, 다음 바퀴에서 다시
+   정합니다. 요청이 없는 서버가 할 일 없이 깨어나지 않게 하기 위해서입니다. */
+static int poll_timeout_decide(struct mg_mgr *manager,
+                               const struct store *store,
+                               uint64_t sweep_deadline)
+{
+    uint64_t now = mg_millis();
+    uint64_t wake_time = now + POLL_TIMEOUT_MAX_MS;
+    wake_time =
+        time_earlier(wake_time, sweep_wake_time_get(store, sweep_deadline));
+    wake_time = time_earlier(wake_time, idle_wake_time_get(manager));
+
+    return wake_time > now ? (int)(wake_time - now) : 0;
+}
+
+/* 다음 주기 청소가 지울 key가 생기는 시각입니다. 기간이 있는 key가 없으면
+   UINT64_MAX입니다. 가장 이른 만료 시각과 청소 기한 가운데 늦은 쪽을 고릅니다.
+   sweep_run_if_due는 청소 기한 전에는 청소하지 않으므로, 그 전에 깨어나도 할
+   일이 없기 때문입니다. 만료된 key가 계속 생기거나 K개를 넘어 남으면 청소 기한이
+   늦은 쪽이 되어, 지금처럼 S마다 깨어납니다. */
+static uint64_t sweep_wake_time_get(const struct store *store,
+                                    uint64_t sweep_deadline)
+{
+    uint64_t next_expires_at = store_get_next_expires_at(store);
+    if (next_expires_at == STORE_NO_EXPIRY) {
+        return UINT64_MAX;
+    }
+    return next_expires_at > sweep_deadline ? next_expires_at : sweep_deadline;
+}
+
+/* 열린 연결 가운데 쉬는 시간 기한이 가장 먼저 지나는 시각입니다. 연결이 없으면
+   UINT64_MAX입니다. connection_close_if_idle이 닫는 조건(마지막 활동부터
+   IDLE_TIMEOUT_MS)과 같은 시각을 계산합니다. */
+static uint64_t idle_wake_time_get(struct mg_mgr *manager)
+{
+    uint64_t earliest = UINT64_MAX;
+    for (struct mg_connection *connection = manager->conns; connection != NULL;
+         connection = connection->next) {
+        if (connection->is_listening) {
+            continue;
+        }
+        uint64_t idle_deadline =
+            connection_state_get(connection).last_activity + IDLE_TIMEOUT_MS;
+        earliest = time_earlier(earliest, idle_deadline);
+    }
+
+    return earliest;
+}
+
+static uint64_t time_earlier(uint64_t first, uint64_t second)
+{
+    return first < second ? first : second;
 }
 
 /* *deadline이 지났으면 주기 청소를 한 번 하고 *deadline을 다음 기한으로
