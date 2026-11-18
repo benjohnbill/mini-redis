@@ -168,8 +168,8 @@ static int port_parse(const char *text)
 /* glibc malloc의 mmap 기준값을 고정합니다. 고정하지 않으면 glibc는 mmap으로
    받은 덩어리가 해제될 때 그 크기로 기준값을 올립니다. 연결마다 16 MiB 수신
    버퍼를 잡고 해제하면 기준값이 16 MiB 근처로 올라, 그 뒤의 16 MiB value가
-   heap에서 할당되고 만료로 해제될 때 서버가 약 40~50 ms 멈췄습니다(docs/
-   measurements/server/019). 다른 C 라이브러리는 이 동작이 없으므로 glibc에서만
+   heap에서 할당되고 만료나 삭제로 해제될 때 서버가 약 35~50 ms 멈췄습니다
+   (docs/measurements/server/019, 022). 다른 C 라이브러리는 이 동작이 없으므로 glibc에서만
    부릅니다. */
 static void malloc_mmap_threshold_fix(void)
 {
