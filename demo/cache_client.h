@@ -36,6 +36,10 @@ struct cache_client {
     /* POST /mget을 보낸 횟수와 그 key 수의 합입니다. */
     uint64_t mgets;
     uint64_t mget_keys;
+    /* POST /mset을 보낸 횟수와 그 key 수의 합입니다. 실패는 put_failures에
+       더합니다. */
+    uint64_t msets;
+    uint64_t mset_keys;
 };
 
 /* cache_client_mget 한 번의 결과입니다. */
@@ -65,6 +69,12 @@ enum cache_mget_result cache_client_mget(struct cache_client *cache,
                                          size_t key_count, char **bodies);
 void cache_client_set(struct cache_client *cache, const char *key,
                       const char *body);
+/* keys[i]에 bodies[i]를 POST /mset 한 번으로 저장합니다. 캐시를 쓰지 않는
+   중이면 보내지 않습니다. 204가 아니면 PUT 실패처럼 put_failures에 더하고 캐시를
+   중단합니다. mini-redis가 메모리 부족으로 앞 key만 저장했을 수 있지만, 중단한
+   캐시는 재개할 때 새 실행 식별자를 쓰므로 그 key는 다시 읽히지 않습니다. */
+void cache_client_mset(struct cache_client *cache, const char *const *keys,
+                       const char *const *bodies, size_t key_count);
 /* A missing key is a successful invalidation; other failures suspend the cache. */
 void cache_client_delete(struct cache_client *cache, const char *key);
 /* Probes at most once per second while suspended; true means a new namespace. */

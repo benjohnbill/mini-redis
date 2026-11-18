@@ -21,6 +21,10 @@
 /* "<value 바이트 길이>\n"의 최대 길이입니다. size_t 20자리와 \n, '\0'이
    들어갑니다. */
 #define MGET_LENGTH_TEXT_MAX 24
+#define MSET_PATH "/mset"
+#define MSET_PATH_LEN (sizeof MSET_PATH - 1)
+#define MSET_ALLOWED_METHODS "POST"
+#define DECIMAL_BASE 10
 #define BUFFER_CAPACITY_INITIAL 256
 
 /* 지원하는 메서드가 store에 하는 일입니다. */
@@ -35,6 +39,18 @@ enum key_action {
 struct mget_key {
     size_t start;
     size_t len;
+};
+
+/* POST /mset body의 항목 하나입니다. key는 인코딩된 채로 body 안을 가리키고,
+   푼 key는 푼 key 버퍼의 key_start부터 key_len바이트입니다. value는 body 안을
+   가리킵니다. */
+struct mset_item {
+    const char *encoded_key;
+    size_t encoded_key_len;
+    size_t key_start;
+    size_t key_len;
+    const char *value;
+    size_t value_len;
 };
 
 /* 응답 body를 이어 붙이며 늘어나는 버퍼입니다. */
@@ -58,6 +74,22 @@ static bool mget_value_append(struct byte_buffer *buffer, const void *value,
                               size_t value_len);
 static bool byte_buffer_append(struct byte_buffer *buffer, const void *bytes,
                                size_t bytes_len);
+static bool path_is_mset(const char *path, size_t path_len);
+static struct api_response
+mset_request_handle(struct store *store, const char *method, size_t method_len,
+                    const struct api_ttl_header *ttl_header, const char *body,
+                    size_t body_len);
+static bool mset_items_split(const char *body, size_t body_len,
+                             struct mset_item *items, size_t *item_count);
+static bool mset_value_len_parse(const char *text, size_t text_len,
+                                 size_t *value_len);
+static const char *mset_keys_decode(struct mset_item *items, size_t item_count,
+                                    char *decoded);
+static struct api_response mset_items_store(struct store *store,
+                                            const char *decoded,
+                                            const struct mset_item *items,
+                                            size_t item_count,
+                                            uint64_t expires_at);
 static bool path_is_keys(const char *path, size_t path_len);
 static enum key_action key_action_parse(const char *method, size_t method_len);
 static bool method_is(const char *method, size_t method_len, const char *name);
@@ -101,6 +133,10 @@ struct api_response api_handle(struct store *store, uint64_t now,
     assert(ttl_header != NULL);
     if (path_is_mget(path, path_len)) {
         return mget_request_handle(store, now, method, method_len, body,
+                                   body_len);
+    }
+    if (path_is_mset(path, path_len)) {
+        return mset_request_handle(store, method, method_len, ttl_header, body,
                                    body_len);
     }
     if (!path_is_keys(path, path_len)) {
@@ -332,6 +368,172 @@ static bool byte_buffer_append(struct byte_buffer *buffer, const void *bytes,
     buffer->len += bytes_len;
 
     return true;
+}
+
+/* query가 붙은 /mset?x나 /mset/는 이 경로가 아닙니다. */
+static bool path_is_mset(const char *path, size_t path_len)
+{
+    return path_len == MSET_PATH_LEN && memcmp(path, MSET_PATH, path_len) == 0;
+}
+
+/* 메서드, 항목의 모양, key 개수, key마다의 인코딩, TTL 순서로 요청 전체를 먼저
+   검사하고, 처음 걸린 오류 하나로 답합니다. 검사에 걸린 요청은 아무 key도
+   저장하지 않습니다. 뒤 항목이 틀렸는데 앞 key가 저장되면 client가 무엇이
+   남았는지 알 수 없기 때문입니다. 검사를 통과하면 mset_items_store가 저장합니다. */
+static struct api_response
+mset_request_handle(struct store *store, const char *method, size_t method_len,
+                    const struct api_ttl_header *ttl_header, const char *body,
+                    size_t body_len)
+{
+    if (!method_is(method, method_len, "POST")) {
+        struct api_response response =
+            response_error(405, ERROR_BODY("method_not_allowed"));
+        response.allow = MSET_ALLOWED_METHODS;
+        return response;
+    }
+    struct mset_item items[API_MSET_KEYS_MAX];
+    size_t item_count = 0;
+    if (!mset_items_split(body, body_len, items, &item_count) ||
+        item_count == 0) {
+        return response_error(400, ERROR_BODY("bad_request"));
+    }
+    if (item_count > API_MSET_KEYS_MAX) {
+        return response_error(400, ERROR_BODY("too_many_keys"));
+    }
+    /* 푼 key는 인코딩된 key보다 길지 않으므로 body 길이면 모든 key가 담깁니다.
+       항목이 하나 이상이면 body는 1바이트 이상입니다. */
+    char *decoded = malloc(body_len);
+    if (decoded == NULL) {
+        return response_error(500, ERROR_BODY("out_of_memory"));
+    }
+    uint64_t expires_at = STORE_NO_EXPIRY;
+    const char *error_body = mset_keys_decode(items, item_count, decoded);
+    struct api_response response;
+    if (error_body != NULL) {
+        response = response_error(400, error_body);
+    } else if (!ttl_header_parse(ttl_header, &expires_at)) {
+        response = response_error(400, ERROR_BODY("bad_ttl"));
+    } else {
+        response =
+            mset_items_store(store, decoded, items, item_count, expires_at);
+    }
+    free(decoded);
+
+    return response;
+}
+
+/* body를 "<key>\n<value 바이트 길이>\n<value>\n" 항목들로 나눕니다. 모양이 틀린
+   항목이 하나라도 있으면 false를 돌려줍니다. 항목 수는 상한을 넘어도 끝까지
+   세어 *item_count에 쓰고, items에는 앞의 API_MSET_KEYS_MAX개만 적습니다. */
+static bool mset_items_split(const char *body, size_t body_len,
+                             struct mset_item *items, size_t *item_count)
+{
+    size_t position = 0;
+    size_t count = 0;
+    while (position < body_len) {
+        const char *key = body + position;
+        const char *key_end = memchr(key, '\n', body_len - position);
+        if (key_end == NULL) {
+            return false;
+        }
+        const char *length_text = key_end + 1;
+        size_t length_room = body_len - (size_t)(length_text - body);
+        const char *length_end = memchr(length_text, '\n', length_room);
+        size_t value_len = 0;
+        if (length_end == NULL ||
+            !mset_value_len_parse(
+                length_text, (size_t)(length_end - length_text), &value_len)) {
+            return false;
+        }
+        size_t value_start = (size_t)(length_end - body) + 1;
+        /* value 뒤에 \n 한 바이트가 더 있어야 합니다. */
+        if (value_len >= body_len - value_start ||
+            body[value_start + value_len] != '\n') {
+            return false;
+        }
+        if (count < API_MSET_KEYS_MAX) {
+            items[count] =
+                (struct mset_item){.encoded_key = key,
+                                   .encoded_key_len = (size_t)(key_end - key),
+                                   .value = body + value_start,
+                                   .value_len = value_len};
+        }
+        count++;
+        position = value_start + value_len + 1;
+    }
+    *item_count = count;
+
+    return true;
+}
+
+/* value 바이트 길이는 10진수 숫자로만 된 0 이상의 정수입니다. 부호, 공백, 빈
+   값은 받지 않습니다. body 상한보다 큰 길이는 body에 담길 수 없으므로 거절해
+   넘침을 막습니다. */
+static bool mset_value_len_parse(const char *text, size_t text_len,
+                                 size_t *value_len)
+{
+    if (text_len == 0) {
+        return false;
+    }
+    size_t parsed = 0;
+    for (size_t i = 0; i < text_len; i++) {
+        if (text[i] < '0' || text[i] > '9') {
+            return false;
+        }
+        parsed = parsed * DECIMAL_BASE + (size_t)(text[i] - '0');
+        if (parsed > API_BODY_MAX) {
+            return false;
+        }
+    }
+    *value_len = parsed;
+
+    return true;
+}
+
+/* 항목마다 /keys/<key>와 같은 규칙으로 key를 풀어 decoded에 이어 쓰고, 그 자리를
+   항목에 적습니다. 앞 항목부터 보고 처음 걸린 오류의 body를 돌려주며, 모두
+   맞으면 NULL을 돌려줍니다. */
+static const char *mset_keys_decode(struct mset_item *items, size_t item_count,
+                                    char *decoded)
+{
+    size_t written = 0;
+    for (size_t i = 0; i < item_count; i++) {
+        size_t key_len = 0;
+        if (!key_decode(items[i].encoded_key, items[i].encoded_key_len,
+                        decoded + written, &key_len)) {
+            return ERROR_BODY("bad_key_encoding");
+        }
+        if (key_len == 0) {
+            return ERROR_BODY("empty_key");
+        }
+        items[i].key_start = written;
+        items[i].key_len = key_len;
+        written += key_len;
+    }
+
+    return NULL;
+}
+
+/* 입력 순서대로 저장합니다. 같은 key가 여러 번 오면 뒤의 value가 남습니다.
+   store_set은 메모리 부족에만 실패하며, 그러면 앞 항목은 저장된 채로 두고 그
+   항목부터는 저장하지 않은 채 500을 돌려줍니다. 되돌리려면 덮어쓴 옛 value를
+   모두 들고 있어야 하므로, 이 API는 전부 성공하거나 전부 실패하는 연산이 아닙니다
+   (docs/api.md "여러 key 저장"). 할당 함수를 바꿔 끼울 seam이 없어서 이 분기는
+   자동 테스트하지 않고 리뷰로 확인합니다. */
+static struct api_response mset_items_store(struct store *store,
+                                            const char *decoded,
+                                            const struct mset_item *items,
+                                            size_t item_count,
+                                            uint64_t expires_at)
+{
+    for (size_t i = 0; i < item_count; i++) {
+        if (!store_set(store, decoded + items[i].key_start, items[i].key_len,
+                       items[i].value, items[i].value_len, expires_at)) {
+            return response_error(500, ERROR_BODY("out_of_memory"));
+        }
+    }
+
+    return response_no_content();
 }
 
 /* `/keys/`로 시작해야 합니다. 끝에 /가 없는 `/keys`도 경로 오류입니다. */

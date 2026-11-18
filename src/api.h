@@ -18,6 +18,8 @@
 #define API_BODY_MAX 16777216
 /* POST /mget 한 번에 받는 key의 상한입니다. */
 #define API_MGET_KEYS_MAX 64
+/* POST /mset 한 번에 받는 key의 상한입니다. POST /mget과 같게 둡니다. */
+#define API_MSET_KEYS_MAX 64
 /* POST /mget 응답에 담는 value 바이트 합계의 상한입니다. 서버는 스레드 하나라서
    거대한 응답 하나를 만드는 동안 다른 요청이 기다리므로, body와 같은 16 MiB로
    묶습니다. */
@@ -53,7 +55,8 @@ struct api_ttl_header {
 };
 
 /* now 시각(mg_millis의 ms)에 온 요청 하나를 처리하고 응답을 돌려줍니다.
-   ttl_header는 PUT만 쓰고, GET과 DELETE는 무시합니다. NULL이면 안 됩니다.
+   ttl_header는 PUT과 POST /mset만 쓰고, 나머지는 무시합니다. NULL이면 안
+   됩니다.
    응답을 보낸 뒤에는 api_response_destroy를 불러야 합니다. */
 struct api_response api_handle(struct store *store, uint64_t now,
                                const char *method, size_t method_len,

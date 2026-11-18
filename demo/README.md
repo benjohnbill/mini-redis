@@ -92,7 +92,11 @@ id는 1부터 순서대로, 이름은 `상품 <id>`로 만듭니다. 가격은 s
 | `cache_misses` | 404 |
 | `cache_get_errors` | 그 외 상태·통신 오류 |
 | `cache_puts` | PUT 시도 |
-| `cache_put_failures` | PUT 실패 |
+| `cache_put_failures` | PUT 실패와 `POST /mset` 실패 |
+| `cache_mgets` | `POST /mget` 시도 |
+| `cache_mget_keys` | `POST /mget`으로 물은 key 수의 합 |
+| `cache_msets` | `POST /mset` 시도 |
+| `cache_mset_keys` | `POST /mset`으로 저장한 key 수의 합 |
 | `cache_deletes` | 무효화 DELETE 시도 |
 | `cache_delete_failures` | 204·404가 아닌 DELETE |
 | `cache_probes` | 상태 확인 시도 |
@@ -138,7 +142,7 @@ PostgreSQL 연결이나 질의가 실패하면 상세·목록은 503 `origin_una
 
 데모 백엔드는 스레드 하나가 mongoose의 `mg_mgr_poll`을 돌며, 한 poll에 받은 요청을 하나씩 원본·캐시 처리까지 끝냅니다. 요청 하나를 처리한 직후 그 연결의 응답을 `mg_io_send`로 바로 소켓에 쓰고, 다 쓰지 못한 바이트는 mongoose가 다음 poll에서 보냅니다. 그래서 한 poll에 요청이 많이 와도, 앞 요청의 응답이 그 poll의 마지막 요청이 끝날 때까지 붙잡히지 않습니다.
 
-상품 상세 조회(`GET /products/{id}`)는 바로 처리하지 않고 대기 목록에 넣었다가, `mg_mgr_poll`이 돌아온 뒤 한꺼번에 처리합니다. 대기 목록을 64개씩 나눠, 2개 이상이면 mini-redis에 `POST /mget` 한 번으로 캐시를 묻고 1개면 `GET`으로 묻습니다. 같은 상품을 원하는 요청이 여럿이면 key는 한 번만 묻고, 캐시에 없으면 원본 조회와 캐시 저장도 한 번만 한 뒤 같은 응답을 모두에게 보냅니다. 캐시가 꺼졌거나 묻기에 실패하면 cache off와 같게 요청마다 원본을 읽습니다. mini-redis가 응답이 너무 크다고 거절하면 key마다 `GET`으로 다시 묻습니다. 목록, 검색, 수정 같은 다른 요청은 쌓인 상세 조회를 먼저 처리한 뒤 바로 처리하므로, 같은 poll에서 수정 앞에 온 상세 조회는 옛 값을, 뒤에 온 상세 조회는 새 값을 받습니다.
+상품 상세 조회(`GET /products/{id}`)는 바로 처리하지 않고 대기 목록에 넣었다가, `mg_mgr_poll`이 돌아온 뒤 한꺼번에 처리합니다. 대기 목록을 64개씩 나눠, 2개 이상이면 mini-redis에 `POST /mget` 한 번으로 캐시를 묻고 1개면 `GET`으로 묻습니다. 같은 상품을 원하는 요청이 여럿이면 key는 한 번만 묻고, 캐시에 없으면 원본 조회와 캐시 저장도 한 번만 한 뒤 같은 응답을 모두에게 보냅니다. 캐시에 없던 상품은 원본에서 읽은 응답을 먼저 보내고, 그 묶음의 응답을 모두 보낸 뒤 캐시에 저장합니다. 저장할 상품이 2개 이상이면 `POST /mset` 한 번으로, 1개면 `PUT`으로 저장합니다. `POST /mset`이 실패하면 `PUT` 실패처럼 캐시를 중단합니다. 저장은 다음 요청을 처리하기 전에 끝나므로, 뒤에 온 수정·삭제가 무효화한 key에 옛 값을 다시 쓰지 않습니다. 캐시가 꺼졌거나 묻기에 실패하면 cache off와 같게 요청마다 원본을 읽습니다. mini-redis가 응답이 너무 크다고 거절하면 key마다 `GET`으로 다시 묻습니다. 목록, 검색, 수정 같은 다른 요청은 쌓인 상세 조회를 먼저 처리한 뒤 바로 처리하므로, 같은 poll에서 수정 앞에 온 상세 조회는 옛 값을, 뒤에 온 상세 조회는 새 값을 받습니다.
 
 ## 성능 비교
 
@@ -146,7 +150,7 @@ PostgreSQL 연결이나 질의가 실패하면 상세·목록은 503 `origin_una
 
 `--arrival burst|even`은 요청이 도착하는 모양을 고릅니다. 기본값 `burst`는 연결마다 같은 시각에 시작하는 시간표를 두어, 연결 수만큼의 요청이 한꺼번에 도착합니다. 앞선 측정 기록과 같은 모양입니다. `even`은 시간표 하나가 1/rate초마다 요청을 하나씩 내고 연결들에 차례로 맡깁니다. 두 모양을 같은 조건에서 견주면, 지연이 요청 하나의 처리 시간에서 오는지 한꺼번에 도착한 요청이 차례를 기다리는 시간에서 오는지 가를 수 있습니다.
 
-`make cache-stage-bench`는 `cache-bench`와 같은 측정을 `STAGE_TRACE`를 켠 데모(`build/bench/cache-demo-stage`)로 돌립니다. 데모가 요청마다 대기, 처리, 캐시 GET, 원본 조회, 캐시 PUT, 처리 뒤 응답이 나가기까지의 시간을 적고, 측정 스크립트가 실행마다 파일 하나로 `STAGE_TRACE_DIR`(기본 `build/stage-trace`)에 남깁니다. 캐시 GET과 PUT은 캐시에 실제로 요청을 보낸 호출만 기록합니다. 캐시가 꺼졌거나 중단된 동안의 호출은 그 구간을 지나지 않은 것으로 남습니다. `python3 -B scripts/bench/stage_summary.py <폴더>`가 구간마다 p50, p90, p95, p99 표를 만듭니다. 기록하는 비용이 지연에 섞이므로, 이 숫자는 `make cache-bench`의 숫자와 나란히 비교하지 않고 원인을 쪼개는 데만 씁니다. PostgreSQL 원본의 같은 기록은 `make cache-stage-bench-postgres POSTGRES_URL=...`이 `STAGE_TRACE_POSTGRES_DIR`(기본 `build/stage-trace-postgres`)에 남기며, 측정 옵션은 `POSTGRES_BENCH_FLAGS`로 넘깁니다. 기록 파일 이름에는 DB 종류가 없으므로 두 원본의 기록은 다른 폴더에 둡니다.
+`make cache-stage-bench`는 `cache-bench`와 같은 측정을 `STAGE_TRACE`를 켠 데모(`build/bench/cache-demo-stage`)로 돌립니다. 데모가 요청마다 대기, 처리, 캐시 GET, 원본 조회, 캐시 PUT, 처리 뒤 응답이 나가기까지의 시간을 적고, 측정 스크립트가 실행마다 파일 하나로 `STAGE_TRACE_DIR`(기본 `build/stage-trace`)에 남깁니다. 캐시 GET과 PUT은 캐시에 실제로 요청을 보낸 호출만 기록합니다. 캐시가 꺼졌거나 중단된 동안의 호출은 그 구간을 지나지 않은 것으로 남습니다. 상세 조회 묶음 끝에서 응답 뒤에 한 저장은 왕복마다 `store` 줄로 따로 남고, 요약 표 아래에 그 시간이 나옵니다. 이 줄은 단건 경로와 목록·검색의 PUT을 담지 않으므로, 전체 PUT과 mset의 수는 `cache_bench.py --output` 결과의 `cache_puts`, `cache_msets`로 비교합니다. `python3 -B scripts/bench/stage_summary.py <폴더>`가 구간마다 p50, p90, p95, p99 표를 만듭니다. 기록하는 비용이 지연에 섞이므로, 이 숫자는 `make cache-bench`의 숫자와 나란히 비교하지 않고 원인을 쪼개는 데만 씁니다. PostgreSQL 원본의 같은 기록은 `make cache-stage-bench-postgres POSTGRES_URL=...`이 `STAGE_TRACE_POSTGRES_DIR`(기본 `build/stage-trace-postgres`)에 남기며, 측정 옵션은 `POSTGRES_BENCH_FLAGS`로 넘깁니다. 기록 파일 이름에는 DB 종류가 없으므로 두 원본의 기록은 다른 폴더에 둡니다.
 
 ## 한계
 
