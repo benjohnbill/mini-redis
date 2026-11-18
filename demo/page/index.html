@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mini-redis 캐시 데모</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e3e0d8;
+    --slow: #d1495b; --fast: #2a9d6f; --panel: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --fg: #ecebe6; --muted: #9c9a93; --line: #34332f;
+      --slow: #ef6f7f; --fast: #4cc796; --panel: #1f1f1c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 24px; }
+  input[type=text] {
+    flex: 1 1 260px; font: inherit; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--panel); color: var(--fg);
+  }
+  button {
+    font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--fg); cursor: pointer;
+  }
+  button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+  .presets button { font-size: 14px; padding: 6px 10px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .panel h2 { font-size: 18px; margin: 0; }
+  .panel .tag { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .rows { display: grid; gap: 4px; min-height: 280px; }
+  .row { display: grid; grid-template-columns: 22px 1fr 78px 40px; align-items: center; gap: 8px; font-size: 14px; }
+  .row .n { color: var(--muted); text-align: right; }
+  .track { height: 18px; position: relative; }
+  .bar { height: 100%; border-radius: 3px; min-width: 3px; transition: width 240ms cubic-bezier(.2,.8,.2,1); width: 0; }
+  .bar.slow { background: var(--slow); }
+  .bar.fast { background: var(--fast); }
+  .ms { text-align: right; font-variant-numeric: tabular-nums; }
+  .hit { font-size: 12px; color: var(--muted); }
+  .summary { display: flex; gap: 24px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .summary div { font-size: 13px; color: var(--muted); }
+  .summary strong { display: block; font-size: 24px; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 20px; }
+  details { margin-top: 28px; }
+  summary { cursor: pointer; color: var(--muted); }
+  .update { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  .update input { width: 120px; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); }
+  pre { font-size: 13px; white-space: pre-wrap; word-break: break-all; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>같은 검색, 10번</h1>
+  <p class="sub">상품 100만 개에서 같은 검색을 왼쪽과 오른쪽에 번갈아 하나씩 보냅니다.</p>
+
+  <div class="controls">
+    <input id="query" type="text" value="한빛 무선 이어폰 블랙 1세대" aria-label="검색어">
+    <button id="run" class="primary">같은 검색 10번 보내기</button>
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>mini-redis 없음</h2>
+      <p class="tag">cache off · 매번 PostgreSQL이 검색</p>
+      <div class="rows" id="rows-off"></div>
+      <div class="summary">
+        <div><strong id="origin-off">0</strong>원본 조회</div>
+        <div><strong id="median-off">-</strong>둘째부터 중앙값</div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>mini-redis 있음</h2>
+      <p class="tag">cache on · 첫 응답을 mini-redis에 저장</p>
+      <div class="rows" id="rows-on"></div>
+      <div class="summary">
+        <div><strong id="origin-on">0</strong>원본 조회</div>
+        <div><strong id="hit-on">-</strong>적중률</div>
+        <div><strong id="median-on">-</strong>둘째부터 중앙값</div>
+      </div>
+    </section>
+  </div>
+
+  <p class="note">한 컴퓨터 안의 PostgreSQL과 mini-redis로 실제로 잰 값입니다. 데모 백엔드는 스레드 하나로 요청을 처리합니다. 시간은 데모 백엔드에 요청을 보내고 응답을 다 받을 때까지입니다.</p>
+
+  <details>
+    <summary>가격 수정 (무효화 확인)</summary>
+    <div class="update">
+      <label>상품 id <input id="update-id" type="number" min="1" value="1"></label>
+      <label>새 가격 <input id="update-price" type="number" min="0" value="1000"></label>
+      <button id="update">on 쪽으로 PUT</button>
+    </div>
+    <p class="note">원본은 하나이므로 on 쪽에만 PUT을 보냅니다. on 쪽 데모 백엔드가 원본을 바꾸고 목록 세대를 올리므로, 다음 검색은 옛 응답을 다시 읽지 않습니다.</p>
+    <pre id="update-result"></pre>
+  </details>
+</main>
+
+<script>
+const REPEAT = 10;
+// cache off에서 실제로 300 ms 안팎이 걸린 검색어입니다(demo/README.md의 "데모 페이지").
+const PRESETS = ["한빛 무선 이어폰 블랙 1세대", "미르 캠핑 의자 카키 7세대", "아라 기계식 키보드 민트 12세대"];
+
+const $ = (id) => document.getElementById(id);
+const runButton = $("run");
+
+for (const preset of PRESETS) {
+  const button = document.createElement("button");
+  button.textContent = preset;
+  button.addEventListener("click", () => { $("query").value = preset; run(); });
+  $("presets").append(button);
+}
+runButton.addEventListener("click", run);
+$("query").addEventListener("keydown", (event) => { if (event.key === "Enter") run(); });
+$("update").addEventListener("click", updatePrice);
+
+async function timedGet(side, path) {
+  const response = await fetch(`/${side}${path}`, { cache: "no-store" });
+  await response.arrayBuffer();
+  return { ms: Number(response.headers.get("X-Backend-Ms")), status: response.status };
+}
+
+async function stats(side) {
+  const response = await fetch(`/${side}/stats`, { cache: "no-store" });
+  return response.json();
+}
+
+function addRow(side, index) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<span class="n">${index}</span><span class="track"><span class="bar"></span></span><span class="ms">…</span><span class="hit"></span>`;
+  $(`rows-${side}`).append(row);
+  return row;
+}
+
+function fillRow(row, ms, scale, label) {
+  const bar = row.querySelector(".bar");
+  bar.classList.add(ms >= 20 ? "slow" : "fast");
+  requestAnimationFrame(() => { bar.style.width = `${Math.min(100, (ms / scale) * 100)}%`; });
+  row.querySelector(".ms").textContent = ms >= 10 ? `${ms.toFixed(0)} ms` : `${ms.toFixed(1)} ms`;
+  row.querySelector(".hit").textContent = label;
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function formatMs(ms) {
+  return ms >= 10 ? `${ms.toFixed(0)} ms` : `${ms.toFixed(1)} ms`;
+}
+
+async function run() {
+  const query = $("query").value.trim();
+  if (!query) return;
+  runButton.disabled = true;
+  $("rows-off").replaceChildren();
+  $("rows-on").replaceChildren();
+  const path = `/products?q=${encodeURIComponent(query)}`;
+  const before = { off: await stats("off"), on: await stats("on") };
+  const times = { off: [], on: [] };
+  let scale = 1;
+
+  for (let i = 1; i <= REPEAT; i++) {
+    for (const side of ["off", "on"]) {
+      const row = addRow(side, i);
+      const hitsBefore = side === "on" ? (await stats("on")).cache_hits : 0;
+      const result = await timedGet(side, path);
+      const label = side === "on" ? ((await stats("on")).cache_hits > hitsBefore ? "hit" : "miss") : "";
+      times[side].push(result.ms);
+      scale = Math.max(scale, result.ms);
+      fillRow(row, result.ms, scale, label);
+    }
+  }
+
+  for (const side of ["off", "on"]) {
+    const after = await stats(side);
+    $(`origin-${side}`).textContent = after.origin_queries - before[side].origin_queries;
+    $(`median-${side}`).textContent = formatMs(median(times[side].slice(1)));
+    if (side === "on") {
+      const gets = after.cache_gets - before.on.cache_gets;
+      const hits = after.cache_hits - before.on.cache_hits;
+      $("hit-on").textContent = gets ? `${Math.round((hits / gets) * 100)}%` : "-";
+    }
+  }
+  runButton.disabled = false;
+}
+
+async function updatePrice() {
+  const id = $("update-id").value;
+  const price = Number($("update-price").value);
+  const detail = await (await fetch(`/off/products/${id}`, { cache: "no-store" })).json();
+  const response = await fetch(`/on/products/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: detail.name, price }),
+  });
+  const after = await stats("on");
+  $("update-result").textContent =
+    `PUT /products/${id} → ${response.status}\n무효화 ${after.invalidations}번 · 상품 ${id}: ${detail.name}, 새 가격 ${price}`;
+}
+</script>
+</body>
+</html>
