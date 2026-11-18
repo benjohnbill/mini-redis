@@ -7,7 +7,24 @@
 기록 한 줄은 데모(demo/product_demo.c의 stage_trace_*)가 요청 하나마다 적습니다.
 
     stage <묶음 번호> <종류> <대기> <처리> <캐시 GET> <원본 조회> <캐시 PUT>
-          <붙잡힘> <실제 붙잡힘> <묶음 요청 수>
+          <붙잡힘> <실제 붙잡힘> <mget 묶임> <mget key 수> <mget 번호>
+          <묶음 요청 수>
+
+자동 묶기 전의 기록에는 mget 묶임, mget key 수, mget 번호 칸이 없고, mget 번호를
+적기 전의 기록에는 mget 번호 칸이 없습니다. 그 기록들도 읽습니다.
+
+상세 조회 묶음 끝의 캐시 저장 왕복은 하나마다 따로 적습니다.
+
+    store <묶음 번호> <put|mset> <key 수> <저장 시간>
+
+저장은 응답을 먼저 보낸 뒤에 하므로, 그 시간은 요청의 처리 시간에 들지 않습니다.
+그 저장을 맡긴 요청들의 캐시 PUT 칸에도 같은 시간이 적혀서, 캐시 PUT 칸의 개수는
+저장 왕복 수가 아닙니다. 묶음 끝 저장의 시간은 표 아래의 "상세 조회 묶음 끝 저장"
+표로 봅니다. 이 표는 단건 GET 경로와 목록·검색의 PUT을 담지 않으므로, 전체 PUT과
+mset의 수는 /stats의 cache_puts와 cache_msets 증가분(cache_bench.py --output의 같은
+이름 칸)으로 비교합니다. 한 묶음에서 기록 상한을 넘어 빠진 저장은 파일 끝의
+"dropped_stores <수>"로 세고 경고합니다. store 줄이 없는 옛 기록은 그 표가 나오지
+않습니다.
 
 시간은 ms이고 지나지 않은 구간과 알 수 없는 값은 "-"입니다. 구간마다 그 구간을
 지난 요청만 셉니다. 그래서 원본 조회와 캐시 PUT의 개수는 캐시에서 찾지 못한
@@ -17,10 +34,14 @@ stats 사이의 요청만 셉니다. --all은 준비 구간까지 모두 셉니�
 *.log를 모두 읽고, 같은 폴더에서 이름이 회 번호(-1, -2, ...)만 다른 파일을 한
 표로 합칩니다.
 
---batch-get은 묶음마다 캐시 GET 횟수와 GET 시간의 합을 세고, 한 묶음의 GET을
-왕복 한 번으로 줄였을 때의 묶음 처리 시간을 어림합니다. 묶음 처리 시간은 묶음
-시작부터 마지막 요청의 처리가 끝나기까지(대기 + 처리의 최댓값)입니다. 왕복 한
-번의 비용은 같은 파일 묶음에서 잰 캐시 GET 한 번의 p50으로 둡니다.
+--batch-get은 묶음마다 캐시 왕복 횟수와 그 시간의 합을 셉니다. POST /mget으로
+묶여 물은 요청들은 같은 왕복 한 번의 시간을 각자 적으므로, mget 번호가 같은
+요청은 왕복 한 번으로 셉니다. mget 번호가 없는 기록에서는 같은 묶음에서 시간과
+mget key 수가 같은 묶인 요청을 왕복 한 번으로 봅니다. 왕복이 두 번 이상인 묶음만
+그 왕복을 한 번으로 줄였을 때의 묶음 처리 시간을 어림합니다. 묶음 처리 시간은
+묶음 시작부터 마지막 요청의 처리가 끝나기까지(대기 + 처리의 최댓값)이고, 왕복
+한 번의 비용은 같은 파일 묶음에서 잰 단건 캐시 GET의 p50으로 둡니다. 왕복이
+이미 한 번인 묶음은 실제 왕복 수와 시간만 셉니다.
 """
 
 import argparse
@@ -36,12 +57,24 @@ COLUMNS = ("대기", "처리", "캐시 GET", "원본 조회", "캐시 PUT", "붙
            "실제 붙잡힘")
 GET_INDEX = COLUMNS.index("캐시 GET")
 BATCH_LABEL = "묶음 요청 수"
+MGET_KEYS_LABEL = "mget key 수 (묶인 요청)"
+# 자동 묶기 전의 기록은 mget 칸이 없고, mget 번호를 적기 전의 기록은 번호 칸이
+# 없습니다. MGET_INDEX는 mget 묶임 칸의 자리입니다.
+FIELD_COUNTS = (3 + len(COLUMNS) + 1, 3 + len(COLUMNS) + 3,
+                3 + len(COLUMNS) + 4)
+MGET_INDEX = 3 + len(COLUMNS)
 PERCENTS = (50, 90, 95, 99)
 RUN_SUFFIX = re.compile(r"-\d+$")
 STAGE_PREFIX = "stage "
+STORE_PREFIX = "store "
 DROPPED_PREFIX = "dropped "
+DROPPED_STORES_PREFIX = "dropped_stores "
+# 묶음 끝의 캐시 저장 왕복 하나입니다. kind는 put 또는 mset입니다.
+Store = collections.namedtuple("Store", "batch kind key_count stored_ms")
 
-Record = collections.namedtuple("Record", "batch kind times batch_size")
+Record = collections.namedtuple("Record",
+                                "batch kind times batch_size mget_keys "
+                                "mget_number")
 
 
 class Trace:
@@ -50,7 +83,9 @@ class Trace:
     def __init__(self, path):
         self.path = path
         self.records = []
+        self.stores = []
         self.dropped = 0
+        self.dropped_stores = 0
         with open(path, encoding="utf-8") as trace_file:
             for line_number, line in enumerate(trace_file, 1):
                 self.line_read(line, line_number)
@@ -59,16 +94,33 @@ class Trace:
         if line.startswith(DROPPED_PREFIX):
             self.dropped += int(line[len(DROPPED_PREFIX):])
             return
+        if line.startswith(DROPPED_STORES_PREFIX):
+            self.dropped_stores += int(line[len(DROPPED_STORES_PREFIX):])
+            return
+        if line.startswith(STORE_PREFIX):
+            fields = line.split()
+            self.stores.append(Store((self.path, int(fields[1])), fields[2],
+                                     int(fields[3]), float(fields[4])))
+            return
         if not line.startswith(STAGE_PREFIX):
             return
         fields = line.split()
-        if len(fields) != 3 + len(COLUMNS) + 1:
+        if len(fields) not in FIELD_COUNTS:
             raise SystemExit(f"{self.path}:{line_number}: 칸 수가 다릅니다: "
                              f"{line.rstrip()}")
         times = [None if field == "-" else float(field)
                  for field in fields[3:3 + len(COLUMNS)]]
+        # 묶이지 않은 요청과 자동 묶기 전의 기록은 mget key 수가 None이고,
+        # mget 번호를 적기 전의 기록은 mget 번호가 None입니다.
+        mget_keys = None
+        mget_number = None
+        if len(fields) > FIELD_COUNTS[0] and fields[MGET_INDEX] == "1":
+            mget_keys = int(fields[MGET_INDEX + 1])
+            if len(fields) == FIELD_COUNTS[2]:
+                mget_number = int(fields[MGET_INDEX + 2])
         self.records.append(Record((self.path, int(fields[1])), fields[2],
-                                   times, int(fields[-1])))
+                                   times, int(fields[-1]), mget_keys,
+                                   mget_number))
 
     def measured(self, use_all):
         """첫 stats와 둘째 stats 사이의 요청입니다. stats가 둘보다 적으면 모두입니다."""
@@ -119,6 +171,40 @@ def records_select(traces, kind, use_all):
     return selected, windowed
 
 
+def stores_select(traces, use_all):
+    """측정 구간에 든 묶음의 저장 왕복입니다. store 줄은 그 묶음의 요청 줄 뒤에
+    오므로, 측정 구간의 요청이 속한 묶음 번호로 고릅니다."""
+    selected = []
+    for trace in traces:
+        records, _ = trace.measured(use_all)
+        batches = {record.batch for record in records}
+        selected += [store for store in trace.stores if store.batch in batches]
+
+    return selected
+
+
+def stores_print(stores, dropped_stores):
+    """상세 조회 묶음 끝의 저장을 put과 mset으로 나눠 시간과 key 수를 냅니다.
+    이 표는 묶음 끝 저장의 시간을 보는 표입니다. 단건 GET 경로와 목록·검색의
+    PUT은 담지 않으므로, 전체 PUT과 mset의 수는 /stats의 cache_puts와
+    cache_msets 증가분(cache_bench.py --output의 같은 이름 칸)으로 봅니다."""
+    if not stores and not dropped_stores:
+        return
+    print("\n상세 조회 묶음 끝 저장 (store 줄, 단건 경로와 목록·검색의 PUT은 빠짐)")
+    if dropped_stores:
+        print(f"주의: 한 묶음의 저장이 많아 store 줄을 남기지 못한 저장이 "
+              f"{dropped_stores}개 있습니다")
+    print()
+    header_print("값", "개수")
+    for kind in ("put", "mset"):
+        row_print(f"{kind} 시간 (ms)",
+                  [store.stored_ms for store in stores if store.kind == kind], 3)
+    row_print("mset key 수", [store.key_count for store in stores
+                              if store.kind == "mset"], 0)
+    total = sum(store.stored_ms for store in stores)
+    print(f"\n묶음 끝 저장 {len(stores):,}번, 시간 합 {total:.3f} ms")
+
+
 def row_print(label, values, digits):
     cells = ([f"{value:.{digits}f}" for value in percentiles(values)] if values
              else ["-"] * len(PERCENTS))
@@ -149,6 +235,33 @@ def table_print(name, traces, kind, use_all):
     for label, values in zip(COLUMNS, columns):
         row_print(f"{label} (ms)", values, 3)
     row_print(BATCH_LABEL, [record.batch_size for record in records], 0)
+    row_print(MGET_KEYS_LABEL, [record.mget_keys for record in records
+                                if record.mget_keys is not None], 0)
+    stores_print(stores_select(traces, use_all),
+                 sum(trace.dropped_stores for trace in traces))
+
+
+def round_trips(members):
+    """묶음 하나의 캐시 왕복 시간들입니다. POST /mget으로 묶여 물은 요청들은 같은
+    왕복 한 번의 시간을 각자 적으므로, mget 번호가 같은 요청은 왕복 한 번으로
+    셉니다. 번호가 없는 옛 기록은 시간과 mget key 수가 같은 묶인 요청을 왕복 한
+    번으로 봅니다."""
+    trips = []
+    bundles = set()
+    for record in members:
+        time = record.times[GET_INDEX]
+        if time is None:
+            continue
+        if record.mget_keys is None:
+            trips.append(time)
+            continue
+        bundle = record.mget_number
+        if bundle is None:
+            bundle = (time, record.mget_keys)
+        if bundle not in bundles:
+            bundles.add(bundle)
+            trips.append(time)
+    return trips
 
 
 def batch_get_print(name, traces, kind, use_all):
@@ -156,28 +269,40 @@ def batch_get_print(name, traces, kind, use_all):
     batches = collections.defaultdict(list)
     for record in records:
         batches[record.batch].append(record)
-    gets = [record.times[GET_INDEX] for record in records
-            if record.times[GET_INDEX] is not None]
-    if not gets:
+    trips_by_batch = {batch: round_trips(members)
+                      for batch, members in batches.items()}
+    trips = [trip for batch_trips in trips_by_batch.values()
+             for trip in batch_trips]
+    if not trips:
         print(f"\n### {name}: 캐시 GET이 없습니다")
         return
-    round_trip = open_loop.percentile(sorted(gets), 50)
+    # 왕복 한 번의 비용은 단건 GET의 p50으로 둡니다. 모두 묶여 물은 기록이면 묶음
+    # 왕복의 p50으로 둡니다.
+    singles = [record.times[GET_INDEX] for record in records
+               if record.times[GET_INDEX] is not None
+               and record.mget_keys is None]
+    round_trip = open_loop.percentile(sorted(singles or trips), 50)
     rows = collections.defaultdict(list)
-    for members in batches.values():
-        times = [record.times[GET_INDEX] for record in members
-                 if record.times[GET_INDEX] is not None]
+    for batch, members in batches.items():
+        times = trips_by_batch[batch]
         if not times:
             continue
         elapsed = max(record.times[0] + record.times[1] for record in members)
-        expected = elapsed - sum(times) + round_trip
         rows["GET 횟수"].append(len(times))
         rows["GET 시간 합 (ms)"].append(sum(times))
         rows["묶음 처리 시간 (ms)"].append(elapsed)
+        # 왕복이 이미 한 번이면 줄일 왕복이 없으므로 어림하지 않습니다.
+        if len(times) < 2:
+            continue
+        expected = elapsed - sum(times) + round_trip
         rows["예상 처리 시간 (ms)"].append(expected)
         rows["줄어드는 시간 (ms)"].append(elapsed - expected)
         rows["줄어드는 비율 (%)"].append(100 * (elapsed - expected) / elapsed)
+    estimated = len(rows.get("예상 처리 시간 (ms)", []))
     print(f"\n### {name}: 묶음 {len(rows['GET 횟수']):,}개, "
-          f"왕복 한 번 {round_trip:.3f} ms (캐시 GET p50)")
+          f"왕복이 2번 이상이라 어림한 묶음 {estimated:,}개, "
+          f"왕복 한 번 {round_trip:.3f} ms "
+          f"({'단건 캐시 GET' if singles else '묶음 왕복'} p50)")
     print()
     print("| 값 | 평균 | " + " | ".join(f"p{percent}" for percent in PERCENTS)
           + " |")

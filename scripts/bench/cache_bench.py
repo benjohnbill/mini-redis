@@ -346,11 +346,22 @@ def record_numbers(record, seconds):
              if kind != open_loop.CLIENT_LATE and values}
     before, after = record["before"], record["after"]
 
+    def optional_delta(name):
+        # mget, mset 전의 데모는 그 칸이 없어 0입니다.
+        return after.get(name, 0) - before.get(name, 0)
+
+    # 캐시 저장 왕복의 전체 수는 cache_puts와 cache_msets로 셉니다. 구간 기록의
+    # store 줄은 상세 조회 묶음 끝의 저장만 담기 때문입니다.
     return {"throughput": successes(latencies) / seconds, "latency": kinds,
             "errors": dict(record["errors"]), "timeouts": record["timeouts"],
             "cache_gets": stats_delta(before, after, "cache_gets"),
             "cache_hits": stats_delta(before, after, "cache_hits"),
             "origin_queries": stats_delta(before, after, "origin_queries"),
+            "cache_mgets": optional_delta("cache_mgets"),
+            "cache_mget_keys": optional_delta("cache_mget_keys"),
+            "cache_puts": optional_delta("cache_puts"),
+            "cache_msets": optional_delta("cache_msets"),
+            "cache_mset_keys": optional_delta("cache_mset_keys"),
             "checked": record["checked"]}
 
 

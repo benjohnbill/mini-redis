@@ -57,6 +57,7 @@
    최대 MG_MAX_RECV_SIZE(약 16 MiB)까지 크므로, 128개면 최악 약 2 GiB입니다. */
 #define CONNECTION_MAX 128
 #define TTL_HEADER_NAME "TTL"
+#define DECIMAL_BASE 10
 /* mongoose의 head에서 헤더가 아닌 줄: 요청 줄과 헤더 끝의 빈 줄입니다. */
 #define HEAD_NON_HEADER_LINES 2
 
@@ -108,6 +109,7 @@ static bool message_has_too_many_headers(const struct mg_http_message *message);
 static size_t head_lines_count(struct mg_str head);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
+static bool body_is_complete(struct mg_http_message *message);
 static struct api_ttl_header
 ttl_header_read(const struct mg_connection *connection,
                 const struct mg_http_message *message);
@@ -454,13 +456,15 @@ static size_t head_lines_count(struct mg_str head)
     return line_count;
 }
 
-/* 이미 오류 응답(408, 411, 413, 431, 503)을 보내고 닫는 중인 연결의 요청은 처리하지
-   않습니다. mongoose는 연결을 닫을 때 받다 만 요청도 받은 데까지를 body로 삼아
-   이 이벤트를 부르므로, 거르지 않으면 잘린 body가 저장됩니다. */
+/* 이미 오류 응답(408, 411, 413, 431, 503)을 보내고 닫는 중인 연결의 요청과, body를
+   선언한 길이만큼 받지 못한 요청은 처리하지 않습니다. mongoose는 연결을 닫을 때
+   받다 만 요청도 받은 데까지를 body로 삼아 이 이벤트를 부르므로, 거르지 않으면
+   잘린 body가 value로 저장되거나 POST /mset의 앞 항목만 저장됩니다. client가 body를
+   보내다 스스로 끊은 경우가 뒤쪽입니다. */
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message)
 {
-    if (connection->is_draining) {
+    if (connection->is_draining || !body_is_complete(message)) {
         return;
     }
     struct store *store = connection->fn_data;
@@ -469,8 +473,10 @@ static void request_handle(struct mg_connection *connection,
         api_handle(store, mg_millis(), message->method.buf, message->method.len,
                    message->uri.buf, target_len(message), &ttl_header,
                    message->body.buf, message->body.len);
-    /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. */
+    /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. 복사했으므로 api
+       층이 응답을 위해 할당한 메모리(POST /mget)는 바로 해제합니다. */
     response_send(connection, &response);
+    api_response_destroy(&response);
     /* mongoose는 이 이벤트 전에 is_resp를 세우고, 세워져 있는 동안 같은 연결의
        다음 요청을 해석하지 않습니다. is_resp를 내리는 것은 mg_http_reply뿐인데
        응답을 mg_printf와 mg_send로 보내므로, 여기서 직접 내립니다. 내리지 않으면
@@ -478,6 +484,28 @@ static void request_handle(struct mg_connection *connection,
     connection->is_resp = 0;
     /* 다음 요청이 헤더를 받은 시각을 새로 적게 합니다. */
     headers_received_at_set(connection, false, 0);
+}
+
+/* Content-Length에 적은 길이와 받은 body 길이가 정확히 같을 때만 true입니다.
+   요청은 선언한 길이를 정확히 받았을 때만 처리합니다. mongoose는 선언한 길이까지만
+   body로 자르므로 받은 쪽이 더 긴 경우는 없고, 짧은 경우는 client가 보내다 끊은
+   요청입니다. 헤더가 없으면 body가 없는 요청이라 true입니다. mongoose가 헤더를 읽을 때 값이 10진수 숫자인지
+   검사하므로 여기서는 숫자만 읽습니다. body 상한보다 큰 길이는 헤더 검사에서
+   413으로 이미 걸렀습니다. */
+static bool body_is_complete(struct mg_http_message *message)
+{
+    struct mg_str *length = mg_http_get_header(message, "Content-Length");
+    if (length == NULL) {
+        return true;
+    }
+    size_t declared = 0;
+    for (size_t i = 0; i < length->len && declared <= API_BODY_MAX; i++) {
+        if (length->buf[i] >= '0' && length->buf[i] <= '9') {
+            declared = declared * DECIMAL_BASE + (size_t)(length->buf[i] - '0');
+        }
+    }
+
+    return message->body.len == declared;
 }
 
 /* 요청의 TTL 헤더를 읽어, 첫 번째 값과 개수와 헤더를 다 받은 시각을 묶습니다.
