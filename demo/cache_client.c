@@ -28,6 +28,9 @@ static size_t key_encode(const struct cache_client *cache, const char *key,
 static int cache_exchange(struct cache_client *cache, const char *method,
                           const char *path, size_t path_len, const char *body,
                           size_t body_len);
+static int request_exchange(struct cache_client *cache, const char *method,
+                            const char *path, size_t path_len, const char *body,
+                            size_t body_len);
 static void request_state_reset(struct cache_client *cache);
 static void cache_event_handle(struct mg_connection *connection, int event,
                                void *event_data);
@@ -265,10 +268,32 @@ static size_t key_encode(const struct cache_client *cache, const char *key,
 }
 
 /* 요청 하나를 보내고 응답이나 기한을 기다려 상태 코드를 돌려줍니다. path_len이
-   0이면 보내지 못한 요청처럼 상태 0입니다. */
+   0이면 보내지 못한 요청처럼 상태 0입니다.
+   mini-redis는 쉬는 연결을 닫지만(concurrency spec Q4), 이 client는 요청이
+   없는 동안 manager를 poll하지 않으므로 그 닫힘을 다음 요청을 보낸 뒤에야
+   압니다. 다시 쓴 연결이 응답을 하나도 주지 않고 닫혔으면 캐시 오류로 보지
+   않고 새 연결로 한 번 더 보냅니다. 쉬는 연결은 받은 요청이 없을 때만 닫히므로
+   서버는 첫 요청을 처리하지 않았고, 캐시 요청은 모두 여러 번 보내도 결과가
+   같습니다. */
 static int cache_exchange(struct cache_client *cache, const char *method,
                           const char *path, size_t path_len, const char *body,
                           size_t body_len)
+{
+    bool is_reused = cache->connection != NULL;
+    int status =
+        request_exchange(cache, method, path, path_len, body, body_len);
+    if (is_reused && cache->connection == NULL && !cache->answered) {
+        status =
+            request_exchange(cache, method, path, path_len, body, body_len);
+    }
+
+    return status;
+}
+
+/* 연결이 없으면 새로 열고, 요청 하나를 보내 응답이나 기한을 기다립니다. */
+static int request_exchange(struct cache_client *cache, const char *method,
+                            const char *path, size_t path_len, const char *body,
+                            size_t body_len)
 {
     uint64_t deadline = mg_millis() + (uint64_t)cache->timeout_ms;
     request_state_reset(cache);
@@ -300,6 +325,7 @@ static void request_state_reset(struct cache_client *cache)
 {
     cache->done = false;
     cache->pending = true;
+    cache->answered = false;
     cache->status = 0;
     free(cache->body);
     cache->body = NULL;
@@ -314,6 +340,7 @@ static void cache_event_handle(struct mg_connection *connection, int event,
     struct cache_client *cache = connection->fn_data;
     if (event == MG_EV_HTTP_MSG && cache->pending) {
         struct mg_http_message *message = event_data;
+        cache->answered = true;
         cache->status = mg_http_status(message);
         if ((cache->status == 404 && !reason_is(message, "key_not_found")) ||
             (cache->status == 400 &&

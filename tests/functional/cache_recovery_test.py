@@ -121,6 +121,26 @@ def put_failure_uses_origin(binary, _redis_binary, database):
         peer.stop()
 
 
+def idle_close_reconnects(binary, _redis_binary, database):
+    peer = ScriptedCache({'GET': (404, b'{"error":"key_not_found"}'),
+                          'PUT': (204, b''), 'DELETE': (204, b'')},
+                         idle_close_seconds=0.3)
+    demo = Demo(binary, database, ['--cache', 'on', '--cache-url',
+                                  f'http://127.0.0.1:{peer.port}'])
+    try:
+        demo.wait_until_listening()
+        expect(detail(demo, 1)[0], 200, '연결을 연 첫 조회')
+        time.sleep(1)
+        expect(detail(demo, 2)[0], 200, '캐시 서버가 연결을 닫은 뒤 조회')
+        counts = stats(demo)
+        expect((counts['cache_state'], counts['cache_get_errors'],
+                counts['cache_recoveries'], counts['cache_misses']),
+               ('active', 0, 0, 2), '닫힌 연결은 캐시 오류가 아님')
+    finally:
+        stopped_check(demo)
+        peer.stop()
+
+
 def origin_lock_keeps_hits(binary, redis_binary, database):
     redis = Server(redis_binary)
     redis.wait_until_listening()
@@ -157,11 +177,13 @@ def main():
                 ('중단 중 상태 확인은 1초에 한 번만 시도한다', probe_rate_is_limited),
                 ('캐시 저장 실패는 원본 응답을 막지 않고 캐시를 중단한다',
                  put_failure_uses_origin),
+                ('캐시 서버가 쉬는 연결을 닫아도 다음 조회는 새 연결로 보내고 캐시를 중단하지 않는다',
+                 idle_close_reconnects),
                 ('원본 잠금 중 적중 응답은 유지되고 미적중은 503이다',
                  origin_lock_keeps_hits)]:
             test(binary, redis_binary, database)
             print('PASS:', name)
-    print('cache recovery functional: 4개 통과')
+    print('cache recovery functional: 5개 통과')
 
 
 if __name__ == '__main__':

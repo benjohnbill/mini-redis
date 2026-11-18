@@ -17,6 +17,8 @@ struct cache_client {
     bool active;
     bool pending;
     bool done;
+    /* 지금 요청에 HTTP 응답이 왔는지입니다. 응답 없이 닫힌 연결을 가립니다. */
+    bool answered;
     int status;
     char *body;
     size_t body_len;
