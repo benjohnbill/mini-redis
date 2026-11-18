@@ -105,6 +105,7 @@ static bool message_has_too_many_headers(const struct mg_http_message *message);
 static size_t head_lines_count(struct mg_str head);
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message);
+static bool message_has_full_body(struct mg_http_message *message);
 static struct api_ttl_header
 ttl_header_read(const struct mg_connection *connection,
                 const struct mg_http_message *message);
@@ -439,13 +440,15 @@ static size_t head_lines_count(struct mg_str head)
     return line_count;
 }
 
-/* 이미 오류 응답(408, 411, 413, 431, 503)을 보내고 닫는 중인 연결의 요청은 처리하지
-   않습니다. mongoose는 연결을 닫을 때 받다 만 요청도 받은 데까지를 body로 삼아
-   이 이벤트를 부르므로, 거르지 않으면 잘린 body가 저장됩니다. */
+/* mongoose는 연결을 닫을 때 받다 만 요청도 받은 데까지를 body로 삼아 이 이벤트를
+   부르므로, 거르지 않으면 잘린 body가 저장됩니다. 서버가 오류 응답(408, 411,
+   413, 431, 503)을 보내고 닫는 중인 연결은 is_draining으로, client가 body를 다
+   보내지 않고 끊은 연결은 body 길이로 거릅니다. 끊긴 연결에는 응답을 보낼 수
+   없으므로 응답 없이 버립니다. */
 static void request_handle(struct mg_connection *connection,
                            struct mg_http_message *message)
 {
-    if (connection->is_draining) {
+    if (connection->is_draining || !message_has_full_body(message)) {
         return;
     }
     struct store *store = connection->fn_data;
@@ -463,6 +466,27 @@ static void request_handle(struct mg_connection *connection,
     connection->is_resp = 0;
     /* 다음 요청이 헤더를 받은 시각을 새로 적게 합니다. */
     headers_received_at_set(connection, false, 0);
+}
+
+/* 받은 body가 Content-Length만큼인지 봅니다. 평소에는 mongoose가
+   Content-Length만큼 받은 뒤에 요청을 넘기므로 항상 같습니다. 연결이 닫힐 때만
+   mongoose가 body 길이를 받은 바이트 수로 바꿔 넘기므로 짧아집니다(mongoose.c
+   http_cb의 MG_EV_CLOSE). mongoose는 protocol handler를 먼저 부르므로, 우리
+   handler가 MG_EV_CLOSE를 보기 전에 이 요청이 옵니다. 그래서 닫힘을 따로 표시해
+   거를 수 없고, 길이로 거릅니다. Content-Length가 없으면 선언한 길이를 0으로
+   봅니다. mongoose는 헤더 값 앞뒤의 공백을 잘라 두고, 숫자가 아닌
+   Content-Length가 든 요청은 넘기지 않으므로, mg_str_to_num은 mongoose가 읽은
+   길이와 같은 값을 읽습니다. */
+static bool message_has_full_body(struct mg_http_message *message)
+{
+    struct mg_str *header = mg_http_get_header(message, "Content-Length");
+    size_t declared_len = 0;
+    if (header != NULL &&
+        !mg_str_to_num(*header, 10, &declared_len, sizeof declared_len)) {
+        return false;
+    }
+
+    return message->body.len == declared_len;
 }
 
 /* 요청의 TTL 헤더를 읽어, 첫 번째 값과 개수와 헤더를 다 받은 시각을 묶습니다.
