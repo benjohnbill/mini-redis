@@ -54,11 +54,19 @@ typedef bool hash_less_func (const struct hash_elem *a,
  * data AUX. */
 typedef void hash_action_func (struct hash_elem *e, void *aux);
 
-/* Hash table. */
+/* Hash table.
+
+   mini-redis perf: 버킷 수를 바꿀 때 entry를 한 번에 옮기지 않고 나눠
+   옮깁니다(점진적 rehash). 옮기는 동안 `old_buckets'가 옛 버킷 배열을
+   가리키고, `rehash_idx'보다 앞의 옛 버킷은 이미 비었습니다. elem_cnt는 두
+   배열의 entry를 합한 수입니다. */
 struct hash {
 	size_t elem_cnt;            /* Number of elements in table. */
 	size_t bucket_cnt;          /* Number of buckets, a power of 2. */
 	struct list *buckets;       /* Array of `bucket_cnt' lists. */
+	struct list *old_buckets;   /* 옮기는 중인 옛 버킷 배열, 아니면 NULL. */
+	size_t old_bucket_cnt;      /* `old_buckets'의 버킷 수. */
+	size_t rehash_idx;          /* 다음에 옮길 옛 버킷의 번호. */
 	hash_hash_func *hash;       /* Hash function. */
 	hash_less_func *less;       /* Comparison function. */
 	void *aux;                  /* Auxiliary data for `hash' and `less'. */
@@ -91,6 +99,7 @@ struct hash_elem *hash_cur (struct hash_iterator *);
 /* Information. */
 size_t hash_size (struct hash *);
 bool hash_empty (struct hash *);
+bool hash_is_rehashing (struct hash *);
 
 /* Sample hash functions. */
 uint64_t hash_bytes (const void *, size_t);
