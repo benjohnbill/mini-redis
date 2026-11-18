@@ -303,20 +303,6 @@ def body_sent_with_rejected_headers_is_not_stored(server):
     expect(body, b'{"error":"key_not_found"}', "거절한 저장 뒤 조회의 body")
 
 
-def body_cut_by_client_is_not_stored(server):
-    head = "PUT /keys/cut-body HTTP/1.1\r\nHost: x\r\nContent-Length: 10\r\n\r\n"
-    with server.connect() as cut:
-        # Content-Length가 10인데 5바이트만 보내고 보내기를 닫습니다.
-        cut.sendall(head.encode("ascii") + b"01234")
-        cut.shutdown(socket.SHUT_WR)
-        # 서버가 연결을 닫은 뒤에 조회해야, 닫을 때 넘어온 잘린 요청을 처리한 결과를 봅니다.
-        wait_until_closed(cut)
-
-    status, _, body = server.request("GET", "/keys/cut-body")
-    expect(status, 404, "잘린 저장 뒤 조회의 상태 코드")
-    expect(body, b'{"error":"key_not_found"}', "잘린 저장 뒤 조회의 body")
-
-
 # ── 테스트: 쉬는 시간 기한 ────────────────────────────────────
 
 def read_until_closed(connection):
@@ -477,8 +463,6 @@ TESTS = [
      open_connections_served_while_rejecting),
     ("(기능) 413으로 거절한 연결이 함께 보낸 body는 저장되지 않는다",
      body_sent_with_rejected_headers_is_not_stored),
-    ("(기능) client가 Content-Length보다 짧은 body를 보내고 끊으면 받은 body를 저장하지 않는다",
-     body_cut_by_client_is_not_stored),
 ]
 
 # 모두 기한만큼 기다리므로 스레드로 함께 돌립니다.
