@@ -1,0 +1,264 @@
+{
+  "commit": "21d2b6ae5be8d92c0c9ea0f91d4d14c2f9798a72",
+  "dirty": false,
+  "inputs": {
+    "count": 10000,
+    "seed": 1,
+    "connections": 32,
+    "rate": 500,
+    "arrival": "burst",
+    "warmup": 10,
+    "measure": 30,
+    "runs": 3,
+    "ttl": [
+      60,
+      2
+    ],
+    "scenarios": [
+      "detail-uniform"
+    ],
+    "database": "postgresql:///mini_redis_bench"
+  },
+  "results": {
+    "detail-uniform ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.948646,
+              "p95_ms": 11.015116,
+              "p99_ms": 13.835817
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.750613,
+              "p95_ms": 10.469819,
+              "p99_ms": 12.164617
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.781884,
+              "p95_ms": 10.734645,
+              "p99_ms": 12.37388
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.224352,
+              "p95_ms": 9.253835,
+              "p99_ms": 12.685412
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14983,
+          "cache_hits": 10744,
+          "origin_queries": 4239,
+          "cache_mgets": 782,
+          "cache_mget_keys": 14565,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.199077,
+              "p95_ms": 8.117208,
+              "p99_ms": 10.860958
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14988,
+          "cache_hits": 10749,
+          "origin_queries": 4239,
+          "cache_mgets": 794,
+          "cache_mget_keys": 14584,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 3.268961,
+              "p95_ms": 8.977975,
+              "p99_ms": 12.046184
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14982,
+          "cache_hits": 10743,
+          "origin_queries": 4239,
+          "cache_mgets": 810,
+          "cache_mget_keys": 14614,
+          "checked": 0
+        }
+      ]
+    },
+    "detail-uniform ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.743735,
+              "p95_ms": 10.863988,
+              "p99_ms": 13.313719
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 6.272574,
+              "p95_ms": 12.390766,
+              "p99_ms": 16.533495
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.934884,
+              "p95_ms": 10.80544,
+              "p99_ms": 12.37504
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 8.353957,
+              "p95_ms": 15.752993,
+              "p99_ms": 21.712557
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14980,
+          "cache_hits": 1665,
+          "origin_queries": 13315,
+          "cache_mgets": 571,
+          "cache_mget_keys": 14587,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 8.369789,
+              "p95_ms": 15.455525,
+              "p99_ms": 18.18684
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14980,
+          "cache_hits": 1665,
+          "origin_queries": 13315,
+          "cache_mgets": 566,
+          "cache_mget_keys": 14576,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 8.386516,
+              "p95_ms": 15.117904,
+              "p99_ms": 17.172118
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14979,
+          "cache_hits": 1664,
+          "origin_queries": 13315,
+          "cache_mgets": 588,
+          "cache_mget_keys": 14593,
+          "checked": 0
+        }
+      ]
+    }
+  }
+}

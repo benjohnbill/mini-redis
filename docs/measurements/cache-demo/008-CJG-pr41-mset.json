@@ -1,0 +1,300 @@
+{
+  "commit": "9e1812dcdacfe73526bdf2a391e8ec990a266acc",
+  "dirty": false,
+  "inputs": {
+    "count": 10000,
+    "seed": 1,
+    "connections": 32,
+    "rate": 500,
+    "arrival": "burst",
+    "warmup": 10,
+    "measure": 30,
+    "runs": 3,
+    "ttl": [
+      60,
+      2
+    ],
+    "scenarios": [
+      "detail-uniform"
+    ],
+    "database": "postgresql:///mini_redis_bench"
+  },
+  "results": {
+    "detail-uniform ttl 60s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.765319,
+              "p95_ms": 10.372298,
+              "p99_ms": 11.729276
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.792221,
+              "p95_ms": 10.525885,
+              "p99_ms": 12.10068
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.700521,
+              "p95_ms": 10.329425,
+              "p99_ms": 11.844808
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.775942,
+              "p95_ms": 6.467471,
+              "p99_ms": 8.224756
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14984,
+          "cache_hits": 10745,
+          "origin_queries": 4239,
+          "cache_mgets": 785,
+          "cache_mget_keys": 14565,
+          "cache_puts": 205,
+          "cache_msets": 593,
+          "cache_mset_keys": 4034,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.776468,
+              "p95_ms": 6.205204,
+              "p99_ms": 7.774187
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14986,
+          "cache_hits": 10747,
+          "origin_queries": 4239,
+          "cache_mgets": 786,
+          "cache_mget_keys": 14587,
+          "cache_puts": 198,
+          "cache_msets": 593,
+          "cache_mset_keys": 4041,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 2.639425,
+              "p95_ms": 6.385096,
+              "p99_ms": 8.458834
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14988,
+          "cache_hits": 10749,
+          "origin_queries": 4239,
+          "cache_mgets": 791,
+          "cache_mget_keys": 14571,
+          "cache_puts": 221,
+          "cache_msets": 595,
+          "cache_mset_keys": 4018,
+          "checked": 0
+        }
+      ]
+    },
+    "detail-uniform ttl 2s": {
+      "off": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.878273,
+              "p95_ms": 10.834672,
+              "p99_ms": 12.5912
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.873474,
+              "p95_ms": 10.560252,
+              "p99_ms": 12.250478
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.857781,
+              "p95_ms": 10.758386,
+              "p99_ms": 12.695835
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 0,
+          "cache_hits": 0,
+          "origin_queries": 15008,
+          "cache_mgets": 0,
+          "cache_mget_keys": 0,
+          "cache_puts": 0,
+          "cache_msets": 0,
+          "cache_mset_keys": 0,
+          "checked": 0
+        }
+      ],
+      "on": [
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 6.039317,
+              "p95_ms": 10.48768,
+              "p99_ms": 11.737568
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14979,
+          "cache_hits": 1664,
+          "origin_queries": 13315,
+          "cache_mgets": 576,
+          "cache_mget_keys": 14585,
+          "cache_puts": 368,
+          "cache_msets": 564,
+          "cache_mset_keys": 12947,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.84375,
+              "p95_ms": 10.282471,
+              "p99_ms": 12.007294
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14980,
+          "cache_hits": 1665,
+          "origin_queries": 13315,
+          "cache_mgets": 544,
+          "cache_mget_keys": 14549,
+          "cache_puts": 389,
+          "cache_msets": 541,
+          "cache_mset_keys": 12926,
+          "checked": 0
+        },
+        {
+          "throughput": 500.26666666666665,
+          "latency": {
+            "detail": {
+              "count": 15008,
+              "p50_ms": 5.896314,
+              "p95_ms": 10.473446,
+              "p99_ms": 12.281385
+            }
+          },
+          "errors": {},
+          "timeouts": 0,
+          "cache_gets": 14981,
+          "cache_hits": 1666,
+          "origin_queries": 13315,
+          "cache_mgets": 551,
+          "cache_mget_keys": 14553,
+          "cache_puts": 386,
+          "cache_msets": 546,
+          "cache_mset_keys": 12929,
+          "checked": 0
+        }
+      ]
+    }
+  }
+}
