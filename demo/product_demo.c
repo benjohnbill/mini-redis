@@ -45,6 +45,58 @@ enum list_field {
     LIST_FIELD_COUNT
 };
 
+/* STAGE_TRACE가 요청 하나에서 따로 재는 구간입니다. 순서는 기록 줄의 칸
+   순서와 같습니다. */
+enum stage { STAGE_CACHE_GET, STAGE_ORIGIN, STAGE_CACHE_PUT, STAGE_COUNT };
+
+#ifdef STAGE_TRACE
+#include <time.h>
+
+#define STAGE_BATCH_MAX 1024
+#define STAGE_NOT_ENTERED (-1.0)
+#define MS_PER_SECOND 1000.0
+#define NS_PER_MS 1000000.0
+
+/* 요청 하나의 시각(ms)과 구간 시간(ms)입니다. 지나지 않은 구간은
+   STAGE_NOT_ENTERED이고, 응답을 소켓에 다 쓰기 전이면 sent_ms가 0입니다. */
+struct stage_record {
+    const char *kind;
+    unsigned long connection_id;
+    unsigned long long batch_number;
+    size_t batch_size;
+    double started_ms;
+    double finished_ms;
+    double waited_ms;
+    double stage_ms[STAGE_COUNT];
+    double held_ms;
+    double sent_ms;
+};
+
+/* mg_mgr_poll 한 번이 처리한 요청들입니다. request_count는 기록하지 못한
+   요청까지 셉니다. */
+struct stage_batch {
+    size_t request_count;
+    struct stage_record records[STAGE_BATCH_MAX];
+};
+
+/* 데모 백엔드는 스레드 하나로 요청을 처리하므로 기록 상태도 하나입니다.
+   batch_started_ms가 0이면 이번 묶음의 첫 이벤트가 아직 오지 않았습니다.
+   묶음의 응답은 대개 다음 mg_mgr_poll에서 소켓에 쓰이므로, 앞 묶음(previous)의
+   줄은 지금 묶음이 끝날 때 적습니다. */
+struct stage_trace {
+    FILE *file;
+    unsigned long long batch_number;
+    double batch_started_ms;
+    double stage_started_ms;
+    unsigned long long dropped_count;
+    struct stage_record current;
+    struct stage_batch batch;
+    struct stage_batch previous;
+};
+
+static struct stage_trace stage_trace_state;
+#endif
+
 struct text {
     char *data;
     size_t len;
@@ -158,6 +210,26 @@ static void product_change_reply(struct mg_connection *connection,
 static void cache_invalidate(struct demo *demo, int product_id);
 static void product_delete(struct mg_connection *connection, struct demo *demo,
                            int product_id);
+static void stage_trace_open(void);
+static void stage_trace_batch_begin(void);
+static void stage_trace_request_begin(const struct mg_connection *connection,
+                                      const struct mg_http_message *message);
+static void stage_trace_stage_begin(enum stage stage);
+static void stage_trace_stage_end(enum stage stage);
+static bool stage_trace_cache_begin(const struct demo *demo, enum stage stage);
+static void stage_trace_cache_end(bool is_traced, enum stage stage);
+static void stage_trace_request_end(void);
+static void stage_trace_sent(const struct mg_connection *connection);
+static void stage_trace_batch_end(void);
+static void stage_trace_close(void);
+#ifdef STAGE_TRACE
+static double stage_trace_now(void);
+static const char *stage_kind_find(const struct mg_http_message *message);
+static void stage_batch_sent(struct stage_batch *batch,
+                             unsigned long connection_id, double now);
+static void stage_batch_write(const struct stage_batch *batch);
+static void stage_record_write(const struct stage_record *record);
+#endif
 
 int main(int argc, char **argv)
 {
@@ -356,9 +428,12 @@ static int server_run(struct demo *demo, int port)
     snprintf(url, sizeof url, "http://127.0.0.1:%d", port);
     bool listening =
         mg_http_listen(&manager, url, http_event_handle, demo) != NULL;
+    stage_trace_open();
     while (listening && !stop_requested) {
         mg_mgr_poll(&manager, POLL_INTERVAL_MS);
+        stage_trace_batch_end();
     }
+    stage_trace_close();
     mg_mgr_free(&manager);
 
     return listening ? 0 : 1;
@@ -382,8 +457,17 @@ static void stop_signal_handle(int signum)
 static void http_event_handle(struct mg_connection *connection, int event,
                               void *event_data)
 {
-    if (event == MG_EV_HTTP_MSG && !connection->is_draining) {
+    /* mg_mgr_poll은 기다림이 끝나면 연결마다 MG_EV_POLL을 먼저 보내고 그다음
+       요청을 읽습니다. 그래서 첫 MG_EV_POLL이 묶음의 시작입니다. MG_EV_WRITE는
+       mongoose가 send()로 send 버퍼를 소켓에 쓴 직후에 옵니다. */
+    if (event == MG_EV_POLL) {
+        stage_trace_batch_begin();
+    } else if (event == MG_EV_WRITE) {
+        stage_trace_sent(connection);
+    } else if (event == MG_EV_HTTP_MSG && !connection->is_draining) {
+        stage_trace_request_begin(connection, event_data);
         request_handle(connection, event_data);
+        stage_trace_request_end();
     }
 }
 
@@ -499,19 +583,25 @@ static void list_send(struct mg_connection *connection, struct demo *demo,
     cache_recover(demo);
     char key[LIST_KEY_MAX];
     list_key_build(demo, &list, key, sizeof key);
+    bool is_get_traced = stage_trace_cache_begin(demo, STAGE_CACHE_GET);
     char *cached = cache_client_get(&demo->cache, key);
+    stage_trace_cache_end(is_get_traced, STAGE_CACHE_GET);
     if (cached != NULL) {
         body_send(connection, cached);
         free(cached);
         return;
     }
     int status = 0;
+    stage_trace_stage_begin(STAGE_ORIGIN);
     char *body = list_body_create(demo, &list, &status);
+    stage_trace_stage_end(STAGE_ORIGIN);
     if (body == NULL) {
         error_send(connection, status, "origin_unavailable");
         return;
     }
+    bool is_put_traced = stage_trace_cache_begin(demo, STAGE_CACHE_PUT);
     cache_client_set(&demo->cache, key, body);
+    stage_trace_cache_end(is_put_traced, STAGE_CACHE_PUT);
     body_send(connection, body);
     free(body);
 }
@@ -837,19 +927,25 @@ static void product_send(struct mg_connection *connection, struct demo *demo,
     cache_recover(demo);
     char key[DETAIL_KEY_MAX];
     detail_key_build(product_id, key, sizeof key);
+    bool is_get_traced = stage_trace_cache_begin(demo, STAGE_CACHE_GET);
     char *cached = cache_client_get(&demo->cache, key);
+    stage_trace_cache_end(is_get_traced, STAGE_CACHE_GET);
     if (cached != NULL) {
         body_send(connection, cached);
         free(cached);
         return;
     }
     int status = 0;
+    stage_trace_stage_begin(STAGE_ORIGIN);
     char *body = product_body_create(demo, product_id, &status);
+    stage_trace_stage_end(STAGE_ORIGIN);
     if (body == NULL) {
         origin_error_send(connection, status);
         return;
     }
+    bool is_put_traced = stage_trace_cache_begin(demo, STAGE_CACHE_PUT);
     cache_client_set(&demo->cache, key, body);
+    stage_trace_cache_end(is_put_traced, STAGE_CACHE_PUT);
     body_send(connection, body);
     free(body);
 }
@@ -999,3 +1095,252 @@ static void product_delete(struct mg_connection *connection, struct demo *demo,
     int status = origin_product_delete(demo->origin, product_id);
     product_change_reply(connection, demo, product_id, status);
 }
+
+/* 측정용 데모(make cache-stage-bench)만 STAGE_TRACE를 켭니다. 요청 하나마다
+   아래 칸을 STAGE_TRACE_FILE이 가리키는 파일에 한 줄로 적습니다. 시간은 ms이고,
+   지나지 않은 구간과 알 수 없는 값은 "-"입니다.
+
+     stage <묶음 번호> <종류> <대기> <처리> <캐시 GET> <원본 조회> <캐시 PUT>
+           <붙잡힘> <실제 붙잡힘> <묶음 요청 수>
+
+   묶음은 mg_mgr_poll 한 번이 처리한 요청들이고, 묶음 번호는 몇 번째
+   mg_mgr_poll인지입니다(1부터). 대기는 묶음이 시작된 뒤 처리가 시작되기까지,
+   처리는 handler 하나의 시간입니다. 붙잡힘은 처리가 끝난 뒤 mg_mgr_poll이
+   돌아오기까지이고, 실제 붙잡힘은 처리가 끝난 뒤 응답을 소켓에 다 쓰기까지
+   입니다. mongoose는 handler가 쌓은 응답을 대개 다음 mg_mgr_poll에서 쓰므로,
+   다음 묶음이 끝날 때까지 쓰지 못한 응답의 실제 붙잡힘은 "-"입니다.
+   STAGE_TRACE_FILE이 없으면 적지 않습니다. make verify의 빌드에서는 아무것도
+   하지 않습니다. */
+static void stage_trace_open(void)
+{
+#ifdef STAGE_TRACE
+    stage_trace_state.batch_number = 1;
+    const char *path = getenv("STAGE_TRACE_FILE");
+    if (path == NULL) {
+        return;
+    }
+    stage_trace_state.file = fopen(path, "w");
+    if (stage_trace_state.file == NULL) {
+        fprintf(stderr, "stage trace: cannot open %s\n", path);
+    }
+#endif
+}
+
+static void stage_trace_batch_begin(void)
+{
+#ifdef STAGE_TRACE
+    if (stage_trace_state.file != NULL &&
+        stage_trace_state.batch_started_ms == 0) {
+        stage_trace_state.batch_started_ms = stage_trace_now();
+    }
+#endif
+}
+
+static void stage_trace_request_begin(const struct mg_connection *connection,
+                                      const struct mg_http_message *message)
+{
+#ifdef STAGE_TRACE
+    if (stage_trace_state.file == NULL) {
+        return;
+    }
+    double now = stage_trace_now();
+    if (stage_trace_state.batch_started_ms == 0) {
+        stage_trace_state.batch_started_ms = now;
+    }
+    struct stage_record *record = &stage_trace_state.current;
+    record->kind = stage_kind_find(message);
+    record->connection_id = connection->id;
+    record->batch_number = stage_trace_state.batch_number;
+    record->started_ms = now;
+    record->sent_ms = 0;
+    for (int i = 0; i < STAGE_COUNT; i++) {
+        record->stage_ms[i] = STAGE_NOT_ENTERED;
+    }
+#else
+    (void)connection;
+    (void)message;
+#endif
+}
+
+static void stage_trace_stage_begin(enum stage stage)
+{
+    (void)stage;
+#ifdef STAGE_TRACE
+    stage_trace_state.stage_started_ms = stage_trace_now();
+#endif
+}
+
+static void stage_trace_stage_end(enum stage stage)
+{
+#ifdef STAGE_TRACE
+    stage_trace_state.current.stage_ms[stage] =
+        stage_trace_now() - stage_trace_state.stage_started_ms;
+#else
+    (void)stage;
+#endif
+}
+
+/* 캐시 GET과 PUT은 캐시에 실제로 요청을 보낼 때만 잽니다. 캐시가 꺼졌거나
+   중단되면 cache_client_get과 cache_client_set이 요청 없이 돌아오므로, 그
+   호출까지 세면 왕복하지 않은 요청이 0 ms로 섞입니다. 호출 도중에 캐시가
+   중단될 수 있으므로, 잴지는 호출 전에 정하고 그 값을 끝에 넘깁니다. */
+static bool stage_trace_cache_begin(const struct demo *demo, enum stage stage)
+{
+    if (!demo->cache.active) {
+        return false;
+    }
+    stage_trace_stage_begin(stage);
+
+    return true;
+}
+
+static void stage_trace_cache_end(bool is_traced, enum stage stage)
+{
+    if (is_traced) {
+        stage_trace_stage_end(stage);
+    }
+}
+
+/* 붙잡힘은 묶음이 끝나야 알 수 있으므로, 요청의 기록을 묶음 끝까지 모읍니다. */
+static void stage_trace_request_end(void)
+{
+#ifdef STAGE_TRACE
+    if (stage_trace_state.file == NULL) {
+        return;
+    }
+    struct stage_batch *batch = &stage_trace_state.batch;
+    struct stage_record *record = &stage_trace_state.current;
+    record->finished_ms = stage_trace_now();
+    record->waited_ms = record->started_ms - stage_trace_state.batch_started_ms;
+    if (batch->request_count < STAGE_BATCH_MAX) {
+        batch->records[batch->request_count] = *record;
+    } else {
+        stage_trace_state.dropped_count++;
+    }
+    batch->request_count++;
+#endif
+}
+
+/* 연결의 send 버퍼가 비었으면, 그 연결에서 아직 보내지 않은 응답을 모두 지금
+   보낸 것으로 적습니다. MG_EV_WRITE가 부릅니다. */
+static void stage_trace_sent(const struct mg_connection *connection)
+{
+#ifdef STAGE_TRACE
+    if (stage_trace_state.file == NULL || connection->send.len != 0) {
+        return;
+    }
+    double now = stage_trace_now();
+    stage_batch_sent(&stage_trace_state.batch, connection->id, now);
+    stage_batch_sent(&stage_trace_state.previous, connection->id, now);
+#else
+    (void)connection;
+#endif
+}
+
+/* 앞 묶음의 줄을 적고, 지금 묶음의 붙잡힘과 요청 수를 정해 앞 묶음으로
+   옮깁니다. */
+static void stage_trace_batch_end(void)
+{
+#ifdef STAGE_TRACE
+    if (stage_trace_state.file == NULL) {
+        return;
+    }
+    double now = stage_trace_now();
+    stage_batch_write(&stage_trace_state.previous);
+    struct stage_batch *batch = &stage_trace_state.batch;
+    struct stage_batch *previous = &stage_trace_state.previous;
+    previous->request_count = batch->request_count;
+    for (size_t i = 0; i < batch->request_count && i < STAGE_BATCH_MAX; i++) {
+        batch->records[i].held_ms = now - batch->records[i].finished_ms;
+        batch->records[i].batch_size = batch->request_count;
+        previous->records[i] = batch->records[i];
+    }
+    batch->request_count = 0;
+    stage_trace_state.batch_started_ms = 0;
+    stage_trace_state.batch_number++;
+#endif
+}
+
+static void stage_trace_close(void)
+{
+#ifdef STAGE_TRACE
+    if (stage_trace_state.file == NULL) {
+        return;
+    }
+    stage_batch_write(&stage_trace_state.previous);
+    if (stage_trace_state.dropped_count > 0) {
+        fprintf(stage_trace_state.file, "dropped %llu\n",
+                stage_trace_state.dropped_count);
+    }
+    fclose(stage_trace_state.file);
+    stage_trace_state.file = NULL;
+#endif
+}
+
+#ifdef STAGE_TRACE
+/* mg_millis는 ms 단위로 잘리므로 구간 시간은 단조 시계로 직접 잽니다. */
+static double stage_trace_now(void)
+{
+    struct timespec clock_value;
+    clock_gettime(CLOCK_MONOTONIC, &clock_value);
+
+    return (double)clock_value.tv_sec * MS_PER_SECOND +
+           (double)clock_value.tv_nsec / NS_PER_MS;
+}
+
+/* request_handle과 같은 순서로 경로를 나눕니다. stats는 cache_bench.py가 측정
+   구간의 앞뒤에서 부르므로, 요약 스크립트가 측정 구간을 고르는 표시가 됩니다. */
+static const char *stage_kind_find(const struct mg_http_message *message)
+{
+    if (mg_match(message->uri, mg_str("/stats"), NULL)) {
+        return "stats";
+    }
+    if (mg_match(message->uri, mg_str("/products"), NULL)) {
+        return "list";
+    }
+    if (path_is_product(message->uri)) {
+        return method_is(message, "GET") ? "detail" : "change";
+    }
+
+    return "other";
+}
+
+static void stage_batch_sent(struct stage_batch *batch,
+                             unsigned long connection_id, double now)
+{
+    for (size_t i = 0; i < batch->request_count && i < STAGE_BATCH_MAX; i++) {
+        struct stage_record *record = &batch->records[i];
+        if (record->connection_id == connection_id && record->sent_ms == 0) {
+            record->sent_ms = now;
+        }
+    }
+}
+
+static void stage_batch_write(const struct stage_batch *batch)
+{
+    for (size_t i = 0; i < batch->request_count && i < STAGE_BATCH_MAX; i++) {
+        stage_record_write(&batch->records[i]);
+    }
+}
+
+static void stage_record_write(const struct stage_record *record)
+{
+    FILE *file = stage_trace_state.file;
+    fprintf(file, "stage %llu %s %.3f %.3f", record->batch_number, record->kind,
+            record->waited_ms, record->finished_ms - record->started_ms);
+    for (int i = 0; i < STAGE_COUNT; i++) {
+        if (record->stage_ms[i] < 0) {
+            fputs(" -", file);
+        } else {
+            fprintf(file, " %.3f", record->stage_ms[i]);
+        }
+    }
+    fprintf(file, " %.3f", record->held_ms);
+    if (record->sent_ms == 0) {
+        fputs(" -", file);
+    } else {
+        fprintf(file, " %.3f", record->sent_ms - record->finished_ms);
+    }
+    fprintf(file, " %zu\n", record->batch_size);
+}
+#endif

@@ -46,9 +46,9 @@ MONGOOSE_OBJ   := $(BUILD)/mongoose.o
 # 이를 받아들입니다.
 MONGOOSE_FLAGS := -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752
 
-.PHONY: all test functional verify lint format clean bench cache-demo cache-functional cache-bench cache-demo-postgres cache-functional-postgres cache-bench-postgres
+.PHONY: all test functional verify lint format clean bench idle-wakeup cache-demo cache-functional cache-bench cache-demo-postgres cache-functional-postgres cache-bench-postgres
 
-# 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_INTERVAL_MS, SWEEP_INTERVAL_MS,
+# 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_TIMEOUT_MAX_MS, SWEEP_INTERVAL_MS,
 # SWEEP_MAX_COUNT를 빌드할 때 바꿉니다(spec Q19). 예:
 #   make -B build/mini-redis SERVER_FLAGS='-DSWEEP_INTERVAL_MS=50 -DSWEEP_MAX_COUNT=5'
 # 플래그만 바꾸면 make가 다시 빌드하지 않으므로 -B를 함께 씁니다.
@@ -120,6 +120,11 @@ BENCH_MONGOOSE := $(BENCH_BUILD)/mongoose.o
 bench: $(BENCH_SERVER)
 	python3 -B scripts/bench/bench.py $(BENCH_SERVER)
 
+# make idle-wakeup: 요청이 없는 서버가 1초에 몇 번 깨어나는지 잽니다(M7 perf).
+# /proc를 읽으므로 Linux에서만 돕니다. make bench와 같은 서버를 씁니다.
+idle-wakeup: $(BENCH_SERVER)
+	python3 -B scripts/bench/idle_wakeup.py $(BENCH_SERVER)
+
 $(BENCH_SERVER): src/server.c $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) -DSWEEP_TRACE $(SERVER_FLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) $< \
 	    $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) -o $@
@@ -181,6 +186,38 @@ CACHE_BENCH_DEMO := $(BENCH_BUILD)/cache-demo
 CACHE_BENCH_FLAGS ?=
 cache-bench: $(CACHE_BENCH_DEMO) $(BENCH_SERVER)
 	python3 -B scripts/bench/cache_bench.py $(CACHE_BENCH_DEMO) $(BENCH_SERVER) $(CACHE_BENCH_FLAGS)
+
+# make cache-stage-bench: cache-bench와 같은 측정을 STAGE_TRACE를 켠 데모로 돌려,
+# 요청마다 묶음 안의 대기, 처리, 캐시 GET, 원본 조회, 캐시 PUT, 붙잡힘, 실제
+# 붙잡힘 시간을 STAGE_TRACE_DIR에 실행마다 파일 하나로 남깁니다(perf 원인 쪼개기).
+# 기록하는 비용이 지연에 섞이므로 cache-bench의 숫자와 나란히 비교하지 않습니다. 예:
+#   make cache-stage-bench CACHE_BENCH_FLAGS='--arrival burst --kind detail'
+#   python3 -B scripts/bench/stage_summary.py build/stage-trace
+CACHE_STAGE_DEMO := $(BENCH_BUILD)/cache-demo-stage
+STAGE_TRACE_DIR  ?= $(BUILD)/stage-trace
+.PHONY: cache-stage-bench
+cache-stage-bench: $(CACHE_STAGE_DEMO) $(BENCH_SERVER)
+	python3 -B scripts/bench/cache_bench.py $(CACHE_STAGE_DEMO) $(BENCH_SERVER) --stage-trace $(STAGE_TRACE_DIR) $(CACHE_BENCH_FLAGS)
+
+$(CACHE_STAGE_DEMO): demo/product_demo.c demo/cache_client.c demo/sqlite_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -DSTAGE_TRACE -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) demo/product_demo.c demo/cache_client.c \
+	    demo/sqlite_origin.c $(BENCH_MONGOOSE) -lsqlite3 -o $@
+
+# make cache-stage-bench-postgres: cache-stage-bench와 같은 구간 기록을 PostgreSQL
+# 원본으로 남깁니다. 원본 조회 구간이 PostgreSQL 왕복을 담습니다. 기록 파일 이름에는
+# DB 종류가 없으므로, SQLite 기록을 덮어쓰지 않게 기본 폴더를 따로 둡니다. 예:
+#   make cache-stage-bench-postgres POSTGRES_URL='postgresql://127.0.0.1/products' \
+#        POSTGRES_BENCH_FLAGS='--arrival burst --kind detail'
+CACHE_STAGE_POSTGRES := $(BENCH_BUILD)/cache-demo-postgres-stage
+STAGE_TRACE_POSTGRES_DIR ?= $(BUILD)/stage-trace-postgres
+.PHONY: cache-stage-bench-postgres
+cache-stage-bench-postgres: $(CACHE_STAGE_POSTGRES) $(BENCH_SERVER)
+	@test -n "$(POSTGRES_URL)" || { echo "POSTGRES_URL을 지정하세요"; exit 1; }
+	python3 -B scripts/bench/cache_bench.py $(CACHE_STAGE_POSTGRES) $(BENCH_SERVER) --db "$(POSTGRES_URL)" --stage-trace $(STAGE_TRACE_POSTGRES_DIR) $(POSTGRES_BENCH_FLAGS)
+
+$(CACHE_STAGE_POSTGRES): demo/product_demo.c demo/cache_client.c demo/postgres_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) -DSTAGE_TRACE -I$(MONGOOSE_DIR) -I$(PG_INCLUDEDIR) $(BENCH_CFLAGS) demo/product_demo.c \
+	    demo/cache_client.c demo/postgres_origin.c $(BENCH_MONGOOSE) -L$(PG_LIBDIR) -lpq -o $@
 
 # 선택 PostgreSQL 원본의 같은 실험입니다. SQLite 측정과 별도 환경으로 다룹니다.
 CACHE_BENCH_POSTGRES := $(BENCH_BUILD)/cache-demo-postgres

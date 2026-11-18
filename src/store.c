@@ -196,6 +196,16 @@ size_t store_delete_expired(struct store *store, uint64_t now, size_t max_count)
     return deleted_count;
 }
 
+uint64_t store_get_next_expires_at(const struct store *store)
+{
+    assert(store != NULL);
+
+    if (store->heap.count == 0) {
+        return STORE_NO_EXPIRY;
+    }
+    return store->heap.entries[0]->expires_at;
+}
+
 /* value는 해시하지 않습니다. 같은 key는 value와 상관없이 같은 버킷에 가야 합니다.
    key는 store의 seed를 섞는 SipHash 1-2로 hash합니다(ADR siphash-with-random-seed). */
 static uint64_t entry_hash(const struct hash_elem *element, void *aux)

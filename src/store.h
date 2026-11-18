@@ -54,4 +54,9 @@ bool store_delete(struct store *store, uint64_t now, const void *key,
 size_t store_delete_expired(struct store *store, uint64_t now,
                             size_t max_count);
 
+/* 기간이 있는 entry 가운데 가장 이른 만료 시각을 돌려줍니다. 기간이 있는
+   entry가 없으면 STORE_NO_EXPIRY를 돌려줍니다. 이미 만료됐지만 아직 지우지 않은
+   entry도 셉니다. 서버가 다음 주기 청소까지 잠들 시간을 정할 때 씁니다. */
+uint64_t store_get_next_expires_at(const struct store *store);
+
 #endif /* STORE_H */
