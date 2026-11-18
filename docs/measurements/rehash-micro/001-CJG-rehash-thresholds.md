@@ -86,4 +86,4 @@ xychart-beta
 - **조회가 빨라진 이유:** 범위를 좁히면 버킷당 평균 entry가 줄어 GET 한 번의 평균 비교 횟수(1 + 평균 ÷ 2)가 줄어듭니다. key가 100만 개를 넘으면 entry가 캐시에 없어서 비교 한 번이 메모리를 한 번 읽는 시간이 되므로, 비교를 줄인 효과가 크게 드러납니다. 찾는 key 자신과의 비교 1번은 줄일 수 없어서, 버킷당 평균 entry가 1개 아래로 내려가면 이득이 작아집니다.
 - **key 하나당 RSS:** 버킷 하나(`struct list`)는 head와 tail 두 칸이라 32바이트입니다. key 하나당 RSS에서 버킷 배열의 몫(버킷 수 × 32바이트 ÷ key 수)을 빼면 key 400만 개에서 모든 설정이 192바이트로 같습니다. 그래서 설정이 바꾸는 메모리는 버킷 배열뿐입니다.
 - **멈춤이 길어진 이유:** key 400만 개에서는 다섯 설정 모두 가장 큰 rehash가 key 2,097,153개째에서 일어나 같은 수의 entry를 옮깁니다. 범위를 좁힐수록 rehash가 새로 할당하고 초기화하는 버킷 배열이 두 배씩 커지는 것이 차이로 보지만, 두 시간을 따로 재지는 않았습니다.
-- **이 측정은 저장과 조회만 합니다.** 경계 근처에서 저장과 삭제가 번갈아 오는 경우와 서버 전체의 전후는 [`server/006`](../server/006-CJG-rehash-thresholds-before.md)과 [`server/007`](../server/007-CJG-rehash-thresholds-after.md)이 맡습니다.
+- **이 측정은 저장과 조회만 합니다.** 경계 근처에서 저장과 삭제가 번갈아 오는 경우와 서버 전체의 전후는 [`server/008`](../server/008-CJG-rehash-thresholds-before.md)과 [`server/009`](../server/009-CJG-rehash-thresholds-after.md)이 맡습니다.

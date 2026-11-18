@@ -381,7 +381,7 @@ is_power_of_2 (size_t x) {
    100만 개 이상에서 약 25% 빨라지고 key 하나당 메모리는 약 4% 늘었습니다. 더
    줄인 (1, 0.5, 0.25)는 rehash가 초기화할 버킷 배열이 커져 멈춤이 길어졌습니다.
    세 값의 비율은 그대로 두어 버킷 수를 바꾸지 않는 범위를 남깁니다(docs/
-   measurements/rehash-micro/001, server/007). make rehash-micro는 세 값을
+   measurements/rehash-micro/001, server/009). make rehash-micro는 세 값을
    빌드할 때 -D로 바꿉니다. */
 #ifndef MIN_ELEMS_PER_BUCKET
 #define MIN_ELEMS_PER_BUCKET  0.5 /* Elems/bucket < 0.5: reduce # of buckets. */
