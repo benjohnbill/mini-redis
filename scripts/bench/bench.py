@@ -79,7 +79,7 @@ LARGE_VALUE = b"b" * 16_777_216  # 상한 크기 value, API_BODY_MAX
 LARGE_INTERVAL = 0.2  # 초. 16 MiB 저장과 삭제를 이 간격으로 보냅니다
 LARGE_KEY_COUNT = round(OPEN_LOOP_SECONDS / LARGE_INTERVAL)  # 50개, 합쳐서 800 MiB
 REHASH_INTERVAL = 1.0  # 초. rehash 하나(약 0.3초)가 끝나고 서버가 쉬는 틈을 둡니다
-GROW_DELAY = OPEN_LOOP_SECONDS / 2  # 초. 버킷을 늘리는 저장 한 번을 보내는 간격입니다
+GROW_DELAY = OPEN_LOOP_SECONDS / 2  # 초. 측정을 시작하고 버킷을 늘리는 저장을 보내는 시각입니다
 SMALL_GET = "작은 GET"
 
 # 주기 청소 측정(M4 expire)
@@ -304,7 +304,12 @@ def grow_once(server):
     새 배열을 만들고 초기화합니다. entry는 그 뒤의 요청마다 나눠 옮깁니다. key 수가
     2배로 늘 때마다 한 번 생기는 이 멈춤을 봅니다. 방해 요청은 측정 동안 저장 한
     번뿐입니다. 옮기기를 끝내려면 호출이 약 100만 번 필요해서, 이 시나리오는 옮기기의
-    시작만 봅니다."""
+    시작만 봅니다.
+
+    저장은 측정의 가운데(GROW_DELAY)에 보냅니다. 처음에 보내면 그 연결은 나머지
+    10초 동안 놀고, 서버의 쉬는 연결 기한(IDLE_TIMEOUT_MS, 10초)이 측정이 끝나는
+    순간과 겹칩니다. 저장이 빨리 끝나는 서버에서는 측정이 끝나기 전에 서버가 이
+    연결을 닫아 측정이 실패했습니다."""
     prefill(server, REHASH_KEY_COUNT)
 
     def grow_request(index):
@@ -313,7 +318,7 @@ def grow_once(server):
         return open_loop.Request("버킷을 늘리는 저장", "PUT", "/keys/grow-new",
                                  VALUE, expect_status=204)
 
-    open_loop_measure(server, REHASH_KEY_COUNT, GROW_DELAY, grow_request)
+    open_loop_measure(server, REHASH_KEY_COUNT, GROW_DELAY, grow_request, GROW_DELAY)
 
 
 def large_delete(server):
@@ -429,9 +434,10 @@ def recovery_wait(server, key_count):
     return [millis for millis, count in sweeps for _ in range(count)]
 
 
-def open_loop_measure(server, key_count, disturb_interval=None, disturb_request=None):
+def open_loop_measure(server, key_count, disturb_interval=None, disturb_request=None,
+                      disturb_start=0):
     """작은 GET을 CONNECTIONS개 연결에 걸쳐 초당 SMALL_GET_RATE개씩 보내고, 방해
-    요청이 있으면 연결 하나로 disturb_interval초마다 보냅니다. 끝나면 요청 종류별로
+    요청이 있으면 연결 하나로 disturb_start초부터 disturb_interval초마다 보냅니다. 끝나면 요청 종류별로
     p50, p99, max를 출력합니다."""
     run = open_loop.Run(server.port, OPEN_LOOP_SECONDS * NS_PER_SECOND)
     picker = random.Random(key_count)
@@ -444,7 +450,7 @@ def open_loop_measure(server, key_count, disturb_interval=None, disturb_request=
                    small_get_request)
     if disturb_request is not None:
         run.stream_add(run.connections_open(1), round(disturb_interval * NS_PER_SECOND),
-                       disturb_request)
+                       disturb_request, round(disturb_start * NS_PER_SECOND))
     print(f"열린 루프: 작은 GET 초당 {SMALL_GET_RATE:,}개를 {CONNECTIONS}연결로 "
           f"{OPEN_LOOP_SECONDS}초 동안 보냅니다", flush=True)
     try:
