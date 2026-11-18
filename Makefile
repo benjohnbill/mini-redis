@@ -4,7 +4,7 @@ CC       ?= cc
 # MG_MAX_HTTP_HEADERS는 mongoose가 읽는 헤더 수의 상한입니다(기본 30). 넘으면 서버가
 # 431로 거절합니다(api spec). 이 값은 struct mg_http_message의 크기를 바꾸므로,
 # mongoose.c와 mongoose.h를 읽는 모든 파일이 같은 값으로 컴파일되도록 여기에 둡니다.
-CPPFLAGS := -Isrc -D_POSIX_C_SOURCE=200809L -DMG_MAX_HTTP_HEADERS=64
+CPPFLAGS := -Isrc -Ivendor/siphash -D_POSIX_C_SOURCE=200809L -DMG_MAX_HTTP_HEADERS=64
 # Darwin 확장 선언은 Mongoose와 Acutest가 사용합니다. Linux 설정은 유지합니다.
 ifeq ($(shell uname -s),Darwin)
 CPPFLAGS += -D_DARWIN_C_SOURCE
@@ -18,7 +18,14 @@ BUILD    := build
 
 # 서버의 main이 없는 라이브러리 소스입니다. 테스트와 서버가 함께 링크합니다.
 LIB_SRCS := $(filter-out src/server.c,$(wildcard src/*.c))
-LIB_OBJS := $(LIB_SRCS:src/%.c=$(BUILD)/%.o)
+LIB_OBJS := $(LIB_SRCS:src/%.c=$(BUILD)/%.o) $(BUILD)/siphash.o
+
+# vendor/siphash: https://github.com/veorq/SipHash (CC0, vendor/siphash/LICENSE_CC0),
+# commit 32d067603b93b47828700880649198e0bfbbcffa 의 siphash.c, siphash.h 그대로입니다.
+# store가 key를 hash할 때 씁니다(ADR siphash-with-random-seed). 라운드 수가 매크로라서
+# 파일을 고치지 않고 Redis와 같은 SipHash 1-2로 컴파일합니다.
+SIPHASH_SRC   := vendor/siphash/siphash.c
+SIPHASH_FLAGS := -DcROUNDS=1 -DdROUNDS=2
 
 # tests/acutest.h: https://github.com/mity/acutest (MIT),
 # commit 31751b4089c93b46a9fd8a8183a695f772de66de 의 include/acutest.h 그대로입니다.
@@ -58,6 +65,9 @@ $(SERVER): src/server.c $(LIB_OBJS) $(MONGOOSE_OBJ) | $(BUILD)
 # Makefile도 의존합니다. MONGOOSE_FLAGS를 바꾸면 이전 빌드의 mongoose.o를 다시 만듭니다.
 $(MONGOOSE_OBJ): $(MONGOOSE_DIR)/mongoose.c $(MONGOOSE_DIR)/mongoose.h Makefile | $(BUILD)
 	$(CC) $(CPPFLAGS) $(MONGOOSE_FLAGS) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/siphash.o: $(SIPHASH_SRC) vendor/siphash/siphash.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(SIPHASH_FLAGS) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/%.o: src/%.c | $(BUILD)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
@@ -104,7 +114,7 @@ clean:
 BENCH_BUILD    := $(BUILD)/bench
 BENCH_CFLAGS   := -std=c11 -Wall -Wextra -Werror -O2
 BENCH_SERVER   := $(BENCH_BUILD)/mini-redis
-BENCH_LIB_OBJS := $(LIB_SRCS:src/%.c=$(BENCH_BUILD)/%.o)
+BENCH_LIB_OBJS := $(LIB_SRCS:src/%.c=$(BENCH_BUILD)/%.o) $(BENCH_BUILD)/siphash.o
 BENCH_MONGOOSE := $(BENCH_BUILD)/mongoose.o
 
 bench: $(BENCH_SERVER)
@@ -121,6 +131,9 @@ $(BENCH_SERVER): src/server.c $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) | $(BENCH_BUIL
 
 $(BENCH_MONGOOSE): $(MONGOOSE_DIR)/mongoose.c $(MONGOOSE_DIR)/mongoose.h Makefile | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) $(MONGOOSE_FLAGS) $(BENCH_CFLAGS) -c $< -o $@
+
+$(BENCH_BUILD)/siphash.o: $(SIPHASH_SRC) vendor/siphash/siphash.h | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(SIPHASH_FLAGS) $(BENCH_CFLAGS) -c $< -o $@
 
 $(BENCH_BUILD)/%.o: src/%.c | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) -c $< -o $@
@@ -147,8 +160,8 @@ rehash-micro: $(REHASH_BINS)
 	    done; \
 	done
 
-$(BENCH_BUILD)/rehash_micro_%: scripts/bench/rehash_micro.c $(filter-out src/server.c src/api.c,$(LIB_SRCS)) | $(BENCH_BUILD)
-	$(CC) $(CPPFLAGS) $(BENCH_CFLAGS) \
+$(BENCH_BUILD)/rehash_micro_%: scripts/bench/rehash_micro.c $(filter-out src/server.c src/api.c,$(LIB_SRCS)) $(SIPHASH_SRC) | $(BENCH_BUILD)
+	$(CC) $(CPPFLAGS) $(SIPHASH_FLAGS) $(BENCH_CFLAGS) \
 	    -DMAX_ELEMS_PER_BUCKET=$(word 1,$(subst _, ,$*)) \
 	    -DBEST_ELEMS_PER_BUCKET=$(word 2,$(subst _, ,$*)) \
 	    -DMIN_ELEMS_PER_BUCKET=$(word 3,$(subst _, ,$*)) $^ -o $@
