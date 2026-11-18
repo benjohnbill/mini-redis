@@ -25,6 +25,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+
 #include "api.h"
 #include "mongoose.h"
 #include "store.h"
@@ -58,6 +62,9 @@
 #define CONNECTION_MAX 128
 #define TTL_HEADER_NAME "TTL"
 #define DECIMAL_BASE 10
+/* glibc malloc이 이 크기 이상의 할당을 mmap으로 받는 기준값입니다. glibc의
+   처음 기본값과 같습니다. */
+#define MMAP_THRESHOLD_BYTES (128 * 1024)
 /* mongoose의 head에서 헤더가 아닌 줄: 요청 줄과 헤더 끝의 빈 줄입니다. */
 #define HEAD_NON_HEADER_LINES 2
 
@@ -79,6 +86,7 @@ _Static_assert(sizeof(struct connection_state) <= MG_DATA_SIZE,
 static volatile sig_atomic_t stop_requested = 0;
 
 static int port_parse(const char *text);
+static void malloc_mmap_threshold_fix(void);
 static void stop_signals_install(void);
 static void stop_signal_handle(int signum);
 static int server_run(struct store *store, int port);
@@ -132,6 +140,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s <port 1-%d>\n", argv[0], PORT_MAX);
         return 2;
     }
+    malloc_mmap_threshold_fix();
     struct store *store = store_create();
     if (store == NULL) {
         fprintf(stderr, "mini-redis: store를 만들 메모리가 없습니다\n");
@@ -154,6 +163,22 @@ static int port_parse(const char *text)
     }
 
     return (int)port;
+}
+
+/* glibc malloc의 mmap 기준값을 고정합니다. 고정하지 않으면 glibc는 mmap으로
+   받은 덩어리가 해제될 때 그 크기로 기준값을 올립니다. 연결마다 16 MiB 수신
+   버퍼를 잡고 해제하면 기준값이 16 MiB 근처로 올라, 그 뒤의 16 MiB value가
+   heap에서 할당되고 만료나 삭제로 해제될 때 서버가 약 35~50 ms 멈췄습니다
+   (docs/measurements/server/019, 022). 다른 C 라이브러리는 이 동작이 없으므로 glibc에서만
+   부릅니다. */
+static void malloc_mmap_threshold_fix(void)
+{
+#ifdef __GLIBC__
+    if (mallopt(M_MMAP_THRESHOLD, MMAP_THRESHOLD_BYTES) == 0) {
+        fprintf(stderr,
+                "mini-redis: malloc의 mmap 기준값을 고정하지 못했습니다\n");
+    }
+#endif
 }
 
 static void stop_signals_install(void)
