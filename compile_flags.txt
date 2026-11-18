@@ -1,5 +1,6 @@
 -std=c11
 -Isrc
+-Ivendor/siphash
 -Ivendor/mongoose
 -D_POSIX_C_SOURCE=200809L
 -DMG_MAX_HTTP_HEADERS=64
