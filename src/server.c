@@ -31,6 +31,7 @@
 
 #define PORT_MAX 65535
 #define LISTEN_URL_MAX 64
+#define RECEIVE_RESERVE_AFTER_BYTES (1024 * 1024)
 /* 아래 세 값은 빌드할 때 정하는 상수입니다(spec Q19). make bench가 조합마다
    -D로 바꿔 다시 빌드합니다(Makefile의 SERVER_FLAGS). */
 /* 요청이 없을 때 루프가 깨어나는 간격입니다. 청소 간격 S가 이보다 짧으면 실제
@@ -338,9 +339,9 @@ static const char *status_reason(int status)
 
 /* mongoose는 수신 버퍼가 차면 MG_IO_SIZE(16 KiB)만큼만 늘리고, 늘릴 때마다 새
    버퍼를 할당해 복사합니다. 16 MiB body면 약 1,000번 복사해 ASan 빌드에서 PUT
-   하나에 30초가 걸렸습니다. 그래서 버퍼가 차면 두 배로 늘리되, 헤더가 알린 요청
-   길이보다 크게는 늘리지 않습니다. 메모리는 실제로 받은 바이트의 두 배를 넘지
-   않습니다. MG_EV_READ는 mongoose의 HTTP 처리가 끝난 뒤에 오므로, 버퍼를 옮겨도
+   하나에 30초가 걸렸습니다. 버퍼가 차면 요청 길이까지 두 배씩 늘립니다. body를
+   1 MiB 이상 받은 뒤에는 큰 중간 복사를 피하도록 요청 끝까지 한 번에 확보합니다.
+   MG_EV_READ는 mongoose의 HTTP 처리가 끝난 뒤에 오므로, 버퍼를 옮겨도
    mongoose가 들고 있는 옛 주소가 없습니다. 상한을 넘는 요청은 headers_check가
    이미 닫는 중으로 바꿨으므로 늘리지 않습니다. */
 static void receive_buffer_grow(struct mg_connection *connection)
@@ -356,8 +357,12 @@ static void receive_buffer_grow(struct mg_connection *connection)
     size_t request_len = message.message.len;
     /* chunked 요청은 요청 길이가 헤더 길이뿐이므로, 줄이지 않게 거릅니다. */
     if (request_len > received->size) {
-        mg_iobuf_resize(received,
-                        doubled < request_len ? doubled : request_len);
+        size_t capacity = doubled < request_len ? doubled : request_len;
+        if (received->len >= message.head.len &&
+            received->len - message.head.len >= RECEIVE_RESERVE_AFTER_BYTES) {
+            capacity = request_len;
+        }
+        mg_iobuf_resize(received, capacity);
     }
 }
 
