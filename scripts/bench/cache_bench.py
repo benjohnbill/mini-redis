@@ -351,6 +351,10 @@ def record_numbers(record, seconds):
             "cache_gets": stats_delta(before, after, "cache_gets"),
             "cache_hits": stats_delta(before, after, "cache_hits"),
             "origin_queries": stats_delta(before, after, "origin_queries"),
+            # 자동 묶기 전의 데모는 이 두 칸이 없어 0입니다.
+            "cache_mgets": after.get("cache_mgets", 0) - before.get("cache_mgets", 0),
+            "cache_mget_keys": (after.get("cache_mget_keys", 0) -
+                                before.get("cache_mget_keys", 0)),
             "checked": record["checked"]}
 
 

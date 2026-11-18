@@ -469,8 +469,10 @@ static void request_handle(struct mg_connection *connection,
         api_handle(store, mg_millis(), message->method.buf, message->method.len,
                    message->uri.buf, target_len(message), &ttl_header,
                    message->body.buf, message->body.len);
-    /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. */
+    /* 다음 store 호출 전에 응답을 송신 버퍼로 복사합니다. 복사했으므로 api
+       층이 응답을 위해 할당한 메모리(POST /mget)는 바로 해제합니다. */
     response_send(connection, &response);
+    api_response_destroy(&response);
     /* mongoose는 이 이벤트 전에 is_resp를 세우고, 세워져 있는 동안 같은 연결의
        다음 요청을 해석하지 않습니다. is_resp를 내리는 것은 mg_http_reply뿐인데
        응답을 mg_printf와 mg_send로 보내므로, 여기서 직접 내립니다. 내리지 않으면
