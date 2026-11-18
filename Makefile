@@ -88,7 +88,7 @@ functional: $(SERVER)
 	python3 -B tests/functional/concurrency_test.py $(SERVER)
 	python3 -B tests/functional/expire_test.py $(SERVER)
 
-verify: $(SERVER) test functional cache-functional
+verify: $(SERVER) test functional cache-functional demo-page-test
 	python3 scripts/check-ids.py
 	python3 scripts/convention.py lint
 
@@ -232,6 +232,25 @@ $(CACHE_BENCH_POSTGRES): demo/product_demo.c demo/cache_client.c demo/postgres_o
 $(CACHE_BENCH_DEMO): demo/product_demo.c demo/cache_client.c demo/sqlite_origin.c demo/origin.h demo/cache_client.h $(BENCH_MONGOOSE) | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) demo/product_demo.c demo/cache_client.c \
 	    demo/sqlite_origin.c $(BENCH_MONGOOSE) -lsqlite3 -o $@
+
+# 데모 페이지(demo/README.md의 "데모 페이지")는 같은 검색을 cache off와 on에
+# 번갈아 보내 비교합니다. 기본 원본은 PostgreSQL이고, SQLite 파일 경로를 주면
+# SQLite로 돕니다. 예:
+#   make demo-page-prepare   # 처음 한 번. 상품 100만 개를 채웁니다
+#   make demo-page           # http://127.0.0.1:8080/
+#   make demo-page-prepare demo-page DEMO_PAGE_DB=/tmp/demo-products.sqlite
+DEMO_PAGE_DB    ?= postgresql:///mini_redis_demo
+DEMO_PAGE_COUNT ?= 1000000
+DEMO_PAGE_BACKEND := $(if $(filter postgresql://%,$(DEMO_PAGE_DB)),$(BENCH_BUILD)/cache-demo-postgres,$(CACHE_BENCH_DEMO))
+.PHONY: demo-page-prepare demo-page demo-page-test
+demo-page-prepare: $(DEMO_PAGE_BACKEND)
+	demo/page/prepare.sh $(DEMO_PAGE_BACKEND) '$(DEMO_PAGE_DB)' $(DEMO_PAGE_COUNT)
+
+demo-page: $(DEMO_PAGE_BACKEND) $(BENCH_SERVER)
+	demo/page/run.sh $(DEMO_PAGE_BACKEND) $(BENCH_SERVER) '$(DEMO_PAGE_DB)'
+
+demo-page-test:
+	python3 -B tests/functional/demo_page_test.py
 
 # PostgreSQL 원본은 선택 빌드입니다. libpq 개발 파일이 있어야 만들 수 있으며,
 # 기본 빌드·기능 검증·CI는 이것을 요구하지 않습니다(M5 spec). 예:

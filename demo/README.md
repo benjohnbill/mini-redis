@@ -162,6 +162,28 @@ make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench'
 
 `make cache-stage-bench`는 `cache-bench`와 같은 측정을 `STAGE_TRACE`를 켠 데모(`build/bench/cache-demo-stage`)로 돌립니다. 데모가 요청마다 대기, 처리, 캐시 GET, 원본 조회, 캐시 PUT, 처리 뒤 응답이 나가기까지의 시간을 적고, 측정 스크립트가 실행마다 파일 하나로 `STAGE_TRACE_DIR`(기본 `build/stage-trace`)에 남깁니다. 캐시 GET과 PUT은 캐시에 실제로 요청을 보낸 호출만 기록합니다. 캐시가 꺼졌거나 중단된 동안의 호출은 그 구간을 지나지 않은 것으로 남습니다. 상세 조회 묶음 끝에서 응답 뒤에 한 저장은 왕복마다 `store` 줄로 따로 남고, 요약 표 아래에 그 시간이 나옵니다. 이 줄은 단건 경로와 목록·검색의 PUT을 담지 않으므로, 전체 PUT과 mset의 수는 `cache_bench.py --output` 결과의 `cache_puts`, `cache_msets`로 비교합니다. `python3 -B scripts/bench/stage_summary.py <폴더>`가 구간마다 p50, p90, p95, p99 표를 만듭니다. 기록하는 비용이 지연에 섞이므로, 이 숫자는 `make cache-bench`의 숫자와 나란히 비교하지 않고 원인을 쪼개는 데만 씁니다. PostgreSQL 원본의 같은 기록은 `make cache-stage-bench-postgres POSTGRES_URL=...`이 `STAGE_TRACE_POSTGRES_DIR`(기본 `build/stage-trace-postgres`)에 남기며, 측정 옵션은 `POSTGRES_BENCH_FLAGS`로 넘깁니다. 기록 파일 이름에는 DB 종류가 없으므로 두 원본의 기록은 다른 폴더에 둡니다.
 
+## 데모 페이지
+
+`demo/page/`는 같은 검색을 cache off 백엔드와 cache on 백엔드에 번갈아 하나씩 10번 보내고, 요청마다 걸린 시간과 두 백엔드의 원본 조회 수, 적중률을 나란히 보여 주는 브라우저 페이지입니다. 두 백엔드는 같은 원본을 쓰므로, 두 쪽의 차이는 cache on이 둘째 요청부터 원본 조회 대신 mini-redis에 저장한 응답을 쓴 데서 옵니다. 숫자는 페이지를 연 컴퓨터에서 그때 잰 값입니다.
+
+```bash
+createdb mini_redis_demo   # PostgreSQL은 위 "성능 비교"처럼 설치해 띄웁니다
+make demo-page-prepare     # 처음 한 번. 상품 100만 개를 채웁니다(약 3분)
+make demo-page             # http://127.0.0.1:8080/ 을 엽니다. Ctrl+C로 끕니다
+```
+
+PostgreSQL이 없으면 SQLite 파일로 돌립니다. SQLite 원본은 상품 100만 개에서 흔한 검색어도 요청마다 약 2초가 걸리므로, 상품 수를 20만 개로 줄입니다. 이때 off 쪽 검색은 약 370 ms입니다.
+
+```bash
+make demo-page-prepare demo-page DEMO_PAGE_DB=/tmp/demo-products.sqlite DEMO_PAGE_COUNT=200000
+```
+
+- **구성:** `run.sh`가 mini-redis(8090), cache off 백엔드(8081), cache on 백엔드(8082), 페이지 서버 `proxy.py`(8080)를 함께 띄웁니다. 데모 백엔드에는 CORS 헤더가 없으므로, 페이지 서버가 페이지를 내려주고 `/off/`와 `/on/` 요청을 두 백엔드에 전달합니다. 페이지의 시간은 페이지 서버가 백엔드에 요청을 보내고 응답을 다 받을 때까지입니다. 이미 떠 있는 데모가 포트를 잡고 있으면 `run.sh`가 그 포트를 알리고 멈춥니다.
+- **상품 이름:** `make demo-page-prepare`는 `--seed`로 상품을 채운 뒤, `fill_names.py`가 이름만 "브랜드 품목 색상 세대"(예: `한빛 무선 이어폰 블랙 1세대`)로 바꿉니다. id와 가격은 준비 명령이 정한 그대로입니다. 조합은 60,000개라서 전체 이름 하나는 상품 100만 개 중 16\~17개에만 있습니다.
+- **검색어 고르기:** 검색은 이름을 하나씩 읽다가 맞는 상품 20개를 찾으면 멈춥니다. 전체 이름처럼 드문 검색어는 원본이 이름을 거의 다 읽으므로 off가 느리고(PostgreSQL 100만 개에서 약 300 ms), `무선 이어폰`처럼 흔한 검색어는 금방 20개를 찾으므로 두 쪽이 모두 약 1 ms입니다. 페이지의 버튼 세 개는 off에서 300 ms 안팎이 걸린 전체 이름입니다.
+- **가격 수정:** 페이지 아래의 "가격 수정"은 on 백엔드로 `PUT /products/{id}`를 보내 무효화를 확인합니다. 원본이 하나이므로 off 백엔드도 다음 조회에서 새 값을 읽습니다.
+- **조건:** 한 컴퓨터 안의 원본과 mini-redis로 잰 값입니다. 실제 서비스처럼 원본과 캐시가 다른 머신에 있으면 두 쪽의 왕복마다 네트워크 시간이 더해집니다.
+
 ## 한계
 
 - **M5의 응답 캐시 데모는 백엔드 한 프로세스로 제한합니다.** 여러 백엔드 프로세스가 같은 원본과 캐시를 공유할 때의 조회·수정 순서 보장은 구현하지 않습니다. 원본 변경은 데모 API를 통해서만 하며, DB나 파일을 직접 수정하는 경우의 캐시 무효화는 보장하지 않습니다.
