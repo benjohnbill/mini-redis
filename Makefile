@@ -39,7 +39,7 @@ MONGOOSE_OBJ   := $(BUILD)/mongoose.o
 # 이를 받아들입니다.
 MONGOOSE_FLAGS := -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752
 
-.PHONY: all test functional verify lint format clean bench cache-demo cache-functional cache-bench cache-demo-postgres cache-functional-postgres cache-bench-postgres
+.PHONY: all test functional verify lint format clean bench idle-wakeup cache-demo cache-functional cache-bench cache-demo-postgres cache-functional-postgres cache-bench-postgres
 
 # 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_TIMEOUT_MAX_MS, SWEEP_INTERVAL_MS,
 # SWEEP_MAX_COUNT를 빌드할 때 바꿉니다(spec Q19). 예:
@@ -109,6 +109,11 @@ BENCH_MONGOOSE := $(BENCH_BUILD)/mongoose.o
 
 bench: $(BENCH_SERVER)
 	python3 -B scripts/bench/bench.py $(BENCH_SERVER)
+
+# make idle-wakeup: 요청이 없는 서버가 1초에 몇 번 깨어나는지 잽니다(M7 perf).
+# /proc를 읽으므로 Linux에서만 돕니다. make bench와 같은 서버를 씁니다.
+idle-wakeup: $(BENCH_SERVER)
+	python3 -B scripts/bench/idle_wakeup.py $(BENCH_SERVER)
 
 $(BENCH_SERVER): src/server.c $(BENCH_LIB_OBJS) $(BENCH_MONGOOSE) | $(BENCH_BUILD)
 	$(CC) $(CPPFLAGS) -DSWEEP_TRACE $(SERVER_FLAGS) -I$(MONGOOSE_DIR) $(BENCH_CFLAGS) $< \
