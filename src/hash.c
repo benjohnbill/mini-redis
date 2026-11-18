@@ -24,6 +24,7 @@ static void rehash_step (struct hash *);
 static void rehash_finish (struct hash *);
 static void rehash_move_bucket (struct hash *, struct list *);
 static void rehash_end (struct hash *);
+static struct list *bucket_ready (struct list *);
 
 /* Initializes hash table H to compute hash values using HASH and
    compare hash elements using LESS, given auxiliary data AUX. */
@@ -32,7 +33,7 @@ hash_init (struct hash *h,
 		hash_hash_func *hash, hash_less_func *less, void *aux) {
 	h->elem_cnt = 0;
 	h->bucket_cnt = 4;
-	h->buckets = malloc (sizeof *h->buckets * h->bucket_cnt);
+	h->buckets = calloc (h->bucket_cnt, sizeof *h->buckets);
 	h->old_buckets = NULL;
 	h->old_bucket_cnt = 0;
 	h->rehash_idx = 0;
@@ -61,13 +62,13 @@ hash_clear (struct hash *h, hash_action_func *destructor) {
 	size_t i;
 
 	for (i = 0; i < h->bucket_cnt; i++)
-		clear_bucket (h, &h->buckets[i], destructor);
+		clear_bucket (h, bucket_ready (&h->buckets[i]), destructor);
 
 	/* mini-redis perf: 옮기는 중이면 아직 옮기지 않은 옛 버킷의 entry도
 	   지우고, 옛 배열을 버립니다. */
 	if (h->old_buckets != NULL) {
 		for (i = h->rehash_idx; i < h->old_bucket_cnt; i++)
-			clear_bucket (h, &h->old_buckets[i], destructor);
+			clear_bucket (h, bucket_ready (&h->old_buckets[i]), destructor);
 		rehash_end (h);
 	}
 
@@ -177,7 +178,7 @@ hash_apply (struct hash *h, hash_action_func *action) {
 	rehash_finish (h);
 
 	for (i = 0; i < h->bucket_cnt; i++) {
-		struct list *bucket = &h->buckets[i];
+		struct list *bucket = bucket_ready (&h->buckets[i]);
 		struct list_elem *elem, *next;
 
 		for (elem = list_begin (bucket); elem != list_end (bucket); elem = next) {
@@ -213,7 +214,7 @@ hash_first (struct hash_iterator *i, struct hash *h) {
 	rehash_finish (h);
 
 	i->hash = h;
-	i->bucket = i->hash->buckets;
+	i->bucket = bucket_ready (i->hash->buckets);
 	i->elem = list_elem_to_hash_elem (list_head (i->bucket));
 }
 
@@ -235,7 +236,7 @@ hash_next (struct hash_iterator *i) {
 			i->elem = NULL;
 			break;
 		}
-		i->elem = list_elem_to_hash_elem (list_begin (i->bucket));
+		i->elem = list_elem_to_hash_elem (list_begin (bucket_ready (i->bucket)));
 	}
 
 	return i->elem;
@@ -329,7 +330,7 @@ clear_bucket (struct hash *h, struct list *bucket,
 static struct list *
 find_bucket (struct hash *h, struct hash_elem *e) {
 	size_t bucket_idx = h->hash (e, h->aux) & (h->bucket_cnt - 1);
-	return &h->buckets[bucket_idx];
+	return bucket_ready (&h->buckets[bucket_idx]);
 }
 
 /* Searches BUCKET in H for a hash element equal to E.  Returns
@@ -360,7 +361,7 @@ find_any (struct hash *h, struct hash_elem *e) {
 	old_idx = h->hash (e, h->aux) & (h->old_bucket_cnt - 1);
 	if (old_idx < h->rehash_idx)
 		return NULL;
-	return find_elem (h, &h->old_buckets[old_idx], e);
+	return find_elem (h, bucket_ready (&h->old_buckets[old_idx]), e);
 }
 
 /* Returns X with its lowest-order bit set to 1 turned off. */
@@ -412,7 +413,6 @@ static void
 rehash (struct hash *h) {
 	size_t old_bucket_cnt, new_bucket_cnt;
 	struct list *new_buckets;
-	size_t i;
 
 	assert (h != NULL);
 
@@ -447,16 +447,20 @@ rehash (struct hash *h) {
 	if (new_bucket_cnt == old_bucket_cnt)
 		return;
 
-	/* Allocate new buckets and initialize them as empty. */
-	new_buckets = malloc (sizeof *new_buckets * new_bucket_cnt);
+	/* Allocate new buckets.  mini-redis perf: 버킷을 여기서 list_init하지
+	   않고, 0으로 채운 배열을 받아 bucket_ready가 처음 쓸 때 초기화합니다.
+	   원래 코드는 새 배열의 버킷 전부를 이 자리에서 초기화해서, (2, 1, 0.5)의
+	   버킷 2^22개(128 MiB)에서 서버가 약 70~140 ms 멈췄습니다(docs/
+	   measurements/server/020). glibc는 mmap으로 받는 큰 배열을 calloc할 때
+	   이미 0인 새 페이지를 받으므로 다시 채우지 않고, 페이지를 처음 쓸 때의
+	   비용은 이후 요청에 나뉩니다. */
+	new_buckets = calloc (new_bucket_cnt, sizeof *new_buckets);
 	if (new_buckets == NULL) {
 		/* Allocation failed.  This means that use of the hash table will
 		   be less efficient.  However, it is still usable, so
 		   there's no reason for it to be an error. */
 		return;
 	}
-	for (i = 0; i < new_bucket_cnt; i++)
-		list_init (&new_buckets[i]);
 
 	/* Install new bucket info.  mini-redis perf: the old buckets
 	   stay in old_buckets until rehash_step has moved them all. */
@@ -478,7 +482,7 @@ rehash_step (struct hash *h) {
 		return;
 
 	while (h->rehash_idx < h->old_bucket_cnt) {
-		struct list *old_bucket = &h->old_buckets[h->rehash_idx++];
+		struct list *old_bucket = bucket_ready (&h->old_buckets[h->rehash_idx++]);
 
 		if (!list_empty (old_bucket)) {
 			rehash_move_bucket (h, old_bucket);
@@ -499,7 +503,7 @@ rehash_finish (struct hash *h) {
 		return;
 
 	while (h->rehash_idx < h->old_bucket_cnt)
-		rehash_move_bucket (h, &h->old_buckets[h->rehash_idx++]);
+		rehash_move_bucket (h, bucket_ready (&h->old_buckets[h->rehash_idx++]));
 	rehash_end (h);
 }
 
@@ -527,6 +531,17 @@ rehash_end (struct hash *h) {
 	h->old_buckets = NULL;
 	h->old_bucket_cnt = 0;
 	h->rehash_idx = 0;
+}
+
+/* mini-redis perf: BUCKET이 아직 초기화되지 않았으면(calloc이 0으로 남긴
+   버킷) list_init하고 BUCKET을 돌려줍니다. 초기화한 리스트는 head.next가
+   언제나 NULL이 아니므로, NULL이면 한 번도 쓰지 않은 버킷입니다. 배열의
+   버킷은 모두 이 함수를 거쳐 씁니다. */
+static struct list *
+bucket_ready (struct list *bucket) {
+	if (bucket->head.next == NULL)
+		list_init (bucket);
+	return bucket;
 }
 
 /* Inserts E into BUCKET (in hash table H). */
