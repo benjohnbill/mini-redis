@@ -1,15 +1,15 @@
 ---
-seq: TBD
+seq: 7
 topic: chain-pr40-mget
 date: 2026-11-18
 who: CJG
 commit: 21d2b6a
-previous: chain-02-CJG-pr39-flush.md
+previous: 006-CJG-pr39-flush.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, Python 3.14.4, PostgreSQL 18.6(WSL에 apt로 설치, 유닉스 소켓)"
 build: "make -B build/bench/cache-demo-postgres build/bench/mini-redis: -O2, sanitizer 끔"
-command: "make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench' POSTGRES_BENCH_FLAGS='--scenario detail-uniform --output chain-03-CJG-pr40-mget.json' (연결 32, 초당 500요청, burst, 준비 10초, 측정 30초, 3회, TTL 60초와 2초)"
+command: "make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench' POSTGRES_BENCH_FLAGS='--scenario detail-uniform --output 007-CJG-pr40-mget.json' (연결 32, 초당 500요청, burst, 준비 10초, 측정 30초, 3회, TTL 60초와 2초)"
 milestones: [perf]
-data: chain-03-CJG-pr40-mget.json
+data: 007-CJG-pr40-mget.json
 ---
 
 # 병합 사슬 #40: 상세 조회의 캐시 요청을 POST /mget으로 묶음

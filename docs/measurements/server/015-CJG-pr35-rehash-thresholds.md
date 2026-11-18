@@ -1,10 +1,10 @@
 ---
-seq: TBD
+seq: 15
 topic: chain-pr35-rehash-thresholds
 date: 2026-11-18
 who: CJG
 commit: 66d6de7
-previous: chain-02-CJG-pr37-incremental-rehash.md
+previous: 014-CJG-pr37-incremental-rehash.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make -B build/bench/mini-redis: -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
 command: "python3 -B scripts/bench/bench.py build/bench/mini-redis a-quiet b-big-store c-rehash d-big-delete e-grow-once f-expire-burst g-expire-steady h-expire-large, 3회"
@@ -21,7 +21,7 @@ data: none
 
 ## 결론
 
-**서버 지연에서는 치른 값만 보이고, 얻은 것은 서버 측정의 해상도 아래에 있습니다.** #35가 노린 조회 시간 감소는 같은 commit을 서버 없이 다시 잰 [`rehash-micro/chain-01`](../rehash-micro/chain-01-CJG-pr35-on-main.md)에서 key 100,000\~4,194,304개일 때 16.5\~22.3%(119\~408 ns)였지만, 서버 전체의 작은 GET p50은 3회 범위 안에서 같습니다. 반면 메모리와 버킷을 늘리는 멈춤은 #37 위에서 분명히 늘었습니다.
+**서버 지연에서는 치른 값만 보이고, 얻은 것은 서버 측정의 해상도 아래에 있습니다.** #35가 노린 조회 시간 감소는 같은 commit을 서버 없이 다시 잰 [`rehash-micro/002`](../rehash-micro/002-CJG-pr35-on-main.md)에서 key 100,000\~4,194,304개일 때 16.5\~22.3%(119\~408 ns)였지만, 서버 전체의 작은 GET p50은 3회 범위 안에서 같습니다. 반면 메모리와 버킷을 늘리는 멈춤은 #37 위에서 분명히 늘었습니다.
 
 | 지표 | #37 (3회) | #35 (3회) | 판정 |
 |---|---|---|---|

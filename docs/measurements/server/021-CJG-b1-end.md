@@ -1,10 +1,10 @@
 ---
-seq: TBD
+seq: 21
 topic: chain-b1-end
 date: 2026-11-18
 who: CJG
 commit: 13a903a
-previous: chain-01-CJG-b1-baseline.md
+previous: 013-CJG-b1-baseline.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make -B build/bench/mini-redis: -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
 command: "python3 -B scripts/bench/bench.py build/bench/mini-redis a-quiet b-big-store c-rehash d-big-delete e-grow-once f-expire-burst g-expire-steady h-expire-large, 3회"
@@ -16,7 +16,7 @@ data: none
 
 ## 앞 기록과 달라진 점
 
-- **코드:** [B1 기준선](chain-01-CJG-b1-baseline.md)과 같은 `13a903a`입니다. 코드는 바꾸지 않았습니다.
+- **코드:** [B1 기준선](013-CJG-b1-baseline.md)과 같은 `13a903a`입니다. 코드는 바꾸지 않았습니다.
 - **목적:** 서버 사슬(#37부터 #41까지)을 모두 잰 뒤에 출발점을 다시 쟀습니다. 사슬을 재는 동안 노트북의 상태가 바뀌었다면 이 숫자가 B1과 달라집니다.
 - **측정 시점:** 다른 Claude 세션이 돌지 않는 상태에서 쟀습니다(시작 load average 1.00).
 
@@ -33,7 +33,7 @@ data: none
 | 최대 RSS (모든 시나리오) | | | 0.5 MiB 안에서 같음 |
 
 - **e의 멈춤은 3회 사이에서도 약 120 ms씩 흔들립니다.** B1에서도 531\~637 ms였습니다. 그래서 사슬 기록에서는 멈춤이 수백 ms에서 수십 ms로 바뀐 #37 같은 차이만 판정합니다.
-- **사슬 전체의 효과:** e의 멈춤이 이 기준선의 555\~679 ms에서 [#41 단계](chain-08-CJG-pr39-41-demo-api.md)의 68\~141 ms가 되었습니다.
+- **사슬 전체의 효과:** e의 멈춤이 이 기준선의 555\~679 ms에서 [#41 단계](020-CJG-pr39-41-demo-api.md)의 68\~141 ms가 되었습니다.
 
 ## 결과
 

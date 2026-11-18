@@ -1,5 +1,5 @@
 ---
-seq: TBD
+seq: 3
 topic: chain-before-pr44
 date: 2026-11-18
 who: CJG

@@ -1,10 +1,10 @@
 ---
-seq: TBD
+seq: 20
 topic: chain-pr39-41-demo-api
 date: 2026-11-18
 who: CJG
 commit: 9e1812d
-previous: chain-06-CJG-pr36-siphash.md
+previous: 018-CJG-pr36-siphash.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make -B build/bench/mini-redis: -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
 command: "python3 -B scripts/bench/bench.py build/bench/mini-redis a-quiet b-big-store c-rehash d-big-delete e-grow-once f-expire-burst g-expire-steady h-expire-large, 3회. 근거 절: 같은 명령의 h-expire-large만 409f6b9와 9e1812d binary로 번갈아 5회씩"

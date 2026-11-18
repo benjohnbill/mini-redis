@@ -1,10 +1,10 @@
 ---
-seq: TBD
+seq: 16
 topic: chain-pr44-sleep-until-due
 date: 2026-11-18
 who: CJG
 commit: 60d1e41
-previous: chain-03-CJG-pr35-rehash-thresholds.md
+previous: 015-CJG-pr35-rehash-thresholds.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make -B build/bench/mini-redis: -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
 command: "python3 -B scripts/bench/bench.py build/bench/mini-redis a-quiet b-big-store c-rehash d-big-delete e-grow-once f-expire-burst g-expire-steady h-expire-large, 3회"
@@ -16,7 +16,7 @@ data: none
 
 ## 앞 기록과 달라진 점
 
-- **코드:** #35 단계(`66d6de7`)에 PR #44만 병합했습니다. 요청이 없는 루프가 25 ms마다 깨어나지 않고 다음 기한까지 잠듭니다(`src/server.c`). 같은 commit의 깨어남은 [`idle-wakeup/chain-02`](../idle-wakeup/chain-02-CJG-pr44-sleep-until-due.md)에 있습니다.
+- **코드:** #35 단계(`66d6de7`)에 PR #44만 병합했습니다. 요청이 없는 루프가 25 ms마다 깨어나지 않고 다음 기한까지 잠듭니다(`src/server.c`). 같은 commit의 깨어남은 [`idle-wakeup/004`](../idle-wakeup/004-CJG-pr44-sleep-until-due.md)에 있습니다.
 - **머신과 명령:** 앞 단계와 같습니다. 3회에 약 10분이 걸렸습니다.
 
 ## 결론

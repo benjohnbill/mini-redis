@@ -1,15 +1,15 @@
 ---
-seq: TBD
+seq: 8
 topic: chain-pr41-mset
 date: 2026-11-18
 who: CJG
 commit: 9e1812d
-previous: chain-03-CJG-pr40-mget.md
+previous: 007-CJG-pr40-mget.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, Python 3.14.4, PostgreSQL 18.6(WSL에 apt로 설치, 유닉스 소켓)"
 build: "make -B build/bench/cache-demo-postgres build/bench/mini-redis: -O2, sanitizer 끔"
-command: "make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench' POSTGRES_BENCH_FLAGS='--scenario detail-uniform --output chain-04-CJG-pr41-mset.json' (연결 32, 초당 500요청, burst, 준비 10초, 측정 30초, 3회, TTL 60초와 2초)"
+command: "make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench' POSTGRES_BENCH_FLAGS='--scenario detail-uniform --output 008-CJG-pr41-mset.json' (연결 32, 초당 500요청, burst, 준비 10초, 측정 30초, 3회, TTL 60초와 2초)"
 milestones: [perf]
-data: chain-04-CJG-pr41-mset.json
+data: 008-CJG-pr41-mset.json
 ---
 
 # 병합 사슬 #41: 미스 뒤의 캐시 저장을 POST /mset으로 묶음
@@ -18,7 +18,7 @@ data: chain-04-CJG-pr41-mset.json
 
 - **코드:** #40 단계(`21d2b6a`)에 PR #41만 병합했습니다. mini-redis에 `POST /mset`이 생겼고(`src/api.c`), 데모가 같은 처리 바퀴의 미스 응답을 모아 두 건 이상이면 캐시에 한 번에 저장합니다(`demo/product_demo.c`, `demo/cache_client.c`). 서버는 body를 선언한 길이만큼 받지 못한 요청을 처리하지 않습니다(`src/server.c`의 `body_is_complete`).
 - **머신과 명령:** 앞 단계와 같습니다.
-- **측정 시점:** 다른 Claude 세션이 돌지 않는 상태에서 쟀습니다(시작 load average 0.66). 같은 재측정에서 #40을 다시 쟀더니 TTL 60초 on의 p50이 3.31, 3.29, 3.22 ms로 [#40 기록](chain-03-CJG-pr40-mget.md)과 같아서, 이 기록을 #40 기록과 나란히 견줍니다.
+- **측정 시점:** 다른 Claude 세션이 돌지 않는 상태에서 쟀습니다(시작 load average 0.66). 같은 재측정에서 #40을 다시 쟀더니 TTL 60초 on의 p50이 3.31, 3.29, 3.22 ms로 [#40 기록](007-CJG-pr40-mget.md)과 같아서, 이 기록을 #40 기록과 나란히 견줍니다.
 
 ## 결론
 

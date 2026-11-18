@@ -1,10 +1,10 @@
 ---
-seq: TBD
+seq: 4
 topic: chain-pr44-sleep-until-due
 date: 2026-11-18
 who: CJG
 commit: 60d1e41
-previous: chain-01-CJG-before-pr44.md
+previous: 003-CJG-before-pr44.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make -B build/bench/mini-redis: -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
 command: "python3 -B scripts/bench/idle_wakeup.py build/bench/mini-redis (상태마다 5초씩 3회)"

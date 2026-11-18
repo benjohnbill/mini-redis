@@ -1,5 +1,5 @@
 ---
-seq: TBD
+seq: 13
 topic: chain-b1-baseline
 date: 2026-11-18
 who: CJG

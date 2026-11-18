@@ -1,10 +1,10 @@
 ---
-seq: TBD
+seq: 18
 topic: chain-pr36-siphash
 date: 2026-11-18
 who: CJG
 commit: 409f6b9
-previous: chain-05-CJG-pr42-recv-buffer.md
+previous: 017-CJG-pr42-recv-buffer.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make -B build/bench/mini-redis: -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
 command: "python3 -B scripts/bench/bench.py build/bench/mini-redis a-quiet b-big-store c-rehash d-big-delete e-grow-once f-expire-burst g-expire-steady h-expire-large, 3회"
@@ -33,7 +33,7 @@ data: none
 - **e의 p99가 3회 모두 목표를 조금 넘었지만(10.7\~14.6 ms), #36 때문으로 보지 않습니다.** 작은 GET은 초당 5,000개이고 버킷을 늘리는 멈춤은 약 100 ms라서, 멈춤 동안 약 500개가 밀립니다. 이는 50,000개의 1%와 같아서 p99가 멈춤의 경계에 걸립니다. #35 단계부터 e의 p99는 같은 이유로 1.0 ms와 24.2 ms 사이를 오갔습니다. 멈춤 자체(버킷을 늘리는 저장)는 #42 단계와 같은 범위입니다.
 - **a 1회째의 p99 5.3 ms**는 같은 회의 client 늦음 max가 14.8 ms라서 측정 client가 멈춘 회로 봅니다.
 - **긴 key의 비용은 이 기록에 없습니다.** `bench.py`의 key는 짧습니다. 4,096바이트 key에서의 비용은 `hash-micro/001`과 [`hash-function.md`](../../milestones/perf/ideas/hash-function.md)가 추정한 값만 있습니다.
-- **h의 약 40 ms 멈춤(39.9\~45.2 ms)과 d, h의 RSS 845 MiB는 #42 단계와 같습니다.** 원인은 [#42 기록](chain-05-CJG-pr42-recv-buffer.md)에 적은 가설 그대로입니다.
+- **h의 약 40 ms 멈춤(39.9\~45.2 ms)과 d, h의 RSS 845 MiB는 #42 단계와 같습니다.** 원인은 [#42 기록](017-CJG-pr42-recv-buffer.md)에 적은 가설 그대로입니다.
 
 ## 결과
 

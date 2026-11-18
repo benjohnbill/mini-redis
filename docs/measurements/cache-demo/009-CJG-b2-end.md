@@ -1,22 +1,22 @@
 ---
-seq: TBD
+seq: 9
 topic: chain-b2-end
 date: 2026-11-18
 who: CJG
 commit: 409f6b9
-previous: chain-01-CJG-b2-baseline.md
+previous: 005-CJG-b2-baseline.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, Python 3.14.4, PostgreSQL 18.6(WSL에 apt로 설치, 유닉스 소켓)"
 build: "make -B build/bench/cache-demo-postgres build/bench/mini-redis: -O2, sanitizer 끔"
-command: "make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench' POSTGRES_BENCH_FLAGS='--scenario detail-uniform --output chain-05-CJG-b2-end.json' (연결 32, 초당 500요청, burst, 준비 10초, 측정 30초, 3회, TTL 60초와 2초)"
+command: "make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench' POSTGRES_BENCH_FLAGS='--scenario detail-uniform --output 009-CJG-b2-end.json' (연결 32, 초당 500요청, burst, 준비 10초, 측정 30초, 3회, TTL 60초와 2초)"
 milestones: [perf]
-data: chain-05-CJG-b2-end.json
+data: 009-CJG-b2-end.json
 ---
 
 # 병합 사슬 끝 기준선: B2를 다시 잼
 
 ## 앞 기록과 달라진 점
 
-- **코드:** [B2 기준선](chain-01-CJG-b2-baseline.md)과 같은 `409f6b9`입니다. 코드는 바꾸지 않았습니다.
+- **코드:** [B2 기준선](005-CJG-b2-baseline.md)과 같은 `409f6b9`입니다. 코드는 바꾸지 않았습니다.
 - **목적:** 상품 데모 사슬(#39, #40, #41)을 모두 잰 뒤에 출발점을 다시 쟀습니다. 사슬을 재는 약 2시간 30분 동안 노트북의 상태가 바뀌었다면 이 숫자가 B2와 달라집니다.
 - **측정 시점:** 사슬의 마지막 측정(#41)이 끝난 직후입니다. 다른 Claude 세션은 돌지 않았습니다(시작 load average 0.33).
 
@@ -32,7 +32,7 @@ data: chain-05-CJG-b2-end.json
 | 2초 | on | 16.64, 16.36, 17.39 | 16.70, 16.69, 16.80 | 같음 |
 
 - **적중률(71.8%, 11.3%)과 원본 조회 수(4,239, 13,315)도 B2와 같습니다.**
-- **사슬 전체의 효과:** TTL 60초 on의 p50이 이 기준선의 8.87\~9.31 ms에서 [#41 단계](chain-04-CJG-pr41-mset.md)의 2.64\~2.78 ms가 되었습니다. 캐시를 끈 쪽도 #39가 응답을 보내는 시점을 바꿔서, B2와 이 기준선의 8.6\~9.2 ms에서 #41 단계의 5.7\~5.9 ms가 되었습니다.
+- **사슬 전체의 효과:** TTL 60초 on의 p50이 이 기준선의 8.87\~9.31 ms에서 [#41 단계](008-CJG-pr41-mset.md)의 2.64\~2.78 ms가 되었습니다. 캐시를 끈 쪽도 #39가 응답을 보내는 시점을 바꿔서, B2와 이 기준선의 8.6\~9.2 ms에서 #41 단계의 5.7\~5.9 ms가 되었습니다.
 
 ## 결과
 

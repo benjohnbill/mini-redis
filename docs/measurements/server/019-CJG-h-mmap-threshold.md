@@ -1,10 +1,10 @@
 ---
-seq: TBD
+seq: 19
 topic: chain-h-mmap-threshold
 date: 2026-11-18
 who: CJG
 commit: 409f6b9
-previous: chain-06-CJG-pr36-siphash.md
+previous: 018-CJG-pr36-siphash.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, wrk 4.1.0, Python 3.14.4"
 build: "make -B build/bench/mini-redis: -O2, sanitizer 끔, assert 남김, SWEEP_TRACE 켬"
 command: "python3 -B scripts/bench/bench.py build/bench/mini-redis h-expire-large, 환경 변수 없음과 MALLOC_MMAP_THRESHOLD_=131072를 번갈아 5회씩"
@@ -16,7 +16,7 @@ data: none
 
 ## 앞 기록과 달라진 점
 
-- **목적:** [#42 사슬 기록](chain-05-CJG-pr42-recv-buffer.md)에서 h(16 MiB value의 만료)에 약 40 ms 멈춤이 새로 생겼습니다. 원인으로 의심한 glibc `malloc`의 동적 mmap 기준값을 가르려고, 기준값을 고정한 실행과 고정하지 않은 실행을 번갈아 쟀습니다.
+- **목적:** [#42 사슬 기록](017-CJG-pr42-recv-buffer.md)에서 h(16 MiB value의 만료)에 약 40 ms 멈춤이 새로 생겼습니다. 원인으로 의심한 glibc `malloc`의 동적 mmap 기준값을 가르려고, 기준값을 고정한 실행과 고정하지 않은 실행을 번갈아 쟀습니다.
 - **코드:** 사슬의 마지막 단계(`409f6b9`)와 같습니다. 서버 코드는 바꾸지 않았고, 서버 프로세스의 환경 변수만 다릅니다.
 
 ## 결론

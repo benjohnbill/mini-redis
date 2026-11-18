@@ -1,15 +1,15 @@
 ---
-seq: TBD
+seq: 6
 topic: chain-pr39-flush
 date: 2026-11-18
 who: CJG
 commit: fb598a7
-previous: chain-01-CJG-b2-baseline.md
+previous: 005-CJG-b2-baseline.md
 machine: "Intel Core Ultra 7 155H(논리 코어 22개), Windows의 WSL2 Ubuntu 26.04.1(커널 6.18.58.1-microsoft-standard-WSL2, 메모리 15 GiB), gcc 15.2.0, Python 3.14.4, PostgreSQL 18.6(WSL에 apt로 설치, 유닉스 소켓)"
 build: "make -B build/bench/cache-demo-postgres build/bench/mini-redis: -O2, sanitizer 끔"
-command: "make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench' POSTGRES_BENCH_FLAGS='--scenario detail-uniform --output chain-02-CJG-pr39-flush.json' (연결 32, 초당 500요청, burst, 준비 10초, 측정 30초, 3회, TTL 60초와 2초)"
+command: "make cache-bench-postgres POSTGRES_URL='postgresql:///mini_redis_bench' POSTGRES_BENCH_FLAGS='--scenario detail-uniform --output 006-CJG-pr39-flush.json' (연결 32, 초당 500요청, burst, 준비 10초, 측정 30초, 3회, TTL 60초와 2초)"
 milestones: [perf]
-data: chain-02-CJG-pr39-flush.json
+data: 006-CJG-pr39-flush.json
 ---
 
 # 병합 사슬 #39: 응답을 만든 직후 전송
