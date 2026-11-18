@@ -105,7 +105,6 @@ M5에서 mini-redis를 상품 API의 응답 캐시로 쓰는 별도 실행 파�
 - eviction(메모리가 가득 찰 때 key를 내보내는 정책)은 LMS에 없어 구현하지 않습니다.
 - **key 수가 2배로 늘어나는 순간 서버가 한 번 멈춥니다.** store가 약 13만 개를 넘으면 그 멈춤이 M3의 목표(작은 GET의 p99 10 ms 이하)를 넘고, 400만 개에서는 약 310\~350 ms입니다([측정 결과](docs/milestones/concurrency/spec.md#측정-결과)).
 - **16 MiB value를 저장하는 동안 서버가 약 12 ms 멈춥니다.** 상한 크기의 value를 초당 5번 저장하면 작은 GET의 p99가 목표를 약 1 ms 넘습니다([측정 결과](docs/milestones/concurrency/spec.md#측정-결과)).
-- **요청이 없어도 서버가 초당 40번 깨어납니다.** 주기 청소가 25 ms 간격을 지키기 때문입니다([측정 결과](docs/milestones/expire/spec.md#측정-결과)).
 - **key의 해시에 무작위 seed를 섞지 않습니다.** 같은 버킷에 떨어지는 key를 골라 넣으면 조회가 느려집니다([Redis와 대조](docs/milestones/store/spec.md#redis와-대조)).
 - **보관 기간과 연결에는 client가 알아야 할 한계가 있습니다.** 절전 중 멈추는 시계, 전송 지연만큼 늦는 만료, 느린 연결, `503` 뒤의 연결 리셋, 끊긴 body의 저장입니다([`docs/api.md`의 "한계"](docs/api.md#한계)).
 - **응답 캐시 데모는 백엔드 한 프로세스와 넓은 무효화로 제한합니다.** 세부는 [`demo/README.md`의 "한계"](demo/README.md#한계)에 있습니다.

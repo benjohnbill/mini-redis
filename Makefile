@@ -41,7 +41,7 @@ MONGOOSE_FLAGS := -D_DEFAULT_SOURCE -DMG_MAX_RECV_SIZE=16842752
 
 .PHONY: all test functional verify lint format clean bench cache-demo cache-functional cache-bench cache-demo-postgres cache-functional-postgres cache-bench-postgres
 
-# 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_INTERVAL_MS, SWEEP_INTERVAL_MS,
+# 서버에만 주는 -D 플래그입니다. src/server.c의 POLL_TIMEOUT_MAX_MS, SWEEP_INTERVAL_MS,
 # SWEEP_MAX_COUNT를 빌드할 때 바꿉니다(spec Q19). 예:
 #   make -B build/mini-redis SERVER_FLAGS='-DSWEEP_INTERVAL_MS=50 -DSWEEP_MAX_COUNT=5'
 # 플래그만 바꾸면 make가 다시 빌드하지 않으므로 -B를 함께 씁니다.
