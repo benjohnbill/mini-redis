@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mini-redis 성능 테스트 · 기준선과 최종 비교</title>
+<style>:root { color-scheme: light; --text: #202124; --muted: #56585c; --line: #dedfe1; --panel: #f0f0f0; --soft: #f7f7f7; }
+* { box-sizing: border-box; }
+html { scroll-padding-top: 24px; }
+body { margin: 0; background: #fcfcfc; color: var(--text); font: 17px/1.68 "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; word-break: keep-all; overflow-wrap: anywhere; }
+.layout { max-width: 1440px; margin-inline: auto; display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
+aside { background: var(--soft); border-right: 1px solid var(--line); }
+nav { position: sticky; top: 0; max-height: 100vh; overflow: auto; padding: 28px 18px 24px; font-size: .9rem; }
+.toc-title { display: flex; justify-content: space-between; align-items: center; font-size: 1rem; font-weight: 700; margin: 0 0 12px; }
+.toc-title span { color: var(--muted); font-size: .8rem; font-weight: 400; }
+nav ul { padding: 0; margin: 0; list-style: none; }
+nav a { display: block; padding: 4px 6px; border-radius: 4px; text-decoration: none; }
+nav a:hover, nav a:focus-visible { background: #e5e5e5; text-decoration: underline; }
+.depth-3 { padding-left: 10px; color: var(--muted); }
+main { max-width: 1100px; min-width: 0; padding: 42px clamp(22px, 4vw, 67px) 76px; }
+h1 { margin: 0 0 .3em; font-size: clamp(1.9rem, 3.7vw, 2.7rem); line-height: 1.25; letter-spacing: -.035em; }
+h2 { margin: 2.15em 0 .7em; padding: 9px 13px; background: var(--panel); border-left: 3px solid #a0a0a0; font-size: 1.28rem; line-height: 1.4; }
+h3 { margin: 1.75em 0 .65em; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 1.13rem; }
+h2:target, h3:target { outline: 2px solid #737373; outline-offset: 3px; }
+p, ul, pre, table { margin: .65em 0 1.15em; }
+main ul { padding-left: 1.38em; }
+main li { margin-block: .58em; }
+a { color: inherit; }
+code { font: .91em/1.6 ui-monospace, "Consolas", monospace; background: #eeeeee; padding: .08em .29em; border-radius: 3px; }
+pre { padding: 12px 15px; overflow: auto; border: 1px solid var(--line); background: var(--soft); }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; font-size: .94rem; }
+th, td { padding: .48em .7em; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { background: var(--soft); }
+tbody th { background: transparent; font-weight: 600; }
+.table-scroll { overflow-x: auto; }
+.case-table { min-width: 695px; }
+.subtitle { color: var(--muted); margin: 0 0 1.4em; font-size: .95rem; }
+
+/* 회색 한 줄 콜아웃 */
+.gray-note { margin: .5em 0 1em; padding: 6px 12px; border-left: 3px solid #b5b7ba; background: #f2f2f3; color: var(--muted); font-size: .9rem; line-height: 1.55; }
+.gray-note code { background: #e6e6e8; }
+.desc { display: block; color: var(--muted); font-size: .78rem; font-weight: 400; line-height: 1.4; margin-top: 2px; }
+
+/* 결론 카드 */
+.summary-cards { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; padding: 0; }
+.summary-cards li { margin: 0; padding: 11px 13px; background: #fff; border: 1px solid var(--line); border-radius: 7px; line-height: 1.5; display: flex; flex-direction: column; gap: .4em; }
+.summary-cards small { color: var(--muted); }
+.state { align-self: flex-start; margin-top: auto; border-radius: 5px; padding: 2px 6px; font-size: .75em; font-weight: 650; }
+.state.good { background: #eaf4ee; color: #29563a; }
+.state.mixed { background: #f7efdf; color: #6c4a14; }
+.state.bad { background: #f8e6e1; color: #7a2e1c; }
+
+/* 질문/강조 콜아웃 (회의 문서와 같음) */
+.question-callout { margin: 1em 0; padding: 10px 14px; border-left: 3px solid #aa8032; background: #fbf5e9; }
+.question-callout ul { margin: .35em 0 0; }
+.question-callout li { margin-block: .25em; }
+.pr-callout { margin: .85em 0; padding: 10px 14px; border-left: 3px solid #4865a3; background: #eef3fc; }
+.pr-callout ul { margin: .35em 0 0; }
+.pr-callout li { margin-block: .25em; }
+
+/* 히트맵 */
+.heat-grid { margin: 1.1em 0 1.6em; padding: 11px 14px; border: 1px solid var(--line); background: #fff; }
+.heat-grid figcaption small { display: block; color: var(--muted); font-size: .82rem; }
+.heat-grid table { min-width: 620px; table-layout: fixed; font-size: .88rem; margin-bottom: .2em; }
+.heat-grid th:first-child { width: 28%; }
+.heat-grid td { text-align: center; border-inline: 2px solid #fff; border-bottom: 2px solid #fff; }
+.heat-grid td b { display: block; font-size: 1.05rem; }
+.heat-grid td small { display: block; font-size: .76rem; opacity: .85; }
+.h-g2 { background: #8fc4a2; color: #10361f; }
+.h-g1 { background: #d3eadb; color: #1d4a2e; }
+.h-o1 { background: #f7ead3; color: #5d4113; }
+.h-o2 { background: #f0c99a; color: #4e300a; }
+.h-o3 { background: #e39a7a; color: #4a1a08; }
+.legend { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; color: var(--muted); }
+.legend li { margin: 0; display: flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 16px; height: 12px; border-radius: 2px; }
+
+/* 전체 결과표 */
+.full-table { min-width: 960px; font-size: .86rem; }
+.full-table th[scope="row"] { min-width: 190px; }
+.full-table td { white-space: nowrap; }
+.arr { color: #9a9ca0; padding-inline: 1px; }
+.chg-down { color: #1f6b3d; font-weight: 650; }
+.chg-up { color: #9a3b18; font-weight: 650; }
+.flow-pre { font-size: .92rem; }
+
+@media (max-width: 720px) {
+  .layout { display: block; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); }
+  nav { position: static; max-height: none; padding: 16px 20px; }
+  nav .toc { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 10px; }
+  main { padding: 26px 18px 52px; }
+}
+@media print {
+  .layout { display: block; }
+  aside { display: none; }
+  main { padding: 0; max-width: none; }
+  h2, h3 { break-after: avoid; }
+  tr { break-inside: avoid; }
+  body { background: white; font-size: 11pt; }
+  .case-table, .full-table, .heat-grid table { min-width: 0; }
+}
+
+/* 통합본 추가 */
+.era { display: inline-block; margin: 0 .5em .15em 0; padding: .05em .45em; border-radius: 4px; font-size: .8rem; font-weight: 700; white-space: nowrap; }
+.era.base { background: #e4e5e7; color: #3c3e42; }
+.era.final { background: #dce7fb; color: #18366d; }
+.era-block { margin: .8em 0; padding: 9px 14px; border-left: 3px solid #b5b7ba; background: #f5f5f6; }
+.era-block.final { border-left-color: #4865a3; background: #eef3fc; }
+.era-block ul { margin: .35em 0 0; }
+.era-block li { margin-block: .25em; }
+.heat-grid .was { color: inherit; opacity: .65; font-weight: 500; }
+.heat-grid td b { font-size: .98rem; }
+.summary-cards .flowline { font-size: .88rem; }
+details.base-tables { margin: 1em 0; border: 1px solid var(--line); background: #fff; padding: 6px 12px; }
+details.base-tables > summary { cursor: pointer; font-weight: 650; padding: 4px 0; }
+.num-r td { text-align: right; }
+
+/* 대표 결과: 기준선 · 최종 나란히 (ms) */
+.rep-table { min-width: 760px; font-size: .9rem; }
+.rep-table thead th { text-align: center; }
+.rep-table thead th[scope="row"], .rep-table thead th:first-child { text-align: left; }
+.rep-table .grp-base { background: #e4e5e7; color: #3c3e42; }
+.rep-table .grp-final { background: #dce7fb; color: #18366d; }
+.rep-table td { text-align: center; }
+.rep-table td.num { font-variant-numeric: tabular-nums; }
+.rep-table .delta-down { background: #d3eadb; color: #1d4a2e; }
+.rep-table .delta-up { background: #f0c99a; color: #4e300a; }
+.rep-table td:nth-child(5), .rep-table td:nth-child(8) { border-right: 2px solid #fff; }
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+<nav aria-label="문서 목차">
+<p class="toc-title">목차 <span>기준선 · 최종</span></p>
+<ul class="toc">
+<li class="depth-2"><a href="#conclusion">1. 결론</a></li>
+<li class="depth-2"><a href="#test-map">2. 테스트 지도</a></li>
+<li class="depth-3"><a href="#map-what">2.1 무엇을 확인하나</a></li>
+<li class="depth-3"><a href="#map-names">2.2 18개 시나리오 이름 읽는 법</a></li>
+<li class="depth-2"><a href="#trust">3. 믿을 만한 비교인가</a></li>
+<li class="depth-2"><a href="#compare">4. 기준선 → 최종 비교</a></li>
+<li class="depth-3"><a href="#rep">4.1 대표 결과</a></li>
+<li class="depth-3"><a href="#improve">4.2 기준선 대비 개선 폭</a></li>
+<li class="depth-2"><a href="#cache">5. 캐시로서의 성능</a></li>
+<li class="depth-3"><a href="#c-repeat">5.1 반복 목록·검색</a></li>
+<li class="depth-3"><a href="#c-detail">5.2 상품 상세</a></li>
+<li class="depth-3"><a href="#c-miss">5.3 캐시가 빗나갈 때</a></li>
+<li class="depth-3"><a href="#c-ttl">5.4 보관 시간과 수정</a></li>
+<li class="depth-3"><a href="#c-goal">5.5 목표 판정</a></li>
+<li class="depth-2"><a href="#pr">6. PR별 효과</a></li>
+<li class="depth-2"><a href="#spikes">7. 수백 ms로 튄 값</a></li>
+<li class="depth-2"><a href="#remaining">8. 아직 남은 문제</a></li>
+<li class="depth-2"><a href="#scope">9. 측정 범위</a></li>
+<li class="depth-2"><a href="#more">10. 추가 측정이 필요한 경우</a></li>
+<li class="depth-2"><a href="#full">11. 전체 결과표</a></li>
+<li class="depth-3"><a href="#full-final">11.1 기준선 → 최종</a></li>
+<li class="depth-3"><a href="#full-base">11.2 기준선 원본표</a></li>
+<li class="depth-3"><a href="#appendix-map">11.3 부록 · 지도 위 on÷off</a></li>
+</ul>
+</nav>
+</aside>
+<main>
+<h1>mini-redis 성능 테스트 · 기준선과 최종 비교</h1>
+<p class="subtitle">기준선 <code>d64ae63</code> → 최종 <code>1a64bd7</code>(#49까지 병합한 main) · 같은 macOS arm64 · SQLite와 PostgreSQL · 버전마다 432회 실행</p>
+<p class="gray-note">이 문서의 화살표는 두 종류다. <strong>기준선 → 최종</strong>은 코드를 고치기 전과 후의 비교다. <strong>off → on</strong>은 같은 코드에서 캐시를 껐을 때와 켰을 때의 비교다. 표마다 어느 쪽인지 위에 적었다.</p>
+
+<h2 id="conclusion">1. 결론</h2>
+<ul>
+<li><strong>초당 500요청을 보낸 맥 테스트에서 조회 p50은 72개 조건 모두 기준선보다 낮았다.</strong> 각 조건에서 캐시를 끈 경우와 켠 경우가 모두 빨라졌다.</li>
+<li>p50은 이 테스트의 대표 응답 시간을 비교하는 데 쓸 수 있다. p95와 p99는 일부 회차에서 크게 튀어서 개선 판정에서는 뺐다.</li>
+<li><strong>상품 상세의 캐시 on p50이 기준선보다 38~64% 낮아졌다.</strong> TTL 60초의 고른 상세에서 SQLite는 3.82 → 1.60 ms, PostgreSQL은 5.12 → 2.44 ms다. 같은 조건에서 SQLite의 캐시 HTTP 요청은 회당 19,247 → 2,171~2,193건으로 줄었다.</li>
+<li><strong>최종에서 캐시를 켜면</strong> 적중률이 99.9~100%인 반복 목록·검색의 p50이 1.92~2.48 ms다. 적중률 50% 이상 조건의 목표는 PostgreSQL 18/18개, SQLite 13/18개가 통과했다. PostgreSQL에서 매번 다른 목록·검색은 캐시 on이 여전히 2.32~8.03 ms 느리다.</li>
+<li><strong>PR별 지연 감소는 WSL에서 한 단계씩 측정한 기록으로 봐야 한다.</strong> #39는 응답을 빨리 보내고, #40·#41은 상세의 캐시 HTTP 요청을 묶는다. 맥에서 관측한 개선 폭에는 여러 PR과 실행 시점 차이가 함께 들어 있다.</li>
+</ul>
+
+<h3>캐시를 켜는 게 이득인가: 기준선과 최종</h3>
+<p class="gray-note">세 무리 각각에서, 같은 버전 안의 캐시 off와 on을 비교한 결과가 기준선과 최종에서 어떻게 바뀌었는지 정리했다. 숫자는 TTL 60초, 조회만 하는 조건의 조회 p50(ms)이고, 화살표는 캐시 off → on이다.</p>
+<ol class="summary-cards" aria-label="세 무리의 기준선과 최종">
+<li><strong>같은 목록·검색 반복</strong><small><code>*-repeated*</code></small>
+<small class="flowline"><span class="era base">기준선</span>캐시 on이 빠름 (SQLite 목록 16.01 → 3.03 ms)</small>
+<small class="flowline"><span class="era final">최종</span>캐시 on이 빠름 (SQLite 목록 14.70 → 2.23 ms), on p50은 1.92~2.48 ms</small>
+<span class="state good">기준선부터 이득 · 더 빨라짐</span></li>
+<li><strong>상품 상세</strong><small><code>detail-*</code></small>
+<small class="flowline"><span class="era base">기준선</span>SQLite on이 약 2배 느림 (고른 상세 1.95 → 3.82 ms), PostgreSQL 거의 같음 (4.72 → 5.12 ms)</small>
+<small class="flowline"><span class="era final">최종</span>SQLite 거의 같음 (1.55 → 1.60 ms), PostgreSQL on이 빠름 (3.73 → 2.44 ms)</small>
+<span class="state mixed">PostgreSQL은 이득으로 바뀜 · SQLite는 손해가 사라짐</span></li>
+<li><strong>조건을 바꾼 목록·검색</strong><small><code>*-varied*</code> · 적중률 0%</small>
+<small class="flowline"><span class="era base">기준선</span>모두 on이 느림 (SQLite 목록 16.65 → 18.52 ms, PostgreSQL 검색 28.50 → 47.75 ms)</small>
+<small class="flowline"><span class="era final">최종</span>SQLite 손해 거의 없음 (목록 13.49 → 13.17 ms), PostgreSQL 여전히 느림 (검색 15.85 → 23.88 ms)</small>
+<span class="state bad">PostgreSQL은 손해가 남음</span></li>
+</ol>
+
+<h2 id="test-map">2. 테스트 지도</h2>
+<p class="gray-note">회의 문서 2.1 「테스트 지도와 기준선에 넣을 조건」을 그대로 가져왔다. 기준선과 최종 모두 이 지도의 같은 칸을 같은 설정으로 재었다.</p>
+
+<h3 id="map-what">2.1 무엇을 확인하나</h3>
+<table>
+<thead><tr><th scope="col">무엇을 확인하나?</th><th scope="col">mini-redis만 실행</th><th scope="col">상품 API + mini-redis 캐시</th></tr></thead>
+<tbody>
+<tr><th scope="row">정확성</th><td>저장·조회·삭제·만료가 맞게 동작하는지 확인한다.</td><td>상품 조회 결과가 맞는지, 수정한 뒤 캐시가 갱신되는지, 캐시가 멈춰도 원본에서 읽는지 확인한다.</td></tr>
+<tr><th scope="row">성능</th><td><code>make bench</code> · <strong>9개 시나리오</strong>. 큰 값 저장이나 만료 등으로 작은 GET이 얼마나 밀리는지 본다.</td><td><code>make cache-bench-postgres</code> · <strong>18개 시나리오</strong>. 같은 상품 요청에서 캐시 OFF와 ON을 비교한다.</td></tr>
+</tbody>
+</table>
+<p class="gray-note">이번 맥 기준선과 최종은 오른쪽 열(상품 API + mini-redis 캐시)의 성능 측정이다. 왼쪽 열 <code>make bench</code>는 이번 맥 로그에 없고, 6장에서 WSL 기록으로 따로 본다.</p>
+<ul>
+<li>코드를 바꾼 뒤에는 <code>make verify</code>를 돌린다. PostgreSQL을 사용하는 상품 API는 <code>make cache-functional-postgres</code>로 확인한다.</li>
+<li>상품 API의 기준선은 아래 표를 사용한다. <strong>조회 방식 6개 × 읽기·수정 비율 3개 = 18개 시나리오</strong>다.</li>
+</ul>
+
+<h3 id="map-names">2.2 18개 시나리오 이름 읽는 법</h3>
+<div class="table-scroll" role="region" aria-label="상품 API 측정표" tabindex="0">
+<table class="case-table">
+<thead><tr><th scope="col">조회 방식</th><th scope="col">읽기 100%</th><th scope="col">읽기 99% / 수정 1%</th><th scope="col">읽기 90% / 수정 10%</th></tr></thead>
+<tbody>
+<tr><th scope="row">상세 · 인기 상품에 집중</th><td><code>detail-zoomed</code></td><td><code>detail-zoomed-99:1</code></td><td><code>detail-zoomed-90:10</code></td></tr>
+<tr><th scope="row">상세 · 상품을 고르게 조회</th><td><code>detail-uniform</code></td><td><code>detail-uniform-99:1</code></td><td><code>detail-uniform-90:10</code></td></tr>
+<tr><th scope="row">목록 · 같은 조건 반복</th><td><code>list-repeated</code></td><td><code>list-repeated-99:1</code></td><td><code>list-repeated-90:10</code></td></tr>
+<tr><th scope="row">목록 · 조건을 바꿔 조회</th><td><code>list-varied</code></td><td><code>list-varied-99:1</code></td><td><code>list-varied-90:10</code></td></tr>
+<tr><th scope="row">검색 · 같은 조건 반복</th><td><code>search-repeated</code></td><td><code>search-repeated-99:1</code></td><td><code>search-repeated-90:10</code></td></tr>
+<tr><th scope="row">검색 · 조건을 바꿔 조회</th><td><code>search-varied</code></td><td><code>search-varied-99:1</code></td><td><code>search-varied-90:10</code></td></tr>
+</tbody>
+</table>
+</div>
+<table>
+<thead><tr><th scope="col">이름 조각</th><th scope="col">뜻</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code>detail</code> / <code>list</code> / <code>search</code></th><td>상세 / 목록 / 검색이다.</td></tr>
+<tr><th scope="row"><code>uniform</code></th><td>상품을 고르게 조회한다.</td></tr>
+<tr><th scope="row"><code>zoomed</code></th><td>인기 상품에 조회가 몰린다.</td></tr>
+<tr><th scope="row"><code>repeated</code></th><td>같은 조건을 반복한다.</td></tr>
+<tr><th scope="row"><code>varied</code></th><td>매번 조건이 달라진다.</td></tr>
+<tr><th scope="row"><code>99:1</code> / <code>90:10</code></th><td>조회와 쓰기(수정·삭제)의 목표 비율이다. 접미사가 없으면 조회만 해서, 결과표의 쓰기 칸에는 <code>—</code>를 표시했다.</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>캐시에 넣은 값은 기본 60초 뒤에 만료된다.</strong> 회의 문서의 계획은 위 18개를 모두 재고, 읽기 100%인 <code>detail-zoomed</code>에만 만료 시간 2초를 추가하는 것이었다. 합계 19개 조건이다.</li>
+</ul>
+<p class="gray-note">실제로는 기준선과 최종 모두 18개 시나리오를 TTL 60초와 TTL 2초로 재었다. 그래서 DB마다 36개 조건, 두 DB 합계 72개 조건이다.</p>
+
+<h3>표기</h3>
+<table>
+<thead><tr><th scope="col">표기</th><th scope="col">뜻</th></tr></thead>
+<tbody>
+<tr><th scope="row">p50</th><td>요청 절반이 이 시간 안에 끝났다는 뜻이다.</td></tr>
+<tr><th scope="row">p95 / p99</th><td>각각 요청의 95%, 99%가 끝난 시간이다. 느린 요청 쪽을 볼 때 쓴다.</td></tr>
+<tr><th scope="row">적중률</th><td>캐시에서 찾으려 한 키 중 저장된 응답을 바로 찾은 비율이다.</td></tr>
+<tr><th scope="row">on÷off</th><td>같은 실행 안에서 캐시 on p50을 off p50으로 나눈 값이다. 1보다 작으면 캐시를 켠 쪽이 빠르다.</td></tr>
+<tr><th scope="row">TTL</th><td>캐시 보관 시간이다. TTL 2초는 캐시에 넣은 값이 2초 뒤 만료된다는 뜻이다.</td></tr>
+</tbody>
+</table>
+
+<h2 id="trust">3. 믿을 만한 비교인가</h2>
+<ul>
+<li>p50 비교 144쌍 중 140쌍은 최종에서 가장 느린 회차도 기준선에서 가장 빠른 회차보다 빨랐다. 각 버전에서 같은 조건을 3회씩 잰 범위를 비교한 결과다.</li>
+<li>나머지 4쌍은 회차 범위가 겹쳤지만 중앙값은 낮아졌다.</li>
+</ul>
+<p class="gray-note">144쌍 = 72개 조건 × 캐시 off·on 2종이다.</p>
+<table>
+<thead><tr><th scope="col">확인한 것</th><th scope="col">결과</th><th scope="col">판단</th></tr></thead>
+<tbody>
+<tr><th scope="row">코드</th><td>기준선은 <code>d64ae63</code>, 최종은 <code>1a64bd7</code>(#49까지 병합한 main)이다. 두 버전의 JSON 모두 <code>dirty: false</code>다.</td><td>통과</td></tr>
+<tr><th scope="row">머신</th><td>기준선과 같은 macOS 26.6.2 arm64, python 3.15.2, sqlite 3.54.1이다.</td><td>통과</td></tr>
+<tr><th scope="row">입력</th><td>상품 10,000개, 시드 1, 연결 32개, 초당 500요청, 준비 10초, 측정 30초, 3회, TTL 60초·2초다. 기준선과 같다.</td><td>통과</td></tr>
+<tr><th scope="row">도착 방식</th><td>최종 JSON에만 <code>arrival: burst</code>가 있다. 기준선 커밋(<code>d64ae63</code>)의 <code>cache_bench.py</code>도 연결마다 시간표를 두는 같은 방식이라, 이름만 새로 붙은 것이다.</td><td>통과</td></tr>
+<tr><th scope="row">오류</th><td>기준선과 최종 모두 432회 전부 오류 0, 시간 초과 0, 처리량 500.27요청/초다.</td><td>통과</td></tr>
+<tr><th scope="row">요청 수</th><td>72개 조건 × off/on 모두 조회·쓰기 요청 수가 기준선과 똑같다.</td><td>통과</td></tr>
+<tr><th scope="row">적중률·원본 조회 수</th><td>캐시 on의 조건별 3회 중앙값 차이는 적중률 최대 0.32%p, 원본 조회 최대 87건이다. 개별 회차 기준으로는 최대 0.68%p, 214건 차이다.</td><td>대체로 비슷함</td></tr>
+<tr><th scope="row">정확성</th><td>두 버전 모두 수정·삭제가 섞인 288회 전부 회차당 12개 경로를 대조해 일치했다(<code>checked: 12</code>).</td><td>통과</td></tr>
+<tr><th scope="row">기능 테스트</th><td>기준선 로그에는 기능 테스트, PostgreSQL 기능 테스트, 테스트 ID 검사, lint 통과가 기록돼 있다. 최종은 단위, 기능, PostgreSQL 기능, 테스트 ID 검사, lint 모두 통과했다(<code>ALL TESTS PASSED</code>).</td><td>통과</td></tr>
+<tr><th scope="row">로그 끝의 중단</th><td>최종 <code>all-tests-main.log</code> 끝에 <code>Terminated: 15</code>가 있다. 이것은 모든 측정이 끝난 뒤 다시 시작한 두 번째 실행이다. 첫 실행은 두 JSON 저장 메시지를 남겼다. 두 번째 실행은 SQLite 측정 도중에 끝났고, 벤치마크 코드는 모든 시나리오가 끝난 뒤에 JSON을 쓴다.</td><td>문제 없음</td></tr>
+<tr><th scope="row">재현성</th><td>두 번째 실행에서 완료한 SQLite 고른 상세 TTL 60초의 off p50 중앙값은 1.55 → 1.58 ms, on은 1.60 → 1.48 ms였다. on/off 순서가 바뀔 만큼 차이가 작다.</td><td>상세 한 조건만 재확인</td></tr>
+<tr><th scope="row">튄 값</th><td>p95·p99 지표 값 중 100 ms를 넘은 것은 7장에 정리했다.</td><td>p99는 쓰지 않음</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>기준선과 최종을 다른 시점에 쟀다.</strong> 실행 순서나 머신 상태가 바뀐 영향은 남아 있다.</li>
+<li>WSL의 PR별 측정은 출발 커밋 <code>409f6b9</code>를 마지막에 다시 쟀지만, 맥의 <code>d64ae63</code> 재측정과는 별개다.</li>
+</ul>
+
+<h2 id="compare">4. 기준선 → 최종 비교</h2>
+
+<h3 id="rep">4.1 대표 결과: 기준선과 최종을 나란히</h3>
+<p class="gray-note">상품을 수정하지 않고 조회만 했을 때(읽기 100%), TTL 60초, 3회 중앙값이다. 단위는 ms다. 각 버전 안에서 <strong>캐시 켠 시간 − 끈 시간</strong>을 「차이」 칸에 적었다. 초록은 캐시를 켜서 빨라진 칸, 주황은 느려진 칸이다.</p>
+<p class="gray-note">읽는 법: 같은 버전의 「off」와 「on」을 비교하면 캐시가 이득인지 보이고, 「기준선」과 「최종」의 같은 열을 비교하면 코드 개선 효과가 보인다.</p>
+<h4>SQLite</h4>
+<div class="table-scroll" role="region" tabindex="0" aria-label="대표 결과"><table class="rep-table"><thead><tr><th rowspan="2" scope="col">조회 방식</th><th rowspan="2" scope="col">적중률</th><th colspan="3" scope="colgroup" class="grp-base">기준선 d64ae63</th><th colspan="3" scope="colgroup" class="grp-final">최종 1a64bd7</th></tr><tr><th scope="col">off</th><th scope="col">on</th><th scope="col">차이 (on−off)</th><th scope="col">off</th><th scope="col">on</th><th scope="col">차이 (on−off)</th></tr></thead><tbody><tr><th scope="row">상세 · 상품을 고르게 조회<span class="desc"><code>detail-uniform</code></span></th><td>71.7%</td><td class="num">1.95</td><td class="num">3.82</td><td class="delta-up"><b>+1.87</b></td><td class="num">1.55</td><td class="num">1.60</td><td class="delta-up"><b>+0.05</b></td></tr><tr><th scope="row">상세 · 인기 상품에 집중<span class="desc"><code>detail-zoomed</code></span></th><td>78.0%</td><td class="num">1.92</td><td class="num">3.71</td><td class="delta-up"><b>+1.79</b></td><td class="num">1.57</td><td class="num">1.54</td><td class="delta-down"><b>−0.03</b></td></tr><tr><th scope="row">목록 · 같은 조건 반복<span class="desc"><code>list-repeated</code></span></th><td>100.0%</td><td class="num">16.01</td><td class="num">3.03</td><td class="delta-down"><b>−12.98</b></td><td class="num">14.70</td><td class="num">2.23</td><td class="delta-down"><b>−12.47</b></td></tr><tr><th scope="row">목록 · 조건을 바꿔 조회<span class="desc"><code>list-varied</code></span></th><td>0.0%</td><td class="num">16.65</td><td class="num">18.52</td><td class="delta-up"><b>+1.87</b></td><td class="num">13.49</td><td class="num">13.17</td><td class="delta-down"><b>−0.32</b></td></tr><tr><th scope="row">검색 · 같은 조건 반복<span class="desc"><code>search-repeated</code></span></th><td>100.0%</td><td class="num">5.49</td><td class="num">2.99</td><td class="delta-down"><b>−2.50</b></td><td class="num">5.07</td><td class="num">2.39</td><td class="delta-down"><b>−2.68</b></td></tr><tr><th scope="row">검색 · 조건을 바꿔 조회<span class="desc"><code>search-varied</code></span></th><td>0.0%</td><td class="num">18.74</td><td class="num">20.85</td><td class="delta-up"><b>+2.11</b></td><td class="num">13.70</td><td class="num">12.87</td><td class="delta-down"><b>−0.83</b></td></tr></tbody></table></div>
+<h4>PostgreSQL</h4>
+<div class="table-scroll" role="region" tabindex="0" aria-label="대표 결과"><table class="rep-table"><thead><tr><th rowspan="2" scope="col">조회 방식</th><th rowspan="2" scope="col">적중률</th><th colspan="3" scope="colgroup" class="grp-base">기준선 d64ae63</th><th colspan="3" scope="colgroup" class="grp-final">최종 1a64bd7</th></tr><tr><th scope="col">off</th><th scope="col">on</th><th scope="col">차이 (on−off)</th><th scope="col">off</th><th scope="col">on</th><th scope="col">차이 (on−off)</th></tr></thead><tbody><tr><th scope="row">상세 · 상품을 고르게 조회<span class="desc"><code>detail-uniform</code></span></th><td>71.7%</td><td class="num">4.72</td><td class="num">5.12</td><td class="delta-up"><b>+0.40</b></td><td class="num">3.73</td><td class="num">2.44</td><td class="delta-down"><b>−1.29</b></td></tr><tr><th scope="row">상세 · 인기 상품에 집중<span class="desc"><code>detail-zoomed</code></span></th><td>78.0%</td><td class="num">4.74</td><td class="num">4.70</td><td class="delta-down"><b>−0.04</b></td><td class="num">3.64</td><td class="num">2.12</td><td class="delta-down"><b>−1.52</b></td></tr><tr><th scope="row">목록 · 같은 조건 반복<span class="desc"><code>list-repeated</code></span></th><td>100.0%</td><td class="num">6.99</td><td class="num">3.14</td><td class="delta-down"><b>−3.85</b></td><td class="num">4.61</td><td class="num">1.97</td><td class="delta-down"><b>−2.64</b></td></tr><tr><th scope="row">목록 · 조건을 바꿔 조회<span class="desc"><code>list-varied</code></span></th><td>0.0%</td><td class="num">18.66</td><td class="num">21.39</td><td class="delta-up"><b>+2.73</b></td><td class="num">11.79</td><td class="num">14.90</td><td class="delta-up"><b>+3.11</b></td></tr><tr><th scope="row">검색 · 같은 조건 반복<span class="desc"><code>search-repeated</code></span></th><td>100.0%</td><td class="num">10.25</td><td class="num">3.02</td><td class="delta-down"><b>−7.23</b></td><td class="num">6.56</td><td class="num">1.92</td><td class="delta-down"><b>−4.64</b></td></tr><tr><th scope="row">검색 · 조건을 바꿔 조회<span class="desc"><code>search-varied</code></span></th><td>0.0%</td><td class="num">28.50</td><td class="num">47.75</td><td class="delta-up"><b>+19.25</b></td><td class="num">15.85</td><td class="num">23.88</td><td class="delta-up"><b>+8.03</b></td></tr></tbody></table></div>
+<ul>
+<li>적중률은 최종의 값이다. 기준선에서 상세 적중률은 71.8%였다.</li>
+<li>상세의 적중률이 71.8%에서 71.7%로 바뀐 것은 분모가 바뀌었기 때문이다. 최종 데모는 한 묶음 안의 같은 상품을 한 번만 물어서, 캐시에 묻는 수가 15,008에서 약 14,990으로 줄었다. 원본 조회 수(4,239)는 같다.</li>
+<li>18개 시나리오 전체(TTL 2초, 수정 섞임 포함)를 지도 모양으로 보려면 <a href="#appendix-map">11.3 부록</a>을 본다.</li>
+</ul>
+
+<h3 id="improve">4.2 기준선 대비 얼마나 좋아졌나</h3>
+<p class="gray-note">시나리오를 세 무리로 나눠서, 조회 p50이 기준선 대비 몇 % 바뀌었는지 범위로 모았다. 음수가 빨라졌다는 뜻이다. 비교는 <strong>기준선 → 최종</strong>이다.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="기준선 대비 개선 폭">
+<table class="case-table">
+<thead><tr><th scope="col">DB</th><th scope="col">무리</th><th scope="col">TTL</th><th scope="col">캐시 off</th><th scope="col">캐시 on</th><th scope="col">쓰기 p50 (on)</th></tr></thead>
+<tbody>
+<tr><th scope="row" rowspan="6">SQLite</th><td rowspan="2">상세 (<code>detail-*</code>)</td><td>60초</td><td>−27 ~ −18%</td><td><strong>−58 ~ −41%</strong></td><td>−32 ~ −21%</td></tr>
+<tr><td>2초</td><td>−30 ~ −17%</td><td><strong>−64 ~ −42%</strong></td><td>−37 ~ −30%</td></tr>
+<tr><td rowspan="2">반복 목록·검색 (<code>*-repeated*</code>)</td><td>60초</td><td>−19 ~ −1%</td><td>−29 ~ −20%</td><td>−21 ~ −8%</td></tr>
+<tr><td>2초</td><td>−19 ~ −7%</td><td>−30 ~ −13%</td><td>−17 ~ −4%</td></tr>
+<tr><td rowspan="2">매번 다른 목록·검색 (<code>*-varied*</code>)</td><td>60초</td><td>−32 ~ −17%</td><td>−40 ~ −28%</td><td>−41 ~ −21%</td></tr>
+<tr><td>2초</td><td>−30 ~ −15%</td><td>−40 ~ −29%</td><td>−36 ~ −21%</td></tr>
+<tr><th scope="row" rowspan="6">PostgreSQL</th><td rowspan="2">상세</td><td>60초</td><td>−44 ~ −16%</td><td><strong>−62 ~ −47%</strong></td><td>−55 ~ −33%</td></tr>
+<tr><td>2초</td><td>−42 ~ −20%</td><td><strong>−64 ~ −38%</strong></td><td>−57 ~ −32%</td></tr>
+<tr><td rowspan="2">반복 목록·검색</td><td>60초</td><td>−49 ~ −30%</td><td>−44 ~ −32%</td><td>−44 ~ −25%</td></tr>
+<tr><td>2초</td><td>−51 ~ −31%</td><td>−46 ~ −24%</td><td>−44 ~ −19%</td></tr>
+<tr><td rowspan="2">매번 다른 목록·검색</td><td>60초</td><td>−45 ~ −37%</td><td>−56 ~ −30%</td><td>−58 ~ −41%</td></tr>
+<tr><td>2초</td><td>−44 ~ −33%</td><td>−57 ~ −33%</td><td>−61 ~ −33%</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><strong>상세 조회의 캐시 on 개선 폭이 컸다.</strong> 조회 p50은 on에서 38~64%, off에서 16~44% 줄었다. 상세에서는 #40·#41로 캐시에 보내는 요청 수도 줄었다.</li>
+<li><strong>목록·검색도 on과 off 모두 빨라졌다.</strong> 조회만 하는 반복 목록·검색의 캐시 요청은 기준선과 최종 모두 회당 약 15,008건이다. 조회만 하고 매번 조건이 다른 경우에는 30,016건(GET 15,008 + PUT 15,008)이다. 이 경로에서는 #39가 응답을 보내는 시점을 바꿨다.</li>
+</ul>
+<div class="era-block">
+<strong>예: PostgreSQL에서 매번 다른 조건으로 검색</strong>
+<ul>
+<li>기준선은 한꺼번에 들어온 요청의 응답들을 모아서 보냈다.</li>
+<li>#39부터는 응답이 준비되는 대로 보내서, 앞 요청이 뒤 요청을 기다리는 시간을 줄인다.</li>
+<li>맥에서 이 조건의 캐시 off p50은 28.50 → 15.85 ms로 44% 줄었다. 이 값은 두 커밋 전체를 비교한 결과다.</li>
+</ul>
+</div>
+
+<h2 id="cache">5. 캐시로서의 성능</h2>
+<p class="gray-note">여기서는 "캐시를 켜는 게 이득인가"를 본다. 그래서 각 버전 안에서 캐시 on과 off를 비교하고, 그 결과를 기준선과 최종으로 나란히 둔다.</p>
+<pre class="flow-pre"><code>캐시 off     요청 → 앱 → 원본 DB에서 조회 → 응답
+캐시 적중    요청 → 앱 → mini-redis에서 응답을 찾음 → 응답
+캐시 미적중  요청 → 앱 → mini-redis에 없음 → 원본 DB에서 조회 → 캐시에 저장 → 응답</code></pre>
+
+<h3 id="c-repeat">5.1 반복 목록·검색: 거의 다 적중하면 1.92~2.48 ms</h3>
+<p class="gray-note"><code>list-repeated</code>, <code>search-repeated</code> · 같은 조건 반복 · 적중률 99.9~100%</p>
+<div class="era-block">
+<span class="era base">기준선 d64ae63</span>
+<ul>
+<li>PostgreSQL에서 같은 검색을 반복하면, 측정 구간의 조회 <strong>15,008건이 모두 캐시에 적중</strong>했다. 원본 DB 조회는 15,008회에서 0회로, 조회 p95는 13.22 ms에서 4.18 ms로 줄었다.</li>
+<li>같은 목록·검색이 전부 적중한 네 조건에서 캐시를 켠 뒤 p50은 약 3 ms였다. 이 수치는 앱과 캐시를 모두 거친 응답 시간이다.</li>
+</ul>
+</div>
+<div class="era-block final">
+<span class="era final">최종 1a64bd7</span>
+<ul>
+<li>같은 목록·검색을 반복해서 거의 다 적중한 8개 조건(2 DB × 목록·검색 × TTL 2종, 조회만)에서 캐시 on의 p50은 <strong>1.92~2.48 ms</strong>였다.</li>
+<li>이 시간은 측정 client → 데모 앱 → mini-redis → 응답까지의 전체 시간이다. 원본에서 읽는 시간은 SQLite 목록 14.70 ms, PostgreSQL 검색 6.56 ms처럼 쿼리마다 크게 달랐다.</li>
+<li>이 8개 조건에서는 원본 DB 조회를 거의 건너뛰었고, DB가 달라도 데모 전체 응답 시간은 약 2 ms였다. 이 값에는 앱과 HTTP 통신 시간도 포함된다.</li>
+<li>mini-redis 서버만의 지연과 최대 처리량은 이 그리드에서 측정하지 않았다.</li>
+</ul>
+</div>
+<p class="gray-note">아래 표는 최종 결과다. 화살표는 <strong>off → on</strong>이다.</p>
+<table class="num-r">
+<thead><tr><th scope="col">조건 (TTL 60초, 조회만)</th><th scope="col">원본 조회 off → on</th><th scope="col">off p50</th><th scope="col">on p50</th><th scope="col">on÷off</th></tr></thead>
+<tbody>
+<tr><th scope="row">SQLite 같은 목록 반복</th><td>15,008 → 0</td><td>14.70</td><td>2.23</td><td>0.15</td></tr>
+<tr><th scope="row">SQLite 같은 검색 반복</th><td>15,008 → 0</td><td>5.07</td><td>2.39</td><td>0.47</td></tr>
+<tr><th scope="row">PostgreSQL 같은 목록 반복</th><td>15,008 → 0</td><td>4.61</td><td>1.97</td><td>0.43</td></tr>
+<tr><th scope="row">PostgreSQL 같은 검색 반복</th><td>15,008 → 0</td><td>6.56</td><td>1.92</td><td>0.29</td></tr>
+</tbody>
+</table>
+
+<h3 id="c-detail">5.2 상품 상세: DB에 따라 이득이 다르다</h3>
+<p class="gray-note"><code>detail-uniform</code>, <code>detail-zoomed</code> · 상품 하나를 번호로 찾는 상세 조회</p>
+<div class="era-block">
+<span class="era base">기준선 d64ae63</span>
+<ul>
+<li>상품 상세는 <strong>DB 부담과 응답 시간이 다른 방향으로 움직인</strong> 예였다.</li>
+<li>SQLite에서 상세를 고르게 조회하면 원본 조회는 15,008회에서 4,239회로 약 72% 줄었다. 그런데 조회 p50은 1.95 ms에서 3.82 ms로 늘었다.</li>
+</ul>
+</div>
+<table>
+<thead><tr><th scope="col">조건 (TTL 60초)</th><th scope="col">적중률</th><th scope="col">기준선 on÷off</th><th scope="col">최종 on÷off</th></tr></thead>
+<tbody>
+<tr><th scope="row">SQLite 고른 상세</th><td>71.7%</td><td>1.96</td><td>1.04</td></tr>
+<tr><th scope="row">SQLite 인기 상품 상세</th><td>78.0%</td><td>1.93</td><td>0.98</td></tr>
+<tr><th scope="row">PostgreSQL 고른 상세</th><td>71.7%</td><td>1.08</td><td><strong>0.65</strong></td></tr>
+<tr><th scope="row">PostgreSQL 인기 상품 상세</th><td>78.0%</td><td>0.99</td><td><strong>0.58</strong></td></tr>
+</tbody>
+</table>
+<div class="era-block final">
+<span class="era final">최종 1a64bd7</span>
+<ul>
+<li><strong>PostgreSQL에서는 캐시를 켜면 상세가 35~42% 빨라졌다.</strong> PostgreSQL은 별도 프로세스라 조회 하나마다 소켓 왕복이 들어간다. 그래서 캐시가 그 왕복을 건너뛰는 이득이 크다.</li>
+<li><strong>SQLite에서는 캐시를 켜도 상세가 거의 같다.</strong> SQLite는 데모 프로세스 안에서 도는 라이브러리라, 상품 하나를 읽는 원본 조회가 이미 아주 짧다(off p50 1.55 ms). 그래서 mini-redis에 HTTP로 묻는 시간과 원본에서 읽는 시간이 비슷하다.</li>
+<li>기준선에서는 캐시를 켜면 약 2배 느렸다. TTL 60초 조회 전용 두 조건에서는 기준선의 약 2배 차이가 최종에서 0.05 ms 이내로 줄었다.</li>
+</ul>
+</div>
+
+<h3 id="c-miss">5.3 캐시가 빗나갈 때의 비용</h3>
+<p class="gray-note"><code>list-varied</code>, <code>search-varied</code> · 매번 조건이 달라서 적중률 0% · 캐시를 켜면 "캐시 확인 + 원본 조회 + 캐시 저장"을 모두 한다</p>
+<div class="era-block">
+<span class="era base">기준선 d64ae63</span>
+<ul>
+<li>매번 다른 검색 조건을 쓰면 PostgreSQL은 캐시를 켜도 원본 DB를 15,008회 조회했다.</li>
+<li>조회 p95는 41.80 ms에서 72.74 ms로 늘었다.</li>
+<li>캐시가 빗나가면 캐시 확인·저장 경로가 추가된다. 기준선 응답 시간만으로는 어느 구간이 PostgreSQL에서 증가폭을 키웠는지 알 수 없었다.</li>
+</ul>
+</div>
+<table class="num-r">
+<thead><tr><th scope="col">조건 (TTL 60초, 조회만)</th><th scope="col">기준선 on÷off</th><th scope="col">최종 on÷off</th><th scope="col">최종 on − off</th></tr></thead>
+<tbody>
+<tr><th scope="row">SQLite 다른 목록</th><td>1.11</td><td>0.98</td><td>−0.32 ms</td></tr>
+<tr><th scope="row">SQLite 다른 검색</th><td>1.11</td><td>0.94</td><td>−0.83 ms</td></tr>
+<tr><th scope="row">PostgreSQL 다른 목록</th><td>1.15</td><td>1.26</td><td>+3.11 ms</td></tr>
+<tr><th scope="row">PostgreSQL 다른 검색</th><td>1.68</td><td>1.51</td><td>+8.03 ms</td></tr>
+</tbody>
+</table>
+<div class="era-block final">
+<span class="era final">최종 1a64bd7</span>
+<ul>
+<li>표의 차이는 이 경로 전체에서 캐시를 켰을 때 관측한 응답 시간 차이다.</li>
+<li><strong>SQLite는 빗나가도 손해가 거의 없다.</strong> 12개 조건 중 11개에서 오히려 on이 0.2~1.3 ms 작게 나왔고, 나머지 1개(<code>search-varied-99:1</code> TTL 2초)만 on이 1.6 ms 컸다. 왜 빗나가는 캐시가 더 빠르게 나오는지는 이번 집계만으로 알 수 없다.</li>
+<li><strong>PostgreSQL은 빗나가면 여전히 손해다.</strong> 다른 조건 검색은 캐시를 켜면 p50이 약 8 ms(51%) 늘어난다. 절대값은 기준선의 47.75 ms에서 23.88 ms로 반이 됐지만, off와의 차이는 남았다.</li>
+<li>목록·검색은 상세와 달리 캐시 요청을 묶지 않기 때문에, 미스마다 GET 하나와 PUT 하나를 따로 보낸다. 이 비용이 왜 SQLite보다 PostgreSQL에서 훨씬 큰지는 이번 응답 시간만으로는 구간을 나눌 수 없다.</li>
+</ul>
+</div>
+
+<h3 id="c-ttl">5.4 보관 시간과 수정의 영향</h3>
+<h4>TTL 2초</h4>
+<p class="gray-note">TTL 2초 = 캐시에 넣은 값이 2초 뒤 만료된다. 조회만 하는 시나리오의 기준선 적중률을 TTL 60초 → 2초로 비교한다.</p>
+<table>
+<thead><tr><th scope="col">시나리오</th><th scope="col">기준선 적중률 TTL 60초 → 2초</th></tr></thead>
+<tbody>
+<tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>71.8% <span class="arr">→</span> 11.3%</td></tr>
+<tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>78.0% <span class="arr">→</span> SQLite 23.0% / PostgreSQL 22.4%</td></tr>
+<tr><th scope="row"><code>list-repeated</code>, <code>search-repeated</code><span class="desc">목록·검색 · 같은 조건 반복 · 읽기 100%</span></th><td>두 DB 모두 100% <span class="arr">→</span> 99.9%</td></tr>
+</tbody>
+</table>
+<div class="era-block final">
+<span class="era final">최종 1a64bd7</span>
+<ul>
+<li><strong>TTL 2초</strong>에서는 상세 적중률이 약 10~23%로 떨어진다. 그래도 최종에서는 손해가 작아졌다.</li>
+<li>SQLite 고른 상세의 on÷off가 2.84에서 1.25로, PostgreSQL은 1.67에서 1.06으로 내려갔다.</li>
+<li>PostgreSQL 인기 상품 상세는 TTL 2초에서도 on이 더 빠르다(0.96).</li>
+</ul>
+</div>
+
+<h4>수정·삭제가 섞일 때</h4>
+<p class="gray-note"><code>*-repeated-90:10</code> · 같은 조건 반복 · 읽기 90% / 쓰기 10%</p>
+<div class="era-block">
+<span class="era base">기준선 d64ae63</span>
+<ul>
+<li><strong>수정·삭제가 섞여도</strong> 반복 조회에서는 캐시 효과가 남았다.</li>
+<li>SQLite에서 수정·삭제 비율을 약 10%로 둔 반복 목록(<code>list-repeated-90:10</code>, TTL 60초)은 적중률이 90.4%였고, 조회 p50이 15.47 → 9.35 ms(off → on)로 낮아졌다.</li>
+</ul>
+</div>
+<div class="era-block final">
+<span class="era final">최종 1a64bd7</span>
+<ul>
+<li><strong>수정·삭제가 10% 섞이면</strong> 반복 목록·검색의 적중률은 기준선과 같은 90.3%다.</li>
+<li>수정 하나가 목록·검색 캐시 전체를 지우는 설계라서 이번 개선과는 상관이 없다.</li>
+</ul>
+</div>
+
+<h4>쓰기 지연</h4>
+<p class="gray-note">쓰기 p50 = 수정·삭제 요청의 전체 응답 시간 중앙값이다. 쓰기는 캐시 무효화를 포함한다.</p>
+<div class="era-block">
+<span class="era base">기준선 d64ae63</span>
+<ul>
+<li><strong>쓰기 지연도 조회 패턴에 따라 달랐다.</strong></li>
+<li>SQLite 반복 목록 99:1(<code>list-repeated-99:1</code>, TTL 60초)의 쓰기 p50은 17.01 → 5.94 ms(off → on)로 줄었다.</li>
+<li>PostgreSQL의 매번 다른 검색 99:1(<code>search-varied-99:1</code>, 같은 TTL)은 28.48 → 50.11 ms(off → on)로 늘었다.</li>
+</ul>
+</div>
+<div class="era-block final">
+<span class="era final">최종 1a64bd7</span>
+<ul>
+<li><strong>쓰기 p50도 줄었다(기준선 → 최종, 캐시 on).</strong> SQLite 고른 상세 99:1의 쓰기 p50은 5.65 → 4.38 ms, PostgreSQL 다른 조건 검색 99:1은 50.11 → 21.21 ms다.</li>
+<li>응답을 보내는 시점이나 같이 실행된 조회의 대기 시간이 쓰기에도 영향을 줄 수 있다. 쓰기 지연 감소분을 PR별로 분리할 수는 없다.</li>
+</ul>
+</div>
+
+<h3 id="c-goal">5.5 목표 판정</h3>
+<p class="gray-note">perf 마일스톤의 상품 데모 목표는 적중률이 50% 이상인 시나리오에서 캐시 on의 p50이 off보다 크지 않아야 한다는 것이다. 아래 표는 같은 기준을 두 DB의 전체 그리드에 적용한 결과다.</p>
+<table>
+<thead><tr><th scope="col">DB</th><th scope="col">기준선</th><th scope="col">최종</th></tr></thead>
+<tbody>
+<tr><th scope="row">SQLite</th><td>18개 중 12개 통과. 상세 6개가 모두 실패했고, 6개 모두 on이 off보다 1.8~2.2 ms 느렸으며 회차 범위도 겹치지 않았다.</td><td>18개 중 13개 통과. 실패한 상세 5개 중 3개는 회차 범위가 겹친다. 나머지 2개(<code>detail-uniform-99:1</code> 1.68 vs 1.79 ms, <code>detail-uniform-90:10</code> 4.38 vs 4.66 ms)는 0.1~0.3 ms 차이로 아슬아슬하게 실패했다.</td></tr>
+<tr><th scope="row">PostgreSQL</th><td>18개 중 14개 통과</td><td><strong>18개 모두 통과</strong></td></tr>
+</tbody>
+</table>
+
+<h2 id="pr">6. 추가한 개선이 얼마나 효과가 있었나</h2>
+<ul>
+<li><code>d64ae63</code> → <code>1a64bd7</code> 사이에 병합한 PR을, 이번 상품 데모 그리드에서 효과가 보이는지로 나눴다.</li>
+<li>이번 그리드는 PR 여러 개를 한꺼번에 반영한 결과다. 그래서 PR 하나의 몫은 레포의 병합 사슬 기록(WSL에서 PR 하나씩 병합하며 잰 기록)을 함께 봐야 한다.</li>
+</ul>
+
+<h3>기준선 분석 당시의 PR 기록</h3>
+<p class="gray-note">기준선 문서의 분석에 적혀 있던 PR별 실험 숫자다. 각각 별도 실험이다.</p>
+<div class="era-block">
+<span class="era base">기준선 분석</span>
+<ul>
+<li><strong>응답 바로 보내기와 <code>mget</code>·<code>mset</code>은 상세 조회에서 확인한 병목을 줄였다.</strong> 요청이 몰리는 별도 실험에서 응답 바로 보내기와 <code>mget</code>을 차례로 적용했을 때, 캐시 on의 상세 p50은 <strong>3.66 → 1.58 → 0.92 ms</strong>로 줄었다.</li>
+<li><code>mset</code>은 상세 캐시 미스 뒤 저장을 묶어서, 별도 PostgreSQL 실험에서 p50을 <strong>1.73 → 1.32 ms</strong>로 줄였다.</li>
+<li><code>rehash</code>도 키 약 419만 개를 옮기는 서버 벤치에서 작은 GET p99를 <strong>233~250 ms → 약 0.21~0.22 ms</strong>로 줄였다.</li>
+</ul>
+<p class="desc">참고 문서: <code>mini-redis-성능개선-세션기록.md</code> (line 747) · <code>mini-redis-mset-PR.md</code> (line 31) · <code>mini-redis-rehash-PR.md</code> (line 9)</p>
+</div>
+
+<h3>이번 그리드에서 효과가 보이는 PR</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="효과가 보이는 PR">
+<table class="case-table">
+<thead><tr><th scope="col">PR</th><th scope="col">바꾼 것</th><th scope="col">이번 그리드에서 보이는 곳</th><th scope="col">사슬 기록의 PR 단독 효과 (WSL, PostgreSQL, 고른 상세)</th></tr></thead>
+<tbody>
+<tr><th scope="row">#39 응답 바로 보내기</th><td>데모가 요청 하나의 응답을 만들자마자 소켓에 보낸다.</td><td>캐시 off와 on에 공통으로 적용된다.</td><td>TTL 60초 중앙값 기준 off 8.84 → 6.03 ms(−32%), on 9.39 → 5.96 ms(−37%)<span class="desc"><code>docs/measurements/cache-demo/006</code></span></td></tr>
+<tr><th scope="row">#40 <code>POST /mget</code></th><td>한 번에 받은 상세 조회를 모아 캐시에 한 번에 묻는다.</td><td>SQLite 고른 상세 TTL 60초에서 캐시 조회 요청이 15,008 → 1,260~1,274건</td><td>on 중앙값 기준 TTL 60초 5.96 → 3.22 ms(−46%), TTL 2초 10.35 → 8.37 ms(−19%)<span class="desc"><code>docs/measurements/cache-demo/007</code></span></td></tr>
+<tr><th scope="row">#41 <code>POST /mset</code></th><td>한 번에 받은 상세 조회의 미스 응답을 모아 캐시에 한 번에 저장한다.</td><td>SQLite 고른 상세에서 캐시 저장 요청이 TTL 60초 4,239 → 908~919건, TTL 2초 13,315 → 1,052~1,100건</td><td>on 중앙값 기준 TTL 60초 3.22 → 2.78 ms(−14%), TTL 2초 8.37 → 5.90 ms(−30%)<span class="desc"><code>docs/measurements/cache-demo/008</code></span></td></tr>
+</tbody>
+</table>
+</div>
+<p class="gray-note">아래는 SQLite 고른 상세에서 회당 캐시에 보낸 HTTP 요청 수다. <code>mget</code>·<code>mset</code>은 묶음 하나를 요청 한 건으로 세었다.</p>
+<table class="num-r">
+<thead><tr><th scope="col">TTL</th><th scope="col">기준선</th><th scope="col">최종 3회 범위</th><th scope="col">감소율</th></tr></thead>
+<tbody>
+<tr><th scope="row">60초</th><td>15,008 GET + 4,239 PUT = 19,247</td><td>2,171~2,193</td><td>88.6~88.7%</td></tr>
+<tr><th scope="row">2초</th><td>15,008 GET + 13,315 PUT = 28,323</td><td>2,143~2,244</td><td>92.1~92.4%</td></tr>
+</tbody>
+</table>
+<ul>
+<li>TTL 60초 최종 첫 회차는 <code>mget</code> 989 + GET 285 + <code>mset</code> 678 + PUT 241 = 2,193건이다. 이 회차에서 <code>mget</code> 하나에 평균 약 15개 키가 들어갔다.</li>
+<li>TTL 2초에서는 미스가 많아서 <code>mset</code> 하나에 평균 약 17~18개 키가 들어갔다.</li>
+<li>이 집계로 요청 수가 얼마나 줄었는지 확인할 수 있다. 맥의 on 개선율에서 off 개선율을 빼면 두 모드의 변화 폭 차이는 볼 수 있다. 하지만 대기와 처리 시간이 서로 영향을 주므로, 그 차이가 #40·#41의 기여율이 되지는 않는다.</li>
+</ul>
+
+<h3>이번 그리드로는 효과가 안 보이는 PR</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="효과가 안 보이는 PR">
+<table class="case-table">
+<thead><tr><th scope="col">PR</th><th scope="col">바꾼 것</th><th scope="col">안 보이는 이유</th><th scope="col">효과를 잰 곳 (WSL 서버 측정, <code>make bench</code>)</th></tr></thead>
+<tbody>
+<tr><th scope="row">#37 점진적 rehash, #35 rehash 기준, #49 버킷 초기화 나눔</th><td>해시 테이블이 커질 때 서버가 멈추지 않게 한다.</td><td>버킷 확장 시점과 개별 GET 지연을 연결해서 측정하지 않았다.</td><td>WSL 기준선의 버킷 확장 저장은 531~637 ms, 작은 GET p99는 440~546 ms(서버 기록 013). #49 실험에서 확장 저장은 99.94~110.16 → 0.21~0.29 ms, 작은 GET p99는 7.70~17.56 → 0.66~0.90 ms(024, 회차별 결과표)</td></tr>
+<tr><th scope="row">#42 수신 버퍼 한 번에 늘림, #47 mmap 기준값 고정</th><td>16 MiB 같은 큰 value를 받고 해제할 때의 비용</td><td>상품 응답은 16 MiB보다 훨씬 작다.</td><td>16 MiB 저장 max 59.6~91.1 → 35.1~55.0 ms. #47 측정에서 16 MiB 삭제 중 작은 GET 최대 지연은 33.68~39.94 → 3.12~12.60 ms(022, 5회 전체)</td></tr>
+<tr><th scope="row">#44 다음 기한까지 잠듦</th><td>요청이 없을 때 서버가 깨어나는 횟수를 줄인다.</td><td>이번 측정은 쉬지 않고 초당 500요청을 보낸다.</td><td>쉬는 서버의 깨어남 초당 39.8번 → 1.0번</td></tr>
+<tr><th scope="row">#36 SipHash 1-2</th><td>밖에서 같은 버킷에 몰리는 key를 고를 수 없게 한다.</td><td>성능 개선이 아니라 안전성 개선이다.</td><td>짧은 key에서는 차이 없음</td></tr>
+<tr><th scope="row">#43, #41의 <code>body_is_complete</code></th><td>끊긴 body를 저장하지 않는다.</td><td>정확성 수정이다.</td><td>기능 테스트로 확인</td></tr>
+<tr><th scope="row">#38, #45, #46, #48</th><td>구간 기록, RSS 출력, 측정 기록, 측정 시점</td><td>측정 도구와 문서다.</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li>서버 측정 숫자는 mini-redis 레포 <code>docs/milestones/perf/spec.md</code>와 <code>docs/measurements/server/</code>의 WSL 기록에서 가져왔다. 위 숫자는 각 WSL 측정 안의 비교에 해당한다.</li>
+<li>이번 최종 로그에는 서버만 재는 <code>make bench</code>가 없어서, 맥에서 이 PR들의 효과를 다시 확인하지는 않았다.</li>
+<li>대신 rehash 도중의 정확성을 보는 <code>perf_test</code> 7개는 이번 로그에서 모두 통과했다.</li>
+</ul>
+
+<h2 id="spikes">7. 수백 ms로 튄 값</h2>
+<p class="gray-note">각 회차의 조회·쓰기 p95와 p99를 각각 한 값으로 세었다. 아래 건수의 단위는 요청 수가 아니라 지표 값의 수다. DB마다 720개, 두 DB 합계 1,440개다.</p>
+<table>
+<thead><tr><th scope="col">DB</th><th scope="col">100 ms 초과 (off / on)</th><th scope="col">가장 큰 값</th></tr></thead>
+<tbody>
+<tr><th scope="row" rowspan="2">SQLite</th><td><span class="era base">기준선</span>44개 (27 / 17)</td><td>834.03 ms<span class="desc">반복 검색 90:10 (<code>search-repeated-90:10</code>), TTL 2초, off 1회차의 쓰기 p99</span></td></tr>
+<tr><td><span class="era final">최종</span>37개 (19 / 18)</td><td>1,772.35 ms<span class="desc"><code>list-varied-99:1</code>, TTL 60초, on 1회차의 쓰기 p99</span></td></tr>
+<tr><th scope="row" rowspan="2">PostgreSQL</th><td><span class="era base">기준선</span>18개 (10 / 8)</td><td>1,041.41 ms<span class="desc">조건이 다른 검색 99:1 (<code>search-varied-99:1</code>), TTL 2초, off 1회차의 쓰기 p99</span></td></tr>
+<tr><td><span class="era final">최종</span>12개 (5 / 7)</td><td>5,001.63 ms<span class="desc"><code>list-repeated-99:1</code>, TTL 60초, off 2회차의 쓰기 p99</span></td></tr>
+</tbody>
+</table>
+<div class="era-block">
+<span class="era base">기준선 d64ae63</span>
+<ul>
+<li>SQLite의 반복 검색 90:10(TTL 2초)은 off에서 조회 p99가 1회차 769.69 ms, 2회차 512.49 ms였다.</li>
+<li>양쪽 모드에서 큰 지연이 관측됐고, 일부 회차에는 조회와 쓰기가 함께 튀었다.</li>
+<li>요청이 어느 구간에서 지연됐는지는 이 집계만으로 특정할 수 없다.</li>
+</ul>
+</div>
+<div class="era-block final">
+<span class="era final">최종 1a64bd7</span>
+<ul>
+<li><strong>가장 큰 꼬리 지연은 캐시 off에서도 나왔다.</strong> PostgreSQL <code>list-repeated-99:1</code> TTL 60초 off 2회차의 쓰기 p99는 5,001.63 ms, 조회 p99는 4,943.39 ms였다. 같은 회차의 조회 p50은 7.37 ms다.</li>
+<li>SQLite의 최대값은 <code>list-varied-99:1</code> TTL 60초 on 1회차의 쓰기 p99 1,772.35 ms였다.</li>
+<li>캐시 없이도 긴 지연이 생겼으며, 로그와 집계만으로는 어느 구간에서 막혔는지 알 수 없다.</li>
+</ul>
+</div>
+<p class="gray-note">그래서 p99는 비교 근거로 쓰지 않고 참고만 한다. p99를 볼 때는 3회 중앙값 표와 회별 데이터 표를 같이 본다.</p>
+
+<h2 id="remaining">8. 아직 남은 문제</h2>
+<p class="gray-note">기준선 분석은 두 문제를 남겼다. PostgreSQL에서 매번 다른 조건으로 검색할 때의 일관된 지연 증가와, 캐시 off에서도 발생한 수백 ms 지연이다. 최종에서도 두 문제는 남아 있고, 아래 표의 1번과 3번 줄이 그 현재 상태다.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="남은 문제">
+<table class="case-table">
+<thead><tr><th scope="col">문제</th><th scope="col">어디서</th><th scope="col">최종에서 얼마나</th><th scope="col">기준선에서는</th></tr></thead>
+<tbody>
+<tr><th scope="row">빗나가는 목록·검색에서 캐시를 켜면 느려짐</th><td>PostgreSQL <code>*-varied*</code></td><td>on p50이 off보다 목록 +2.32~3.53 ms, 검색 +5.35~8.03 ms(on÷off 1.20~1.51)</td><td>기준선 분석에서 "원인이 남아 있음"으로 적었다. TTL 60초 조회만 기준 on÷off 목록 1.15, 검색 1.68</td></tr>
+<tr><th scope="row">SQLite 상세는 캐시를 켜도 이득이 작음</th><td>SQLite <code>detail-*</code></td><td>TTL 60초 on÷off 0.98~1.06, TTL 2초 1.14~1.25. 목표 대상 6개 중 5개에서 on이 0.03~0.28 ms 느렸다.</td><td>상세 6개 모두 on이 off보다 1.8~2.2 ms 느렸다.</td></tr>
+<tr><th scope="row">꼬리 지연이 가끔 수백 ms~수 초로 튐</th><td>양쪽 DB, off와 on 모두</td><td>100 ms를 넘는 p95·p99 지표 값 49개 / 1,440개</td><td>기준선 분석에서 "각각 봐야 함"으로 적었다. 62개 / 1,440개 (SQLite 44, PostgreSQL 18)</td></tr>
+<tr><th scope="row">수정이 섞이면 목록·검색 적중률이 떨어짐</th><td><code>*-repeated-90:10</code></td><td>적중률 약 90%. 수정 하나가 목록·검색 캐시 전체를 지우는 설계다.</td><td>같은 90.3% (SQLite <code>list-repeated-90:10</code> TTL 60초는 90.4%)</td></tr>
+<tr><th scope="row">16 MiB 저장 중 작은 GET p99가 목표(10 ms)를 넘음</th><td>서버 측정 b (WSL)</td><td>WSL 병합 사슬에서 작은 GET p99 15~26 ms. #47 후속 측정에서도 18.32~20.45 ms(022)</td><td>맥 기준선에서는 재지 않았다.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="scope">9. 측정 범위</h2>
+<table>
+<thead><tr><th scope="col">항목</th><th scope="col">기준선</th><th scope="col">최종</th></tr></thead>
+<tbody>
+<tr><th scope="row">커밋</th><td><code>d64ae63</code></td><td><code>1a64bd7</code> (#49까지 병합한 main)</td></tr>
+<tr><th scope="row">환경</th><td colspan="2">macOS arm64. 두 버전 모두 두 JSON이 커밋하지 않은 변경이 없는 상태(<code>dirty: false</code>)로 기록됐다.</td></tr>
+<tr><th scope="row">벤치 설정</th><td colspan="2">두 DB 각각 상품 10,000개, 시드 1, 연결 32개, 목표 초당 500요청, 준비 10초, 측정 30초다.</td></tr>
+<tr><th scope="row">실행 횟수</th><td colspan="2">두 DB 각각 <strong>18개 시나리오 × TTL 2종 × 캐시 모드 2종 × 3회 = 216회</strong>, 모두 <strong>432회</strong>다. 두 버전이 같은 구성이다.</td></tr>
+<tr><th scope="row">처리량</th><td colspan="2">모든 회차의 처리량은 500.27요청/초다. 이 수치는 이번 고정 부하를 처리한 결과다. 그래서 이번 비교는 같은 부하에서 응답 시간이 얼마나 줄었는지다. 최대 처리량이 늘었는지는 부하를 높인 별도 측정이 필요하다.</td></tr>
+<tr><th scope="row">원본 자료</th><td>회별 데이터 표 <code>mac-baseline-d64ae63-회별-데이터.md</code>, 실행 로그 <code>result.md</code>, SQLite JSON <code>split-grid-main.md</code>, PostgreSQL JSON <code>postgres-grid-main.md</code>, 기준선 분석 <code>기준선_테스트_분석.md</code>, <code>맥-기준선-분석.md</code></td><td>실행 로그 <code>all-tests-main.log</code>, SQLite JSON <code>sqlite-grid-main.json</code>, PostgreSQL JSON <code>postgres-grid-main.json</code></td></tr>
+</tbody>
+</table>
+<p class="gray-note">회의 문서의 계획값(예열 5초, 본 측정 15초)과 달리, 실제로는 두 버전 모두 준비 10초, 측정 30초로 재었다.</p>
+
+<h2 id="more">10. 추가 측정이 필요한 경우</h2>
+<ul>
+<li>이번 맥 테스트에서 p50이 얼마나 달라졌는지 보고하는 데는 현재 자료로 충분하다.</li>
+<li>실행 시점의 영향을 줄여 결론을 확인하려면 같은 맥에서 두 커밋을 번갈아 재면 된다.</li>
+</ul>
+<table>
+<thead><tr><th scope="col">DB</th><th scope="col">TTL</th><th scope="col">다시 잴 시나리오</th><th scope="col">확인할 내용</th></tr></thead>
+<tbody>
+<tr><th scope="row">SQLite</th><td>60초</td><td><code>detail-uniform</code>, <code>detail-uniform-99:1</code>, <code>detail-uniform-90:10</code></td><td>캐시 on/off 차이가 작은 조건의 순서와 엄격한 목표 판정</td></tr>
+<tr><th scope="row">PostgreSQL</th><td>60초</td><td><code>detail-uniform</code>, <code>search-repeated</code>, <code>search-varied</code></td><td>상세의 개선, 반복 검색 적중 이득, 매번 다른 검색의 미스 비용</td></tr>
+</tbody>
+</table>
+<ul>
+<li>두 커밋 × 6개 조건 × off/on × 3회 × 준비·측정 40초 = <strong>준비·측정 48분</strong>이다.</li>
+<li>빌드·DB 준비·전환까지 포함해 <strong>전체 2시간을 상한</strong>으로 잡는다. 같은 부하에서 p50을 재확인하는 범위다.</li>
+</ul>
+
+<h2 id="full">11. 전체 결과표</h2>
+<ul>
+<li>시간은 항목별 <strong>3회 중앙값</strong>이고 단위는 ms다.</li>
+<li>시나리오 이름 아래 회색 줄은 <a href="#map-names">2.2 테스트 지도</a>의 칸 이름이다.</li>
+<li>p99는 7장에서 말한 대로 튄 값이 섞여 있어서, 비교 근거로 쓰지 말고 참고만 한다.</li>
+</ul>
+
+<h3 id="full-final">11.1 기준선 → 최종</h3>
+<p class="gray-note">모든 화살표는 <strong>기준선 → 최종</strong>이다. 적중률은 최종의 값이고, 기준선과의 차이는 조건별 3회 중앙값 기준 최대 0.32%p다. on÷off 칸은 최종 값이 1보다 작으면 초록, 1 이상이면 주황이다.</p>
+
+<h4>SQLite · TTL 60초</h4>
+<p class="gray-note">SQLite 원본 DB · 캐시 값은 60초 뒤 만료 · 18개 시나리오</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="SQLite · TTL 60초 기준선 대비 최종"><table class="full-table"><thead><tr><th scope="col">시나리오</th><th scope="col">적중률</th><th scope="col">조회 p50 off</th><th scope="col">조회 p50 on</th><th scope="col">on÷off</th><th scope="col">조회 p95 on</th><th scope="col">조회 p99 on</th><th scope="col">쓰기 p50 on</th></tr></thead><tbody><tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>71.7%</td><td>1.95 <span class="arr">→</span> 1.55</td><td>3.82 <span class="arr">→</span> 1.60</td><td class="chg-up">1.96 <span class="arr">→</span> 1.04</td><td>5.39 <span class="arr">→</span> 4.03</td><td>7.55 <span class="arr">→</span> 11.73</td><td>—</td></tr><tr><th scope="row"><code>detail-uniform-99:1</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 99% / 쓰기 1%</span></th><td>70.9%</td><td>2.05 <span class="arr">→</span> 1.68</td><td>4.09 <span class="arr">→</span> 1.79</td><td class="chg-up">1.99 <span class="arr">→</span> 1.06</td><td>6.48 <span class="arr">→</span> 5.82</td><td>8.61 <span class="arr">→</span> 15.41</td><td>5.65 <span class="arr">→</span> 4.38</td></tr><tr><th scope="row"><code>detail-uniform-90:10</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 90% / 쓰기 10%</span></th><td>64.5%</td><td>5.78 <span class="arr">→</span> 4.38</td><td>7.95 <span class="arr">→</span> 4.66</td><td class="chg-up">1.38 <span class="arr">→</span> 1.06</td><td>13.64 <span class="arr">→</span> 13.32</td><td>18.07 <span class="arr">→</span> 19.34</td><td>8.97 <span class="arr">→</span> 6.52</td></tr><tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>78.0%</td><td>1.92 <span class="arr">→</span> 1.57</td><td>3.71 <span class="arr">→</span> 1.54</td><td class="chg-down">1.93 <span class="arr">→</span> 0.98</td><td>5.27 <span class="arr">→</span> 4.31</td><td>6.84 <span class="arr">→</span> 7.77</td><td>—</td></tr><tr><th scope="row"><code>detail-zoomed-99:1</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 99% / 쓰기 1%</span></th><td>77.0%</td><td>2.17 <span class="arr">→</span> 1.73</td><td>4.04 <span class="arr">→</span> 1.75</td><td class="chg-up">1.86 <span class="arr">→</span> 1.02</td><td>7.04 <span class="arr">→</span> 6.76</td><td>16.76 <span class="arr">→</span> 17.64</td><td>5.73 <span class="arr">→</span> 4.53</td></tr><tr><th scope="row"><code>detail-zoomed-90:10</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 90% / 쓰기 10%</span></th><td>70.2%</td><td>5.81 <span class="arr">→</span> 4.27</td><td>7.81 <span class="arr">→</span> 4.38</td><td class="chg-up">1.34 <span class="arr">→</span> 1.03</td><td>13.73 <span class="arr">→</span> 11.96</td><td>18.54 <span class="arr">→</span> 17.64</td><td>8.85 <span class="arr">→</span> 6.01</td></tr><tr><th scope="row"><code>list-repeated</code><span class="desc">목록 · 같은 조건 반복 · 읽기 100%</span></th><td>100.0%</td><td>16.01 <span class="arr">→</span> 14.70</td><td>3.03 <span class="arr">→</span> 2.23</td><td class="chg-down">0.19 <span class="arr">→</span> 0.15</td><td>4.33 <span class="arr">→</span> 5.31</td><td>6.01 <span class="arr">→</span> 7.98</td><td>—</td></tr><tr><th scope="row"><code>list-repeated-99:1</code><span class="desc">목록 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>16.14 <span class="arr">→</span> 14.73</td><td>3.35 <span class="arr">→</span> 2.37</td><td class="chg-down">0.21 <span class="arr">→</span> 0.16</td><td>6.94 <span class="arr">→</span> 7.57</td><td>8.93 <span class="arr">→</span> 14.10</td><td>5.94 <span class="arr">→</span> 5.19</td></tr><tr><th scope="row"><code>list-repeated-90:10</code><span class="desc">목록 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>15.47 <span class="arr">→</span> 15.37</td><td>9.35 <span class="arr">→</span> 6.62</td><td class="chg-down">0.60 <span class="arr">→</span> 0.43</td><td>15.90 <span class="arr">→</span> 19.13</td><td>19.32 <span class="arr">→</span> 28.31</td><td>11.04 <span class="arr">→</span> 8.77</td></tr><tr><th scope="row"><code>list-varied</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>16.65 <span class="arr">→</span> 13.49</td><td>18.52 <span class="arr">→</span> 13.17</td><td class="chg-down">1.11 <span class="arr">→</span> 0.98</td><td>24.02 <span class="arr">→</span> 26.85</td><td>27.67 <span class="arr">→</span> 45.35</td><td>—</td></tr><tr><th scope="row"><code>list-varied-99:1</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>17.04 <span class="arr">→</span> 13.05</td><td>19.04 <span class="arr">→</span> 12.68</td><td class="chg-down">1.12 <span class="arr">→</span> 0.97</td><td>24.00 <span class="arr">→</span> 27.66</td><td>29.13 <span class="arr">→</span> 334.30</td><td>19.43 <span class="arr">→</span> 14.02</td></tr><tr><th scope="row"><code>list-varied-90:10</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>17.33 <span class="arr">→</span> 14.36</td><td>18.85 <span class="arr">→</span> 13.61</td><td class="chg-down">1.09 <span class="arr">→</span> 0.95</td><td>25.87 <span class="arr">→</span> 27.49</td><td>31.44 <span class="arr">→</span> 36.29</td><td>18.94 <span class="arr">→</span> 15.05</td></tr><tr><th scope="row"><code>search-repeated</code><span class="desc">검색 · 같은 조건 반복 · 읽기 100%</span></th><td>100.0%</td><td>5.49 <span class="arr">→</span> 5.07</td><td>2.99 <span class="arr">→</span> 2.39</td><td class="chg-down">0.54 <span class="arr">→</span> 0.47</td><td>4.40 <span class="arr">→</span> 6.04</td><td>7.19 <span class="arr">→</span> 13.69</td><td>—</td></tr><tr><th scope="row"><code>search-repeated-99:1</code><span class="desc">검색 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>6.15 <span class="arr">→</span> 5.43</td><td>3.29 <span class="arr">→</span> 2.64</td><td class="chg-down">0.54 <span class="arr">→</span> 0.49</td><td>7.02 <span class="arr">→</span> 7.70</td><td>12.34 <span class="arr">→</span> 11.00</td><td>5.73 <span class="arr">→</span> 5.24</td></tr><tr><th scope="row"><code>search-repeated-90:10</code><span class="desc">검색 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>14.87 <span class="arr">→</span> 12.01</td><td>8.95 <span class="arr">→</span> 6.82</td><td class="chg-down">0.60 <span class="arr">→</span> 0.57</td><td>16.61 <span class="arr">→</span> 18.43</td><td>29.24 <span class="arr">→</span> 24.55</td><td>10.40 <span class="arr">→</span> 8.94</td></tr><tr><th scope="row"><code>search-varied</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>18.74 <span class="arr">→</span> 13.70</td><td>20.85 <span class="arr">→</span> 12.87</td><td class="chg-down">1.11 <span class="arr">→</span> 0.94</td><td>26.09 <span class="arr">→</span> 26.38</td><td>28.42 <span class="arr">→</span> 55.53</td><td>—</td></tr><tr><th scope="row"><code>search-varied-99:1</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>18.39 <span class="arr">→</span> 12.57</td><td>20.66 <span class="arr">→</span> 12.38</td><td class="chg-down">1.12 <span class="arr">→</span> 0.98</td><td>25.30 <span class="arr">→</span> 24.13</td><td>29.88 <span class="arr">→</span> 29.38</td><td>20.83 <span class="arr">→</span> 12.24</td></tr><tr><th scope="row"><code>search-varied-90:10</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>18.41 <span class="arr">→</span> 14.17</td><td>20.04 <span class="arr">→</span> 13.55</td><td class="chg-down">1.09 <span class="arr">→</span> 0.96</td><td>27.08 <span class="arr">→</span> 26.38</td><td>42.37 <span class="arr">→</span> 33.42</td><td>19.90 <span class="arr">→</span> 14.58</td></tr></tbody></table></div>
+<h4>SQLite · TTL 2초</h4>
+<p class="gray-note">SQLite 원본 DB · 캐시 값은 2초 뒤 만료 · 18개 시나리오</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="SQLite · TTL 2초 기준선 대비 최종"><table class="full-table"><thead><tr><th scope="col">시나리오</th><th scope="col">적중률</th><th scope="col">조회 p50 off</th><th scope="col">조회 p50 on</th><th scope="col">on÷off</th><th scope="col">조회 p95 on</th><th scope="col">조회 p99 on</th><th scope="col">쓰기 p50 on</th></tr></thead><tbody><tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>11.1%</td><td>1.89 <span class="arr">→</span> 1.54</td><td>5.38 <span class="arr">→</span> 1.93</td><td class="chg-up">2.84 <span class="arr">→</span> 1.25</td><td>7.06 <span class="arr">→</span> 5.49</td><td>11.55 <span class="arr">→</span> 10.85</td><td>—</td></tr><tr><th scope="row"><code>detail-uniform-99:1</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 99% / 쓰기 1%</span></th><td>11.3%</td><td>2.16 <span class="arr">→</span> 1.71</td><td>5.89 <span class="arr">→</span> 2.11</td><td class="chg-up">2.73 <span class="arr">→</span> 1.23</td><td>8.86 <span class="arr">→</span> 6.86</td><td>14.15 <span class="arr">→</span> 14.68</td><td>7.46 <span class="arr">→</span> 4.66</td></tr><tr><th scope="row"><code>detail-uniform-90:10</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 90% / 쓰기 10%</span></th><td>10.4%</td><td>5.63 <span class="arr">→</span> 4.25</td><td>8.89 <span class="arr">→</span> 5.15</td><td class="chg-up">1.58 <span class="arr">→</span> 1.21</td><td>14.44 <span class="arr">→</span> 18.16</td><td>18.33 <span class="arr">→</span> 89.13</td><td>9.96 <span class="arr">→</span> 6.96</td></tr><tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>22.8%</td><td>1.94 <span class="arr">→</span> 1.58</td><td>5.02 <span class="arr">→</span> 1.94</td><td class="chg-up">2.58 <span class="arr">→</span> 1.23</td><td>8.27 <span class="arr">→</span> 4.63</td><td>45.60 <span class="arr">→</span> 10.85</td><td>—</td></tr><tr><th scope="row"><code>detail-zoomed-99:1</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 99% / 쓰기 1%</span></th><td>22.7%</td><td>2.20 <span class="arr">→</span> 1.84</td><td>5.54 <span class="arr">→</span> 2.10</td><td class="chg-up">2.51 <span class="arr">→</span> 1.14</td><td>9.11 <span class="arr">→</span> 7.31</td><td>14.53 <span class="arr">→</span> 16.42</td><td>7.30 <span class="arr">→</span> 4.58</td></tr><tr><th scope="row"><code>detail-zoomed-90:10</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 90% / 쓰기 10%</span></th><td>21.4%</td><td>6.00 <span class="arr">→</span> 4.19</td><td>8.90 <span class="arr">→</span> 5.01</td><td class="chg-up">1.48 <span class="arr">→</span> 1.20</td><td>15.33 <span class="arr">→</span> 14.02</td><td>20.65 <span class="arr">→</span> 23.08</td><td>9.98 <span class="arr">→</span> 6.70</td></tr><tr><th scope="row"><code>list-repeated</code><span class="desc">목록 · 같은 조건 반복 · 읽기 100%</span></th><td>99.9%</td><td>15.90 <span class="arr">→</span> 14.20</td><td>3.10 <span class="arr">→</span> 2.18</td><td class="chg-down">0.19 <span class="arr">→</span> 0.15</td><td>4.57 <span class="arr">→</span> 5.44</td><td>7.08 <span class="arr">→</span> 8.61</td><td>—</td></tr><tr><th scope="row"><code>list-repeated-99:1</code><span class="desc">목록 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>16.32 <span class="arr">→</span> 14.77</td><td>3.34 <span class="arr">→</span> 2.47</td><td class="chg-down">0.20 <span class="arr">→</span> 0.17</td><td>6.82 <span class="arr">→</span> 7.71</td><td>9.36 <span class="arr">→</span> 11.53</td><td>5.93 <span class="arr">→</span> 4.93</td></tr><tr><th scope="row"><code>list-repeated-90:10</code><span class="desc">목록 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>16.69 <span class="arr">→</span> 15.11</td><td>8.63 <span class="arr">→</span> 6.66</td><td class="chg-down">0.52 <span class="arr">→</span> 0.44</td><td>16.05 <span class="arr">→</span> 18.87</td><td>19.44 <span class="arr">→</span> 27.66</td><td>9.97 <span class="arr">→</span> 8.98</td></tr><tr><th scope="row"><code>list-varied</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>16.73 <span class="arr">→</span> 13.42</td><td>18.83 <span class="arr">→</span> 13.05</td><td class="chg-down">1.13 <span class="arr">→</span> 0.97</td><td>23.57 <span class="arr">→</span> 25.68</td><td>26.41 <span class="arr">→</span> 31.07</td><td>—</td></tr><tr><th scope="row"><code>list-varied-99:1</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>17.69 <span class="arr">→</span> 13.12</td><td>19.49 <span class="arr">→</span> 12.69</td><td class="chg-down">1.10 <span class="arr">→</span> 0.97</td><td>24.92 <span class="arr">→</span> 25.27</td><td>28.07 <span class="arr">→</span> 32.73</td><td>19.78 <span class="arr">→</span> 13.89</td></tr><tr><th scope="row"><code>list-varied-90:10</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>16.73 <span class="arr">→</span> 14.20</td><td>18.63 <span class="arr">→</span> 13.29</td><td class="chg-down">1.11 <span class="arr">→</span> 0.94</td><td>25.74 <span class="arr">→</span> 27.13</td><td>40.38 <span class="arr">→</span> 38.91</td><td>18.82 <span class="arr">→</span> 14.80</td></tr><tr><th scope="row"><code>search-repeated</code><span class="desc">검색 · 같은 조건 반복 · 읽기 100%</span></th><td>99.9%</td><td>5.42 <span class="arr">→</span> 5.06</td><td>2.86 <span class="arr">→</span> 2.48</td><td class="chg-down">0.53 <span class="arr">→</span> 0.49</td><td>4.26 <span class="arr">→</span> 6.47</td><td>6.26 <span class="arr">→</span> 31.00</td><td>—</td></tr><tr><th scope="row"><code>search-repeated-99:1</code><span class="desc">검색 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>6.16 <span class="arr">→</span> 5.35</td><td>3.33 <span class="arr">→</span> 2.68</td><td class="chg-down">0.54 <span class="arr">→</span> 0.50</td><td>6.86 <span class="arr">→</span> 7.29</td><td>10.22 <span class="arr">→</span> 10.42</td><td>5.72 <span class="arr">→</span> 5.50</td></tr><tr><th scope="row"><code>search-repeated-90:10</code><span class="desc">검색 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>14.66 <span class="arr">→</span> 11.84</td><td>8.67 <span class="arr">→</span> 6.34</td><td class="chg-down">0.59 <span class="arr">→</span> 0.54</td><td>16.32 <span class="arr">→</span> 19.62</td><td>20.17 <span class="arr">→</span> 37.34</td><td>10.13 <span class="arr">→</span> 8.41</td></tr><tr><th scope="row"><code>search-varied</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>19.00 <span class="arr">→</span> 13.61</td><td>20.68 <span class="arr">→</span> 12.34</td><td class="chg-down">1.09 <span class="arr">→</span> 0.91</td><td>26.66 <span class="arr">→</span> 25.89</td><td>28.97 <span class="arr">→</span> 50.99</td><td>—</td></tr><tr><th scope="row"><code>search-varied-99:1</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>18.46 <span class="arr">→</span> 12.86</td><td>20.63 <span class="arr">→</span> 14.47</td><td class="chg-up">1.12 <span class="arr">→</span> 1.13</td><td>27.67 <span class="arr">→</span> 24.84</td><td>41.09 <span class="arr">→</span> 35.74</td><td>20.69 <span class="arr">→</span> 13.28</td></tr><tr><th scope="row"><code>search-varied-90:10</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>18.20 <span class="arr">→</span> 14.01</td><td>19.76 <span class="arr">→</span> 13.27</td><td class="chg-down">1.09 <span class="arr">→</span> 0.95</td><td>26.94 <span class="arr">→</span> 26.86</td><td>50.63 <span class="arr">→</span> 45.90</td><td>19.44 <span class="arr">→</span> 14.53</td></tr></tbody></table></div>
+<h4>PostgreSQL · TTL 60초</h4>
+<p class="gray-note">PostgreSQL 원본 DB · 캐시 값은 60초 뒤 만료 · 18개 시나리오</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="PostgreSQL · TTL 60초 기준선 대비 최종"><table class="full-table"><thead><tr><th scope="col">시나리오</th><th scope="col">적중률</th><th scope="col">조회 p50 off</th><th scope="col">조회 p50 on</th><th scope="col">on÷off</th><th scope="col">조회 p95 on</th><th scope="col">조회 p99 on</th><th scope="col">쓰기 p50 on</th></tr></thead><tbody><tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>71.7%</td><td>4.72 <span class="arr">→</span> 3.73</td><td>5.12 <span class="arr">→</span> 2.44</td><td class="chg-down">1.08 <span class="arr">→</span> 0.65</td><td>7.94 <span class="arr">→</span> 6.19</td><td>13.23 <span class="arr">→</span> 10.27</td><td>—</td></tr><tr><th scope="row"><code>detail-uniform-99:1</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 99% / 쓰기 1%</span></th><td>70.9%</td><td>5.00 <span class="arr">→</span> 3.78</td><td>5.44 <span class="arr">→</span> 2.52</td><td class="chg-down">1.09 <span class="arr">→</span> 0.67</td><td>8.91 <span class="arr">→</span> 6.19</td><td>13.10 <span class="arr">→</span> 13.55</td><td>5.95 <span class="arr">→</span> 3.63</td></tr><tr><th scope="row"><code>detail-uniform-90:10</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 90% / 쓰기 10%</span></th><td>64.5%</td><td>6.59 <span class="arr">→</span> 4.49</td><td>7.36 <span class="arr">→</span> 3.90</td><td class="chg-down">1.12 <span class="arr">→</span> 0.87</td><td>11.39 <span class="arr">→</span> 9.80</td><td>14.37 <span class="arr">→</span> 17.41</td><td>7.93 <span class="arr">→</span> 4.52</td></tr><tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>78.0%</td><td>4.74 <span class="arr">→</span> 3.64</td><td>4.70 <span class="arr">→</span> 2.12</td><td class="chg-down">0.99 <span class="arr">→</span> 0.58</td><td>7.51 <span class="arr">→</span> 5.10</td><td>9.88 <span class="arr">→</span> 8.05</td><td>—</td></tr><tr><th scope="row"><code>detail-zoomed-99:1</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 99% / 쓰기 1%</span></th><td>77.0%</td><td>4.70 <span class="arr">→</span> 3.94</td><td>4.39 <span class="arr">→</span> 2.32</td><td class="chg-down">0.93 <span class="arr">→</span> 0.59</td><td>7.39 <span class="arr">→</span> 5.86</td><td>10.95 <span class="arr">→</span> 9.03</td><td>5.14 <span class="arr">→</span> 3.44</td></tr><tr><th scope="row"><code>detail-zoomed-90:10</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 90% / 쓰기 10%</span></th><td>70.2%</td><td>6.44 <span class="arr">→</span> 3.62</td><td>7.11 <span class="arr">→</span> 2.72</td><td class="chg-down">1.10 <span class="arr">→</span> 0.75</td><td>12.43 <span class="arr">→</span> 6.68</td><td>16.16 <span class="arr">→</span> 10.67</td><td>7.41 <span class="arr">→</span> 3.36</td></tr><tr><th scope="row"><code>list-repeated</code><span class="desc">목록 · 같은 조건 반복 · 읽기 100%</span></th><td>100.0%</td><td>6.99 <span class="arr">→</span> 4.61</td><td>3.14 <span class="arr">→</span> 1.97</td><td class="chg-down">0.45 <span class="arr">→</span> 0.43</td><td>4.30 <span class="arr">→</span> 4.82</td><td>5.10 <span class="arr">→</span> 7.88</td><td>—</td></tr><tr><th scope="row"><code>list-repeated-99:1</code><span class="desc">목록 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>7.65 <span class="arr">→</span> 4.77</td><td>3.50 <span class="arr">→</span> 2.13</td><td class="chg-down">0.46 <span class="arr">→</span> 0.45</td><td>6.21 <span class="arr">→</span> 5.42</td><td>8.56 <span class="arr">→</span> 7.44</td><td>5.11 <span class="arr">→</span> 3.35</td></tr><tr><th scope="row"><code>list-repeated-90:10</code><span class="desc">목록 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>9.06 <span class="arr">→</span> 5.32</td><td>6.52 <span class="arr">→</span> 3.94</td><td class="chg-down">0.72 <span class="arr">→</span> 0.74</td><td>10.81 <span class="arr">→</span> 9.03</td><td>15.21 <span class="arr">→</span> 12.93</td><td>7.32 <span class="arr">→</span> 4.77</td></tr><tr><th scope="row"><code>list-varied</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>18.66 <span class="arr">→</span> 11.79</td><td>21.39 <span class="arr">→</span> 14.90</td><td class="chg-up">1.15 <span class="arr">→</span> 1.26</td><td>31.17 <span class="arr">→</span> 30.13</td><td>35.94 <span class="arr">→</span> 35.83</td><td>—</td></tr><tr><th scope="row"><code>list-varied-99:1</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>19.74 <span class="arr">→</span> 11.53</td><td>26.57 <span class="arr">→</span> 14.30</td><td class="chg-up">1.35 <span class="arr">→</span> 1.24</td><td>37.51 <span class="arr">→</span> 29.19</td><td>77.75 <span class="arr">→</span> 35.58</td><td>26.22 <span class="arr">→</span> 13.70</td></tr><tr><th scope="row"><code>list-varied-90:10</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>20.42 <span class="arr">→</span> 12.14</td><td>26.80 <span class="arr">→</span> 15.67</td><td class="chg-up">1.31 <span class="arr">→</span> 1.29</td><td>38.68 <span class="arr">→</span> 31.71</td><td>44.52 <span class="arr">→</span> 39.02</td><td>26.60 <span class="arr">→</span> 15.79</td></tr><tr><th scope="row"><code>search-repeated</code><span class="desc">검색 · 같은 조건 반복 · 읽기 100%</span></th><td>100.0%</td><td>10.25 <span class="arr">→</span> 6.56</td><td>3.02 <span class="arr">→</span> 1.92</td><td class="chg-down">0.29 <span class="arr">→</span> 0.29</td><td>4.18 <span class="arr">→</span> 4.64</td><td>5.59 <span class="arr">→</span> 6.26</td><td>—</td></tr><tr><th scope="row"><code>search-repeated-99:1</code><span class="desc">검색 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>9.61 <span class="arr">→</span> 6.72</td><td>3.32 <span class="arr">→</span> 2.26</td><td class="chg-down">0.35 <span class="arr">→</span> 0.34</td><td>5.70 <span class="arr">→</span> 5.60</td><td>7.21 <span class="arr">→</span> 8.55</td><td>4.81 <span class="arr">→</span> 3.62</td></tr><tr><th scope="row"><code>search-repeated-90:10</code><span class="desc">검색 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>18.35 <span class="arr">→</span> 9.39</td><td>8.24 <span class="arr">→</span> 4.60</td><td class="chg-down">0.45 <span class="arr">→</span> 0.49</td><td>15.19 <span class="arr">→</span> 10.58</td><td>30.36 <span class="arr">→</span> 14.15</td><td>9.41 <span class="arr">→</span> 5.30</td></tr><tr><th scope="row"><code>search-varied</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>28.50 <span class="arr">→</span> 15.85</td><td>47.75 <span class="arr">→</span> 23.88</td><td class="chg-up">1.68 <span class="arr">→</span> 1.51</td><td>72.74 <span class="arr">→</span> 51.15</td><td>81.15 <span class="arr">→</span> 62.65</td><td>—</td></tr><tr><th scope="row"><code>search-varied-99:1</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>29.30 <span class="arr">→</span> 16.23</td><td>52.14 <span class="arr">→</span> 22.90</td><td class="chg-up">1.78 <span class="arr">→</span> 1.41</td><td>74.09 <span class="arr">→</span> 48.42</td><td>85.19 <span class="arr">→</span> 65.99</td><td>50.11 <span class="arr">→</span> 21.21</td></tr><tr><th scope="row"><code>search-varied-90:10</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>28.87 <span class="arr">→</span> 15.96</td><td>47.00 <span class="arr">→</span> 22.65</td><td class="chg-up">1.63 <span class="arr">→</span> 1.42</td><td>73.08 <span class="arr">→</span> 49.67</td><td>83.65 <span class="arr">→</span> 59.41</td><td>45.61 <span class="arr">→</span> 22.21</td></tr></tbody></table></div>
+<h4>PostgreSQL · TTL 2초</h4>
+<p class="gray-note">PostgreSQL 원본 DB · 캐시 값은 2초 뒤 만료 · 18개 시나리오</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="PostgreSQL · TTL 2초 기준선 대비 최종"><table class="full-table"><thead><tr><th scope="col">시나리오</th><th scope="col">적중률</th><th scope="col">조회 p50 off</th><th scope="col">조회 p50 on</th><th scope="col">on÷off</th><th scope="col">조회 p95 on</th><th scope="col">조회 p99 on</th><th scope="col">쓰기 p50 on</th></tr></thead><tbody><tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>11.1%</td><td>4.73 <span class="arr">→</span> 3.76</td><td>7.89 <span class="arr">→</span> 3.99</td><td class="chg-up">1.67 <span class="arr">→</span> 1.06</td><td>10.84 <span class="arr">→</span> 8.02</td><td>16.94 <span class="arr">→</span> 12.46</td><td>—</td></tr><tr><th scope="row"><code>detail-uniform-99:1</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 99% / 쓰기 1%</span></th><td>11.3%</td><td>5.07 <span class="arr">→</span> 3.74</td><td>8.15 <span class="arr">→</span> 4.05</td><td class="chg-up">1.61 <span class="arr">→</span> 1.08</td><td>11.66 <span class="arr">→</span> 8.53</td><td>18.11 <span class="arr">→</span> 12.07</td><td>8.83 <span class="arr">→</span> 5.05</td></tr><tr><th scope="row"><code>detail-uniform-90:10</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 90% / 쓰기 10%</span></th><td>10.4%</td><td>6.24 <span class="arr">→</span> 4.47</td><td>8.27 <span class="arr">→</span> 5.13</td><td class="chg-up">1.32 <span class="arr">→</span> 1.15</td><td>12.20 <span class="arr">→</span> 11.40</td><td>14.39 <span class="arr">→</span> 18.97</td><td>8.41 <span class="arr">→</span> 5.72</td></tr><tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>22.7%</td><td>4.88 <span class="arr">→</span> 3.61</td><td>7.69 <span class="arr">→</span> 3.47</td><td class="chg-down">1.58 <span class="arr">→</span> 0.96</td><td>11.83 <span class="arr">→</span> 7.18</td><td>18.31 <span class="arr">→</span> 9.97</td><td>—</td></tr><tr><th scope="row"><code>detail-zoomed-99:1</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 99% / 쓰기 1%</span></th><td>22.7%</td><td>5.23 <span class="arr">→</span> 3.04</td><td>8.05 <span class="arr">→</span> 2.91</td><td class="chg-down">1.54 <span class="arr">→</span> 0.96</td><td>11.76 <span class="arr">→</span> 6.86</td><td>14.88 <span class="arr">→</span> 13.20</td><td>8.34 <span class="arr">→</span> 3.61</td></tr><tr><th scope="row"><code>detail-zoomed-90:10</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 90% / 쓰기 10%</span></th><td>21.4%</td><td>5.87 <span class="arr">→</span> 4.50</td><td>8.85 <span class="arr">→</span> 4.98</td><td class="chg-up">1.51 <span class="arr">→</span> 1.10</td><td>12.91 <span class="arr">→</span> 10.58</td><td>15.72 <span class="arr">→</span> 17.68</td><td>9.21 <span class="arr">→</span> 5.58</td></tr><tr><th scope="row"><code>list-repeated</code><span class="desc">목록 · 같은 조건 반복 · 읽기 100%</span></th><td>99.9%</td><td>6.84 <span class="arr">→</span> 4.55</td><td>3.16 <span class="arr">→</span> 2.01</td><td class="chg-down">0.46 <span class="arr">→</span> 0.44</td><td>4.43 <span class="arr">→</span> 4.78</td><td>6.11 <span class="arr">→</span> 6.81</td><td>—</td></tr><tr><th scope="row"><code>list-repeated-99:1</code><span class="desc">목록 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>8.01 <span class="arr">→</span> 3.94</td><td>3.48 <span class="arr">→</span> 2.03</td><td class="chg-down">0.43 <span class="arr">→</span> 0.52</td><td>6.43 <span class="arr">→</span> 4.69</td><td>9.34 <span class="arr">→</span> 6.48</td><td>5.22 <span class="arr">→</span> 3.20</td></tr><tr><th scope="row"><code>list-repeated-90:10</code><span class="desc">목록 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>9.45 <span class="arr">→</span> 5.54</td><td>5.07 <span class="arr">→</span> 3.87</td><td class="chg-down">0.54 <span class="arr">→</span> 0.70</td><td>8.47 <span class="arr">→</span> 9.03</td><td>11.15 <span class="arr">→</span> 12.67</td><td>5.73 <span class="arr">→</span> 4.66</td></tr><tr><th scope="row"><code>list-varied</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>20.05 <span class="arr">→</span> 11.48</td><td>28.32 <span class="arr">→</span> 14.95</td><td class="chg-up">1.41 <span class="arr">→</span> 1.30</td><td>37.15 <span class="arr">→</span> 29.73</td><td>41.46 <span class="arr">→</span> 34.34</td><td>—</td></tr><tr><th scope="row"><code>list-varied-99:1</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>20.63 <span class="arr">→</span> 11.54</td><td>27.72 <span class="arr">→</span> 13.86</td><td class="chg-up">1.34 <span class="arr">→</span> 1.20</td><td>40.43 <span class="arr">→</span> 27.76</td><td>48.29 <span class="arr">→</span> 33.09</td><td>28.44 <span class="arr">→</span> 13.54</td></tr><tr><th scope="row"><code>list-varied-90:10</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>19.12 <span class="arr">→</span> 12.88</td><td>24.42 <span class="arr">→</span> 16.28</td><td class="chg-up">1.28 <span class="arr">→</span> 1.26</td><td>34.30 <span class="arr">→</span> 32.41</td><td>40.24 <span class="arr">→</span> 38.60</td><td>24.27 <span class="arr">→</span> 16.29</td></tr><tr><th scope="row"><code>search-repeated</code><span class="desc">검색 · 같은 조건 반복 · 읽기 100%</span></th><td>99.9%</td><td>9.06 <span class="arr">→</span> 6.24</td><td>2.99 <span class="arr">→</span> 2.12</td><td class="chg-down">0.33 <span class="arr">→</span> 0.34</td><td>4.13 <span class="arr">→</span> 4.72</td><td>4.93 <span class="arr">→</span> 6.40</td><td>—</td></tr><tr><th scope="row"><code>search-repeated-99:1</code><span class="desc">검색 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>9.56 <span class="arr">→</span> 6.53</td><td>3.50 <span class="arr">→</span> 2.27</td><td class="chg-down">0.37 <span class="arr">→</span> 0.35</td><td>6.32 <span class="arr">→</span> 5.52</td><td>8.24 <span class="arr">→</span> 7.60</td><td>5.10 <span class="arr">→</span> 3.71</td></tr><tr><th scope="row"><code>search-repeated-90:10</code><span class="desc">검색 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>18.34 <span class="arr">→</span> 9.47</td><td>8.22 <span class="arr">→</span> 4.48</td><td class="chg-down">0.45 <span class="arr">→</span> 0.47</td><td>14.99 <span class="arr">→</span> 10.50</td><td>19.39 <span class="arr">→</span> 14.02</td><td>9.41 <span class="arr">→</span> 5.29</td></tr><tr><th scope="row"><code>search-varied</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>27.38 <span class="arr">→</span> 15.36</td><td>49.67 <span class="arr">→</span> 23.10</td><td class="chg-up">1.81 <span class="arr">→</span> 1.50</td><td>77.54 <span class="arr">→</span> 49.74</td><td>97.55 <span class="arr">→</span> 61.95</td><td>—</td></tr><tr><th scope="row"><code>search-varied-99:1</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>28.85 <span class="arr">→</span> 16.16</td><td>50.59 <span class="arr">→</span> 21.51</td><td class="chg-up">1.75 <span class="arr">→</span> 1.33</td><td>75.49 <span class="arr">→</span> 44.42</td><td>85.75 <span class="arr">→</span> 54.86</td><td>48.55 <span class="arr">→</span> 18.75</td></tr><tr><th scope="row"><code>search-varied-90:10</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>28.11 <span class="arr">→</span> 15.84</td><td>46.81 <span class="arr">→</span> 22.69</td><td class="chg-up">1.67 <span class="arr">→</span> 1.43</td><td>69.71 <span class="arr">→</span> 49.09</td><td>82.35 <span class="arr">→</span> 60.08</td><td>46.27 <span class="arr">→</span> 22.07</td></tr></tbody></table></div>
+
+<h3 id="full-base">11.2 기준선 원본표 (캐시 off → on)</h3>
+<p class="gray-note">기준선 문서의 표를 그대로 옮겼다. 모든 화살표는 <strong>캐시 off → on</strong>이다. 11.1에 없는 원본 조회 수, 기준선의 off 쪽 p95·p99·쓰기 p50이 여기에 있다.</p>
+<ul>
+<li>시간과 원본 조회 수는 항목별 3회 중앙값이다. 적중률도 회차별 값의 중앙값이다.</li>
+<li>PostgreSQL 인기 상품 상세의 TTL 2초 조건처럼 적중률이 회차마다 달라진 경우가 있다.</li>
+<li>조회 p50 변화의 음수는 캐시를 켰을 때 응답 시간이 줄었다는 뜻이다. 초록은 줄어든 칸, 주황은 늘어난 칸이다.</li>
+</ul>
+<details class="base-tables" open>
+<summary>SQLite · TTL 60초 (기준선, off → on)</summary>
+<div class="table-scroll" role="region" tabindex="0" aria-label="SQLite · TTL 60초 기준선"><table class="full-table"><thead><tr><th scope="col">시나리오</th><th scope="col">적중률</th><th scope="col">원본 조회 off → on</th><th scope="col">조회 p50 (ms)</th><th scope="col">조회 p95 (ms)</th><th scope="col">조회 p99 (ms)</th><th scope="col">쓰기 p50 (ms)</th><th scope="col">조회 p50 변화</th></tr></thead><tbody><tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>71.8%</td><td>15,008 <span class="arr">→</span> 4,239</td><td>1.95 <span class="arr">→</span> 3.82</td><td>2.94 <span class="arr">→</span> 5.39</td><td>5.36 <span class="arr">→</span> 7.55</td><td>—</td><td class="chg-up">+96.4%</td></tr><tr><th scope="row"><code>detail-uniform-99:1</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 99% / 쓰기 1%</span></th><td>70.9%</td><td>14,862 <span class="arr">→</span> 4,318</td><td>2.05 <span class="arr">→</span> 4.09</td><td>4.59 <span class="arr">→</span> 6.48</td><td>6.85 <span class="arr">→</span> 8.61</td><td>3.67 <span class="arr">→</span> 5.65</td><td class="chg-up">+99.5%</td></tr><tr><th scope="row"><code>detail-uniform-90:10</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 90% / 쓰기 10%</span></th><td>64.5%</td><td>13,523 <span class="arr">→</span> 4,799</td><td>5.78 <span class="arr">→</span> 7.95</td><td>11.79 <span class="arr">→</span> 13.64</td><td>15.27 <span class="arr">→</span> 18.07</td><td>6.88 <span class="arr">→</span> 8.97</td><td class="chg-up">+37.5%</td></tr><tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>78.0%</td><td>15,008 <span class="arr">→</span> 3,298</td><td>1.92 <span class="arr">→</span> 3.71</td><td>2.86 <span class="arr">→</span> 5.27</td><td>3.55 <span class="arr">→</span> 6.84</td><td>—</td><td class="chg-up">+93.1%</td></tr><tr><th scope="row"><code>detail-zoomed-99:1</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 99% / 쓰기 1%</span></th><td>77.1%</td><td>14,824 <span class="arr">→</span> 3,397</td><td>2.17 <span class="arr">→</span> 4.04</td><td>5.03 <span class="arr">→</span> 7.04</td><td>8.09 <span class="arr">→</span> 16.76</td><td>4.21 <span class="arr">→</span> 5.73</td><td class="chg-up">+86.1%</td></tr><tr><th scope="row"><code>detail-zoomed-90:10</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 90% / 쓰기 10%</span></th><td>70.3%</td><td>13,496 <span class="arr">→</span> 4,010</td><td>5.81 <span class="arr">→</span> 7.81</td><td>11.18 <span class="arr">→</span> 13.73</td><td>16.78 <span class="arr">→</span> 18.54</td><td>6.92 <span class="arr">→</span> 8.85</td><td class="chg-up">+34.4%</td></tr><tr><th scope="row"><code>list-repeated</code><span class="desc">목록 · 같은 조건 반복 · 읽기 100%</span></th><td>100.0%</td><td>15,008 <span class="arr">→</span> 0</td><td>16.01 <span class="arr">→</span> 3.03</td><td>18.99 <span class="arr">→</span> 4.33</td><td>26.12 <span class="arr">→</span> 6.01</td><td>—</td><td class="chg-down">−81.0%</td></tr><tr><th scope="row"><code>list-repeated-99:1</code><span class="desc">목록 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>14,876 <span class="arr">→</span> 132</td><td>16.14 <span class="arr">→</span> 3.35</td><td>20.03 <span class="arr">→</span> 6.94</td><td>26.28 <span class="arr">→</span> 8.93</td><td>17.01 <span class="arr">→</span> 5.94</td><td class="chg-down">−79.2%</td></tr><tr><th scope="row"><code>list-repeated-90:10</code><span class="desc">목록 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.4%</td><td>13,533 <span class="arr">→</span> 1,305</td><td>15.47 <span class="arr">→</span> 9.35</td><td>20.73 <span class="arr">→</span> 15.90</td><td>28.01 <span class="arr">→</span> 19.32</td><td>15.74 <span class="arr">→</span> 11.04</td><td class="chg-down">−39.6%</td></tr><tr><th scope="row"><code>list-varied</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>15,008 <span class="arr">→</span> 15,008</td><td>16.65 <span class="arr">→</span> 18.52</td><td>22.60 <span class="arr">→</span> 24.02</td><td>26.71 <span class="arr">→</span> 27.67</td><td>—</td><td class="chg-up">+11.2%</td></tr><tr><th scope="row"><code>list-varied-99:1</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>14,841 <span class="arr">→</span> 14,841</td><td>17.04 <span class="arr">→</span> 19.04</td><td>22.76 <span class="arr">→</span> 24.00</td><td>27.12 <span class="arr">→</span> 29.13</td><td>17.51 <span class="arr">→</span> 19.43</td><td class="chg-up">+11.7%</td></tr><tr><th scope="row"><code>list-varied-90:10</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>13,515 <span class="arr">→</span> 13,515</td><td>17.33 <span class="arr">→</span> 18.85</td><td>24.75 <span class="arr">→</span> 25.87</td><td>30.96 <span class="arr">→</span> 31.44</td><td>17.67 <span class="arr">→</span> 18.94</td><td class="chg-up">+8.8%</td></tr><tr><th scope="row"><code>search-repeated</code><span class="desc">검색 · 같은 조건 반복 · 읽기 100%</span></th><td>100.0%</td><td>15,008 <span class="arr">→</span> 0</td><td>5.49 <span class="arr">→</span> 2.99</td><td>10.39 <span class="arr">→</span> 4.40</td><td>17.15 <span class="arr">→</span> 7.19</td><td>—</td><td class="chg-down">−45.5%</td></tr><tr><th scope="row"><code>search-repeated-99:1</code><span class="desc">검색 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>14,876 <span class="arr">→</span> 131</td><td>6.15 <span class="arr">→</span> 3.29</td><td>10.08 <span class="arr">→</span> 7.02</td><td>19.05 <span class="arr">→</span> 12.34</td><td>7.85 <span class="arr">→</span> 5.73</td><td class="chg-down">−46.5%</td></tr><tr><th scope="row"><code>search-repeated-90:10</code><span class="desc">검색 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>13,533 <span class="arr">→</span> 1,313</td><td>14.87 <span class="arr">→</span> 8.95</td><td>27.40 <span class="arr">→</span> 16.61</td><td>97.63 <span class="arr">→</span> 29.24</td><td>15.72 <span class="arr">→</span> 10.40</td><td class="chg-down">−39.8%</td></tr><tr><th scope="row"><code>search-varied</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>15,008 <span class="arr">→</span> 15,008</td><td>18.74 <span class="arr">→</span> 20.85</td><td>24.64 <span class="arr">→</span> 26.09</td><td>32.37 <span class="arr">→</span> 28.42</td><td>—</td><td class="chg-up">+11.2%</td></tr><tr><th scope="row"><code>search-varied-99:1</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>14,858 <span class="arr">→</span> 14,858</td><td>18.39 <span class="arr">→</span> 20.66</td><td>23.65 <span class="arr">→</span> 25.30</td><td>26.22 <span class="arr">→</span> 29.88</td><td>18.75 <span class="arr">→</span> 20.83</td><td class="chg-up">+12.3%</td></tr><tr><th scope="row"><code>search-varied-90:10</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>13,489 <span class="arr">→</span> 13,489</td><td>18.41 <span class="arr">→</span> 20.04</td><td>24.93 <span class="arr">→</span> 27.08</td><td>28.95 <span class="arr">→</span> 42.37</td><td>18.44 <span class="arr">→</span> 19.90</td><td class="chg-up">+8.8%</td></tr></tbody></table></div>
+</details>
+<details class="base-tables" open>
+<summary>SQLite · TTL 2초 (기준선, off → on)</summary>
+<div class="table-scroll" role="region" tabindex="0" aria-label="SQLite · TTL 2초 기준선"><table class="full-table"><thead><tr><th scope="col">시나리오</th><th scope="col">적중률</th><th scope="col">원본 조회 off → on</th><th scope="col">조회 p50 (ms)</th><th scope="col">조회 p95 (ms)</th><th scope="col">조회 p99 (ms)</th><th scope="col">쓰기 p50 (ms)</th><th scope="col">조회 p50 변화</th></tr></thead><tbody><tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>11.3%</td><td>15,008 <span class="arr">→</span> 13,315</td><td>1.89 <span class="arr">→</span> 5.38</td><td>2.85 <span class="arr">→</span> 7.06</td><td>4.42 <span class="arr">→</span> 11.55</td><td>—</td><td class="chg-up">+184.0%</td></tr><tr><th scope="row"><code>detail-uniform-99:1</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 99% / 쓰기 1%</span></th><td>11.4%</td><td>14,862 <span class="arr">→</span> 13,175</td><td>2.16 <span class="arr">→</span> 5.89</td><td>4.73 <span class="arr">→</span> 8.86</td><td>7.43 <span class="arr">→</span> 14.15</td><td>4.01 <span class="arr">→</span> 7.46</td><td class="chg-up">+173.0%</td></tr><tr><th scope="row"><code>detail-uniform-90:10</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 90% / 쓰기 10%</span></th><td>10.5%</td><td>13,523 <span class="arr">→</span> 12,109</td><td>5.63 <span class="arr">→</span> 8.89</td><td>10.94 <span class="arr">→</span> 14.44</td><td>14.20 <span class="arr">→</span> 18.33</td><td>6.85 <span class="arr">→</span> 9.96</td><td class="chg-up">+57.9%</td></tr><tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>23.0%</td><td>15,008 <span class="arr">→</span> 11,554</td><td>1.94 <span class="arr">→</span> 5.02</td><td>3.77 <span class="arr">→</span> 8.27</td><td>13.31 <span class="arr">→</span> 45.60</td><td>—</td><td class="chg-up">+158.0%</td></tr><tr><th scope="row"><code>detail-zoomed-99:1</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 99% / 쓰기 1%</span></th><td>23.0%</td><td>14,824 <span class="arr">→</span> 11,414</td><td>2.20 <span class="arr">→</span> 5.54</td><td>6.61 <span class="arr">→</span> 9.11</td><td>11.08 <span class="arr">→</span> 14.53</td><td>4.20 <span class="arr">→</span> 7.30</td><td class="chg-up">+151.3%</td></tr><tr><th scope="row"><code>detail-zoomed-90:10</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 90% / 쓰기 10%</span></th><td>21.5%</td><td>13,496 <span class="arr">→</span> 10,591</td><td>6.00 <span class="arr">→</span> 8.90</td><td>11.28 <span class="arr">→</span> 15.33</td><td>16.30 <span class="arr">→</span> 20.65</td><td>7.01 <span class="arr">→</span> 9.98</td><td class="chg-up">+48.4%</td></tr><tr><th scope="row"><code>list-repeated</code><span class="desc">목록 · 같은 조건 반복 · 읽기 100%</span></th><td>99.9%</td><td>15,008 <span class="arr">→</span> 15</td><td>15.90 <span class="arr">→</span> 3.10</td><td>19.67 <span class="arr">→</span> 4.57</td><td>23.19 <span class="arr">→</span> 7.08</td><td>—</td><td class="chg-down">−80.5%</td></tr><tr><th scope="row"><code>list-repeated-99:1</code><span class="desc">목록 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>14,876 <span class="arr">→</span> 131</td><td>16.32 <span class="arr">→</span> 3.34</td><td>19.33 <span class="arr">→</span> 6.82</td><td>21.69 <span class="arr">→</span> 9.36</td><td>16.63 <span class="arr">→</span> 5.93</td><td class="chg-down">−79.6%</td></tr><tr><th scope="row"><code>list-repeated-90:10</code><span class="desc">목록 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>13,533 <span class="arr">→</span> 1,314</td><td>16.69 <span class="arr">→</span> 8.63</td><td>21.68 <span class="arr">→</span> 16.05</td><td>26.97 <span class="arr">→</span> 19.44</td><td>16.99 <span class="arr">→</span> 9.97</td><td class="chg-down">−48.3%</td></tr><tr><th scope="row"><code>list-varied</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>15,008 <span class="arr">→</span> 15,008</td><td>16.73 <span class="arr">→</span> 18.83</td><td>22.07 <span class="arr">→</span> 23.57</td><td>25.24 <span class="arr">→</span> 26.41</td><td>—</td><td class="chg-up">+12.5%</td></tr><tr><th scope="row"><code>list-varied-99:1</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>14,841 <span class="arr">→</span> 14,841</td><td>17.69 <span class="arr">→</span> 19.49</td><td>23.57 <span class="arr">→</span> 24.92</td><td>26.47 <span class="arr">→</span> 28.07</td><td>17.96 <span class="arr">→</span> 19.78</td><td class="chg-up">+10.1%</td></tr><tr><th scope="row"><code>list-varied-90:10</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>13,515 <span class="arr">→</span> 13,515</td><td>16.73 <span class="arr">→</span> 18.63</td><td>28.16 <span class="arr">→</span> 25.74</td><td>44.99 <span class="arr">→</span> 40.38</td><td>16.88 <span class="arr">→</span> 18.82</td><td class="chg-up">+11.3%</td></tr><tr><th scope="row"><code>search-repeated</code><span class="desc">검색 · 같은 조건 반복 · 읽기 100%</span></th><td>99.9%</td><td>15,008 <span class="arr">→</span> 15</td><td>5.42 <span class="arr">→</span> 2.86</td><td>9.40 <span class="arr">→</span> 4.26</td><td>29.24 <span class="arr">→</span> 6.26</td><td>—</td><td class="chg-down">−47.3%</td></tr><tr><th scope="row"><code>search-repeated-99:1</code><span class="desc">검색 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>14,876 <span class="arr">→</span> 131</td><td>6.16 <span class="arr">→</span> 3.33</td><td>10.80 <span class="arr">→</span> 6.86</td><td>24.12 <span class="arr">→</span> 10.22</td><td>7.84 <span class="arr">→</span> 5.72</td><td class="chg-down">−45.9%</td></tr><tr><th scope="row"><code>search-repeated-90:10</code><span class="desc">검색 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>13,533 <span class="arr">→</span> 1,313</td><td>14.66 <span class="arr">→</span> 8.67</td><td>27.36 <span class="arr">→</span> 16.32</td><td>117.10 <span class="arr">→</span> 20.17</td><td>15.43 <span class="arr">→</span> 10.13</td><td class="chg-down">−40.9%</td></tr><tr><th scope="row"><code>search-varied</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>15,008 <span class="arr">→</span> 15,008</td><td>19.00 <span class="arr">→</span> 20.68</td><td>26.09 <span class="arr">→</span> 26.66</td><td>235.79 <span class="arr">→</span> 28.97</td><td>—</td><td class="chg-up">+8.8%</td></tr><tr><th scope="row"><code>search-varied-99:1</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>14,858 <span class="arr">→</span> 14,858</td><td>18.46 <span class="arr">→</span> 20.63</td><td>27.03 <span class="arr">→</span> 27.67</td><td>53.31 <span class="arr">→</span> 41.09</td><td>19.02 <span class="arr">→</span> 20.69</td><td class="chg-up">+11.8%</td></tr><tr><th scope="row"><code>search-varied-90:10</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>13,489 <span class="arr">→</span> 13,489</td><td>18.20 <span class="arr">→</span> 19.76</td><td>24.74 <span class="arr">→</span> 26.94</td><td>35.07 <span class="arr">→</span> 50.63</td><td>18.04 <span class="arr">→</span> 19.44</td><td class="chg-up">+8.6%</td></tr></tbody></table></div>
+</details>
+<details class="base-tables" open>
+<summary>PostgreSQL · TTL 60초 (기준선, off → on)</summary>
+<div class="table-scroll" role="region" tabindex="0" aria-label="PostgreSQL · TTL 60초 기준선"><table class="full-table"><thead><tr><th scope="col">시나리오</th><th scope="col">적중률</th><th scope="col">원본 조회 off → on</th><th scope="col">조회 p50 (ms)</th><th scope="col">조회 p95 (ms)</th><th scope="col">조회 p99 (ms)</th><th scope="col">쓰기 p50 (ms)</th><th scope="col">조회 p50 변화</th></tr></thead><tbody><tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>71.8%</td><td>15,008 <span class="arr">→</span> 4,239</td><td>4.72 <span class="arr">→</span> 5.12</td><td>7.09 <span class="arr">→</span> 7.94</td><td>15.20 <span class="arr">→</span> 13.23</td><td>—</td><td class="chg-up">+8.4%</td></tr><tr><th scope="row"><code>detail-uniform-99:1</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 99% / 쓰기 1%</span></th><td>70.9%</td><td>14,862 <span class="arr">→</span> 4,318</td><td>5.00 <span class="arr">→</span> 5.44</td><td>7.66 <span class="arr">→</span> 8.91</td><td>12.41 <span class="arr">→</span> 13.10</td><td>5.56 <span class="arr">→</span> 5.95</td><td class="chg-up">+8.7%</td></tr><tr><th scope="row"><code>detail-uniform-90:10</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 90% / 쓰기 10%</span></th><td>64.5%</td><td>13,523 <span class="arr">→</span> 4,799</td><td>6.59 <span class="arr">→</span> 7.36</td><td>9.99 <span class="arr">→</span> 11.39</td><td>13.12 <span class="arr">→</span> 14.37</td><td>6.99 <span class="arr">→</span> 7.93</td><td class="chg-up">+11.7%</td></tr><tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>78.0%</td><td>15,008 <span class="arr">→</span> 3,298</td><td>4.74 <span class="arr">→</span> 4.70</td><td>7.11 <span class="arr">→</span> 7.51</td><td>8.18 <span class="arr">→</span> 9.88</td><td>—</td><td class="chg-down">−0.7%</td></tr><tr><th scope="row"><code>detail-zoomed-99:1</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 99% / 쓰기 1%</span></th><td>77.1%</td><td>14,824 <span class="arr">→</span> 3,397</td><td>4.70 <span class="arr">→</span> 4.39</td><td>7.32 <span class="arr">→</span> 7.39</td><td>8.22 <span class="arr">→</span> 10.95</td><td>5.33 <span class="arr">→</span> 5.14</td><td class="chg-down">−6.5%</td></tr><tr><th scope="row"><code>detail-zoomed-90:10</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 90% / 쓰기 10%</span></th><td>70.3%</td><td>13,496 <span class="arr">→</span> 4,009</td><td>6.44 <span class="arr">→</span> 7.11</td><td>9.89 <span class="arr">→</span> 12.43</td><td>12.54 <span class="arr">→</span> 16.16</td><td>6.77 <span class="arr">→</span> 7.41</td><td class="chg-up">+10.3%</td></tr><tr><th scope="row"><code>list-repeated</code><span class="desc">목록 · 같은 조건 반복 · 읽기 100%</span></th><td>100.0%</td><td>15,008 <span class="arr">→</span> 0</td><td>6.99 <span class="arr">→</span> 3.14</td><td>10.70 <span class="arr">→</span> 4.30</td><td>11.89 <span class="arr">→</span> 5.10</td><td>—</td><td class="chg-down">−55.1%</td></tr><tr><th scope="row"><code>list-repeated-99:1</code><span class="desc">목록 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>14,876 <span class="arr">→</span> 132</td><td>7.65 <span class="arr">→</span> 3.50</td><td>11.50 <span class="arr">→</span> 6.21</td><td>15.62 <span class="arr">→</span> 8.56</td><td>8.47 <span class="arr">→</span> 5.11</td><td class="chg-down">−54.2%</td></tr><tr><th scope="row"><code>list-repeated-90:10</code><span class="desc">목록 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>13,533 <span class="arr">→</span> 1,317</td><td>9.06 <span class="arr">→</span> 6.52</td><td>13.36 <span class="arr">→</span> 10.81</td><td>20.51 <span class="arr">→</span> 15.21</td><td>9.36 <span class="arr">→</span> 7.32</td><td class="chg-down">−28.1%</td></tr><tr><th scope="row"><code>list-varied</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>15,008 <span class="arr">→</span> 15,008</td><td>18.66 <span class="arr">→</span> 21.39</td><td>27.08 <span class="arr">→</span> 31.17</td><td>31.40 <span class="arr">→</span> 35.94</td><td>—</td><td class="chg-up">+14.6%</td></tr><tr><th scope="row"><code>list-varied-99:1</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>14,841 <span class="arr">→</span> 14,841</td><td>19.74 <span class="arr">→</span> 26.57</td><td>27.67 <span class="arr">→</span> 37.51</td><td>35.91 <span class="arr">→</span> 77.75</td><td>20.37 <span class="arr">→</span> 26.22</td><td class="chg-up">+34.6%</td></tr><tr><th scope="row"><code>list-varied-90:10</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>13,515 <span class="arr">→</span> 13,515</td><td>20.42 <span class="arr">→</span> 26.80</td><td>29.23 <span class="arr">→</span> 38.68</td><td>39.66 <span class="arr">→</span> 44.52</td><td>20.53 <span class="arr">→</span> 26.60</td><td class="chg-up">+31.2%</td></tr><tr><th scope="row"><code>search-repeated</code><span class="desc">검색 · 같은 조건 반복 · 읽기 100%</span></th><td>100.0%</td><td>15,008 <span class="arr">→</span> 0</td><td>10.25 <span class="arr">→</span> 3.02</td><td>13.22 <span class="arr">→</span> 4.18</td><td>15.86 <span class="arr">→</span> 5.59</td><td>—</td><td class="chg-down">−70.5%</td></tr><tr><th scope="row"><code>search-repeated-99:1</code><span class="desc">검색 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>14,876 <span class="arr">→</span> 132</td><td>9.61 <span class="arr">→</span> 3.32</td><td>13.21 <span class="arr">→</span> 5.70</td><td>14.62 <span class="arr">→</span> 7.21</td><td>10.07 <span class="arr">→</span> 4.81</td><td class="chg-down">−65.4%</td></tr><tr><th scope="row"><code>search-repeated-90:10</code><span class="desc">검색 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>13,533 <span class="arr">→</span> 1,317</td><td>18.35 <span class="arr">→</span> 8.24</td><td>26.41 <span class="arr">→</span> 15.19</td><td>32.28 <span class="arr">→</span> 30.36</td><td>18.28 <span class="arr">→</span> 9.41</td><td class="chg-down">−55.1%</td></tr><tr><th scope="row"><code>search-varied</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>15,008 <span class="arr">→</span> 15,008</td><td>28.50 <span class="arr">→</span> 47.75</td><td>41.80 <span class="arr">→</span> 72.74</td><td>48.06 <span class="arr">→</span> 81.15</td><td>—</td><td class="chg-up">+67.5%</td></tr><tr><th scope="row"><code>search-varied-99:1</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>14,858 <span class="arr">→</span> 14,858</td><td>29.30 <span class="arr">→</span> 52.14</td><td>42.33 <span class="arr">→</span> 74.09</td><td>52.34 <span class="arr">→</span> 85.19</td><td>28.48 <span class="arr">→</span> 50.11</td><td class="chg-up">+78.0%</td></tr><tr><th scope="row"><code>search-varied-90:10</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>13,489 <span class="arr">→</span> 13,489</td><td>28.87 <span class="arr">→</span> 47.00</td><td>42.62 <span class="arr">→</span> 73.08</td><td>50.57 <span class="arr">→</span> 83.65</td><td>28.57 <span class="arr">→</span> 45.61</td><td class="chg-up">+62.8%</td></tr></tbody></table></div>
+</details>
+<details class="base-tables" open>
+<summary>PostgreSQL · TTL 2초 (기준선, off → on)</summary>
+<div class="table-scroll" role="region" tabindex="0" aria-label="PostgreSQL · TTL 2초 기준선"><table class="full-table"><thead><tr><th scope="col">시나리오</th><th scope="col">적중률</th><th scope="col">원본 조회 off → on</th><th scope="col">조회 p50 (ms)</th><th scope="col">조회 p95 (ms)</th><th scope="col">조회 p99 (ms)</th><th scope="col">쓰기 p50 (ms)</th><th scope="col">조회 p50 변화</th></tr></thead><tbody><tr><th scope="row"><code>detail-uniform</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 100%</span></th><td>11.3%</td><td>15,008 <span class="arr">→</span> 13,315</td><td>4.73 <span class="arr">→</span> 7.89</td><td>7.09 <span class="arr">→</span> 10.84</td><td>11.31 <span class="arr">→</span> 16.94</td><td>—</td><td class="chg-up">+67.0%</td></tr><tr><th scope="row"><code>detail-uniform-99:1</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 99% / 쓰기 1%</span></th><td>11.4%</td><td>14,862 <span class="arr">→</span> 13,175</td><td>5.07 <span class="arr">→</span> 8.15</td><td>7.80 <span class="arr">→</span> 11.66</td><td>12.14 <span class="arr">→</span> 18.11</td><td>5.69 <span class="arr">→</span> 8.83</td><td class="chg-up">+60.8%</td></tr><tr><th scope="row"><code>detail-uniform-90:10</code><span class="desc">상세 · 상품을 고르게 조회 · 읽기 90% / 쓰기 10%</span></th><td>10.5%</td><td>13,523 <span class="arr">→</span> 12,109</td><td>6.24 <span class="arr">→</span> 8.27</td><td>9.69 <span class="arr">→</span> 12.20</td><td>11.52 <span class="arr">→</span> 14.39</td><td>6.52 <span class="arr">→</span> 8.41</td><td class="chg-up">+32.5%</td></tr><tr><th scope="row"><code>detail-zoomed</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 100%</span></th><td>22.4%</td><td>15,008 <span class="arr">→</span> 11,641</td><td>4.88 <span class="arr">→</span> 7.69</td><td>7.56 <span class="arr">→</span> 11.83</td><td>11.25 <span class="arr">→</span> 18.31</td><td>—</td><td class="chg-up">+57.6%</td></tr><tr><th scope="row"><code>detail-zoomed-99:1</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 99% / 쓰기 1%</span></th><td>23.0%</td><td>14,824 <span class="arr">→</span> 11,414</td><td>5.23 <span class="arr">→</span> 8.05</td><td>7.97 <span class="arr">→</span> 11.76</td><td>9.81 <span class="arr">→</span> 14.88</td><td>5.86 <span class="arr">→</span> 8.34</td><td class="chg-up">+53.9%</td></tr><tr><th scope="row"><code>detail-zoomed-90:10</code><span class="desc">상세 · 인기 상품에 집중 · 읽기 90% / 쓰기 10%</span></th><td>21.5%</td><td>13,496 <span class="arr">→</span> 10,590</td><td>5.87 <span class="arr">→</span> 8.85</td><td>9.47 <span class="arr">→</span> 12.91</td><td>12.15 <span class="arr">→</span> 15.72</td><td>6.32 <span class="arr">→</span> 9.21</td><td class="chg-up">+50.9%</td></tr><tr><th scope="row"><code>list-repeated</code><span class="desc">목록 · 같은 조건 반복 · 읽기 100%</span></th><td>99.9%</td><td>15,008 <span class="arr">→</span> 15</td><td>6.84 <span class="arr">→</span> 3.16</td><td>10.34 <span class="arr">→</span> 4.43</td><td>14.34 <span class="arr">→</span> 6.11</td><td>—</td><td class="chg-down">−53.7%</td></tr><tr><th scope="row"><code>list-repeated-99:1</code><span class="desc">목록 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>14,876 <span class="arr">→</span> 132</td><td>8.01 <span class="arr">→</span> 3.49</td><td>11.72 <span class="arr">→</span> 6.43</td><td>15.54 <span class="arr">→</span> 9.34</td><td>8.49 <span class="arr">→</span> 5.22</td><td class="chg-down">−56.5%</td></tr><tr><th scope="row"><code>list-repeated-90:10</code><span class="desc">목록 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>13,533 <span class="arr">→</span> 1,314</td><td>9.45 <span class="arr">→</span> 5.07</td><td>13.17 <span class="arr">→</span> 8.47</td><td>16.38 <span class="arr">→</span> 11.15</td><td>9.74 <span class="arr">→</span> 5.73</td><td class="chg-down">−46.3%</td></tr><tr><th scope="row"><code>list-varied</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>15,008 <span class="arr">→</span> 15,008</td><td>20.05 <span class="arr">→</span> 28.32</td><td>27.87 <span class="arr">→</span> 37.15</td><td>32.45 <span class="arr">→</span> 41.46</td><td>—</td><td class="chg-up">+41.3%</td></tr><tr><th scope="row"><code>list-varied-99:1</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>14,841 <span class="arr">→</span> 14,841</td><td>20.63 <span class="arr">→</span> 27.72</td><td>27.81 <span class="arr">→</span> 40.43</td><td>32.99 <span class="arr">→</span> 48.29</td><td>20.54 <span class="arr">→</span> 28.44</td><td class="chg-up">+34.3%</td></tr><tr><th scope="row"><code>list-varied-90:10</code><span class="desc">목록 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>13,515 <span class="arr">→</span> 13,515</td><td>19.12 <span class="arr">→</span> 24.42</td><td>26.20 <span class="arr">→</span> 34.30</td><td>34.69 <span class="arr">→</span> 40.24</td><td>19.09 <span class="arr">→</span> 24.27</td><td class="chg-up">+27.8%</td></tr><tr><th scope="row"><code>search-repeated</code><span class="desc">검색 · 같은 조건 반복 · 읽기 100%</span></th><td>99.9%</td><td>15,008 <span class="arr">→</span> 15</td><td>9.06 <span class="arr">→</span> 2.99</td><td>12.68 <span class="arr">→</span> 4.13</td><td>16.46 <span class="arr">→</span> 4.93</td><td>—</td><td class="chg-down">−66.9%</td></tr><tr><th scope="row"><code>search-repeated-99:1</code><span class="desc">검색 · 같은 조건 반복 · 읽기 99% / 쓰기 1%</span></th><td>99.1%</td><td>14,876 <span class="arr">→</span> 131</td><td>9.56 <span class="arr">→</span> 3.50</td><td>13.77 <span class="arr">→</span> 6.32</td><td>17.86 <span class="arr">→</span> 8.24</td><td>10.09 <span class="arr">→</span> 5.10</td><td class="chg-down">−63.3%</td></tr><tr><th scope="row"><code>search-repeated-90:10</code><span class="desc">검색 · 같은 조건 반복 · 읽기 90% / 쓰기 10%</span></th><td>90.3%</td><td>13,533 <span class="arr">→</span> 1,312</td><td>18.34 <span class="arr">→</span> 8.22</td><td>26.44 <span class="arr">→</span> 14.99</td><td>31.50 <span class="arr">→</span> 19.39</td><td>18.45 <span class="arr">→</span> 9.41</td><td class="chg-down">−55.1%</td></tr><tr><th scope="row"><code>search-varied</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 100%</span></th><td>0.0%</td><td>15,008 <span class="arr">→</span> 15,008</td><td>27.38 <span class="arr">→</span> 49.67</td><td>40.86 <span class="arr">→</span> 77.54</td><td>47.79 <span class="arr">→</span> 97.55</td><td>—</td><td class="chg-up">+81.4%</td></tr><tr><th scope="row"><code>search-varied-99:1</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 99% / 쓰기 1%</span></th><td>0.0%</td><td>14,858 <span class="arr">→</span> 14,858</td><td>28.85 <span class="arr">→</span> 50.59</td><td>42.16 <span class="arr">→</span> 75.49</td><td>48.54 <span class="arr">→</span> 85.75</td><td>28.16 <span class="arr">→</span> 48.55</td><td class="chg-up">+75.4%</td></tr><tr><th scope="row"><code>search-varied-90:10</code><span class="desc">검색 · 조건을 바꿔 조회 · 읽기 90% / 쓰기 10%</span></th><td>0.0%</td><td>13,489 <span class="arr">→</span> 13,489</td><td>28.11 <span class="arr">→</span> 46.81</td><td>41.41 <span class="arr">→</span> 69.71</td><td>49.32 <span class="arr">→</span> 82.35</td><td>28.27 <span class="arr">→</span> 46.27</td><td class="chg-up">+66.5%</td></tr></tbody></table></div>
+</details>
+
+<h3 id="appendix-map">11.3 부록 · 지도 위 캐시 이득 (on÷off, 기준선 → 최종)</h3>
+<p class="gray-note">2.2 테스트 지도와 같은 배치에 on÷off를 넣었다. 칸마다 기준선 값(흐린 숫자) → 최종 값이다. 칸 색은 최종 값 기준이다. 숫자는 11.1 결과표의 「on÷off」 열과 같다. on÷off는 캐시 켠 시간 ÷ 끈 시간이다. 0.5면 켜면 절반 시간, 1이면 같고, 1.5면 1.5배 느리다.</p>
+<ul class="legend" aria-label="색 범례">
+<li><i class="h-g2"></i>0.5 미만 (캐시가 2배 이상 빠름)</li>
+<li><i class="h-g1"></i>0.5~1 미만 (캐시가 빠름)</li>
+<li><i class="h-o1"></i>1~1.2 (조금 느림)</li>
+<li><i class="h-o2"></i>1.2~1.6 (느림)</li>
+<li><i class="h-o3"></i>1.6 이상 (많이 느림)</li>
+</ul>
+<figure class="heat-grid"><figcaption><strong>SQLite · TTL 60초</strong><small>칸 색 = 최종 on÷off · 큰 숫자 = 기준선 on÷off → 최종 on÷off · 아래 줄 = 최종 적중률</small></figcaption><div class="table-scroll"><table><thead><tr><th scope="col">조회 방식</th><th scope="col">읽기 100%</th><th scope="col">읽기 99% / 쓰기 1%</th><th scope="col">읽기 90% / 쓰기 10%</th></tr></thead><tbody><tr><th scope="row">상세 · 상품을 고르게 조회</th><td class="h-o1"><b><span class="was">1.96</span> → 1.04</b><small>적중 71.7%</small></td><td class="h-o1"><b><span class="was">1.99</span> → 1.06</b><small>적중 70.9%</small></td><td class="h-o1"><b><span class="was">1.38</span> → 1.06</b><small>적중 64.5%</small></td></tr><tr><th scope="row">상세 · 인기 상품에 집중</th><td class="h-g1"><b><span class="was">1.93</span> → 0.98</b><small>적중 78.0%</small></td><td class="h-o1"><b><span class="was">1.86</span> → 1.02</b><small>적중 77.0%</small></td><td class="h-o1"><b><span class="was">1.34</span> → 1.03</b><small>적중 70.2%</small></td></tr><tr><th scope="row">목록 · 같은 조건 반복</th><td class="h-g2"><b><span class="was">0.19</span> → 0.15</b><small>적중 100.0%</small></td><td class="h-g2"><b><span class="was">0.21</span> → 0.16</b><small>적중 99.1%</small></td><td class="h-g2"><b><span class="was">0.60</span> → 0.43</b><small>적중 90.3%</small></td></tr><tr><th scope="row">목록 · 조건을 바꿔 조회</th><td class="h-g1"><b><span class="was">1.11</span> → 0.98</b><small>적중 0.0%</small></td><td class="h-g1"><b><span class="was">1.12</span> → 0.97</b><small>적중 0.0%</small></td><td class="h-g1"><b><span class="was">1.09</span> → 0.95</b><small>적중 0.0%</small></td></tr><tr><th scope="row">검색 · 같은 조건 반복</th><td class="h-g2"><b><span class="was">0.54</span> → 0.47</b><small>적중 100.0%</small></td><td class="h-g2"><b><span class="was">0.54</span> → 0.49</b><small>적중 99.1%</small></td><td class="h-g1"><b><span class="was">0.60</span> → 0.57</b><small>적중 90.3%</small></td></tr><tr><th scope="row">검색 · 조건을 바꿔 조회</th><td class="h-g1"><b><span class="was">1.11</span> → 0.94</b><small>적중 0.0%</small></td><td class="h-g1"><b><span class="was">1.12</span> → 0.98</b><small>적중 0.0%</small></td><td class="h-g1"><b><span class="was">1.09</span> → 0.96</b><small>적중 0.0%</small></td></tr></tbody></table></div></figure>
+<figure class="heat-grid"><figcaption><strong>SQLite · TTL 2초</strong><small>칸 색 = 최종 on÷off · 큰 숫자 = 기준선 on÷off → 최종 on÷off · 아래 줄 = 최종 적중률</small></figcaption><div class="table-scroll"><table><thead><tr><th scope="col">조회 방식</th><th scope="col">읽기 100%</th><th scope="col">읽기 99% / 쓰기 1%</th><th scope="col">읽기 90% / 쓰기 10%</th></tr></thead><tbody><tr><th scope="row">상세 · 상품을 고르게 조회</th><td class="h-o2"><b><span class="was">2.84</span> → 1.25</b><small>적중 11.1%</small></td><td class="h-o2"><b><span class="was">2.73</span> → 1.23</b><small>적중 11.3%</small></td><td class="h-o2"><b><span class="was">1.58</span> → 1.21</b><small>적중 10.4%</small></td></tr><tr><th scope="row">상세 · 인기 상품에 집중</th><td class="h-o2"><b><span class="was">2.58</span> → 1.23</b><small>적중 22.8%</small></td><td class="h-o1"><b><span class="was">2.51</span> → 1.14</b><small>적중 22.7%</small></td><td class="h-o2"><b><span class="was">1.48</span> → 1.20</b><small>적중 21.4%</small></td></tr><tr><th scope="row">목록 · 같은 조건 반복</th><td class="h-g2"><b><span class="was">0.19</span> → 0.15</b><small>적중 99.9%</small></td><td class="h-g2"><b><span class="was">0.20</span> → 0.17</b><small>적중 99.1%</small></td><td class="h-g2"><b><span class="was">0.52</span> → 0.44</b><small>적중 90.3%</small></td></tr><tr><th scope="row">목록 · 조건을 바꿔 조회</th><td class="h-g1"><b><span class="was">1.13</span> → 0.97</b><small>적중 0.0%</small></td><td class="h-g1"><b><span class="was">1.10</span> → 0.97</b><small>적중 0.0%</small></td><td class="h-g1"><b><span class="was">1.11</span> → 0.94</b><small>적중 0.0%</small></td></tr><tr><th scope="row">검색 · 같은 조건 반복</th><td class="h-g2"><b><span class="was">0.53</span> → 0.49</b><small>적중 99.9%</small></td><td class="h-g1"><b><span class="was">0.54</span> → 0.50</b><small>적중 99.1%</small></td><td class="h-g1"><b><span class="was">0.59</span> → 0.54</b><small>적중 90.3%</small></td></tr><tr><th scope="row">검색 · 조건을 바꿔 조회</th><td class="h-g1"><b><span class="was">1.09</span> → 0.91</b><small>적중 0.0%</small></td><td class="h-o1"><b><span class="was">1.12</span> → 1.13</b><small>적중 0.0%</small></td><td class="h-g1"><b><span class="was">1.09</span> → 0.95</b><small>적중 0.0%</small></td></tr></tbody></table></div></figure>
+<figure class="heat-grid"><figcaption><strong>PostgreSQL · TTL 60초</strong><small>칸 색 = 최종 on÷off · 큰 숫자 = 기준선 on÷off → 최종 on÷off · 아래 줄 = 최종 적중률</small></figcaption><div class="table-scroll"><table><thead><tr><th scope="col">조회 방식</th><th scope="col">읽기 100%</th><th scope="col">읽기 99% / 쓰기 1%</th><th scope="col">읽기 90% / 쓰기 10%</th></tr></thead><tbody><tr><th scope="row">상세 · 상품을 고르게 조회</th><td class="h-g1"><b><span class="was">1.08</span> → 0.65</b><small>적중 71.7%</small></td><td class="h-g1"><b><span class="was">1.09</span> → 0.67</b><small>적중 70.9%</small></td><td class="h-g1"><b><span class="was">1.12</span> → 0.87</b><small>적중 64.5%</small></td></tr><tr><th scope="row">상세 · 인기 상품에 집중</th><td class="h-g1"><b><span class="was">0.99</span> → 0.58</b><small>적중 78.0%</small></td><td class="h-g1"><b><span class="was">0.93</span> → 0.59</b><small>적중 77.0%</small></td><td class="h-g1"><b><span class="was">1.10</span> → 0.75</b><small>적중 70.2%</small></td></tr><tr><th scope="row">목록 · 같은 조건 반복</th><td class="h-g2"><b><span class="was">0.45</span> → 0.43</b><small>적중 100.0%</small></td><td class="h-g2"><b><span class="was">0.46</span> → 0.45</b><small>적중 99.1%</small></td><td class="h-g1"><b><span class="was">0.72</span> → 0.74</b><small>적중 90.3%</small></td></tr><tr><th scope="row">목록 · 조건을 바꿔 조회</th><td class="h-o2"><b><span class="was">1.15</span> → 1.26</b><small>적중 0.0%</small></td><td class="h-o2"><b><span class="was">1.35</span> → 1.24</b><small>적중 0.0%</small></td><td class="h-o2"><b><span class="was">1.31</span> → 1.29</b><small>적중 0.0%</small></td></tr><tr><th scope="row">검색 · 같은 조건 반복</th><td class="h-g2"><b><span class="was">0.29</span> → 0.29</b><small>적중 100.0%</small></td><td class="h-g2"><b><span class="was">0.35</span> → 0.34</b><small>적중 99.1%</small></td><td class="h-g2"><b><span class="was">0.45</span> → 0.49</b><small>적중 90.3%</small></td></tr><tr><th scope="row">검색 · 조건을 바꿔 조회</th><td class="h-o2"><b><span class="was">1.68</span> → 1.51</b><small>적중 0.0%</small></td><td class="h-o2"><b><span class="was">1.78</span> → 1.41</b><small>적중 0.0%</small></td><td class="h-o2"><b><span class="was">1.63</span> → 1.42</b><small>적중 0.0%</small></td></tr></tbody></table></div></figure>
+<figure class="heat-grid"><figcaption><strong>PostgreSQL · TTL 2초</strong><small>칸 색 = 최종 on÷off · 큰 숫자 = 기준선 on÷off → 최종 on÷off · 아래 줄 = 최종 적중률</small></figcaption><div class="table-scroll"><table><thead><tr><th scope="col">조회 방식</th><th scope="col">읽기 100%</th><th scope="col">읽기 99% / 쓰기 1%</th><th scope="col">읽기 90% / 쓰기 10%</th></tr></thead><tbody><tr><th scope="row">상세 · 상품을 고르게 조회</th><td class="h-o1"><b><span class="was">1.67</span> → 1.06</b><small>적중 11.1%</small></td><td class="h-o1"><b><span class="was">1.61</span> → 1.08</b><small>적중 11.3%</small></td><td class="h-o1"><b><span class="was">1.32</span> → 1.15</b><small>적중 10.4%</small></td></tr><tr><th scope="row">상세 · 인기 상품에 집중</th><td class="h-g1"><b><span class="was">1.58</span> → 0.96</b><small>적중 22.7%</small></td><td class="h-g1"><b><span class="was">1.54</span> → 0.96</b><small>적중 22.7%</small></td><td class="h-o1"><b><span class="was">1.51</span> → 1.10</b><small>적중 21.4%</small></td></tr><tr><th scope="row">목록 · 같은 조건 반복</th><td class="h-g2"><b><span class="was">0.46</span> → 0.44</b><small>적중 99.9%</small></td><td class="h-g1"><b><span class="was">0.43</span> → 0.52</b><small>적중 99.1%</small></td><td class="h-g1"><b><span class="was">0.54</span> → 0.70</b><small>적중 90.3%</small></td></tr><tr><th scope="row">목록 · 조건을 바꿔 조회</th><td class="h-o2"><b><span class="was">1.41</span> → 1.30</b><small>적중 0.0%</small></td><td class="h-o2"><b><span class="was">1.34</span> → 1.20</b><small>적중 0.0%</small></td><td class="h-o2"><b><span class="was">1.28</span> → 1.26</b><small>적중 0.0%</small></td></tr><tr><th scope="row">검색 · 같은 조건 반복</th><td class="h-g2"><b><span class="was">0.33</span> → 0.34</b><small>적중 99.9%</small></td><td class="h-g2"><b><span class="was">0.37</span> → 0.35</b><small>적중 99.1%</small></td><td class="h-g2"><b><span class="was">0.45</span> → 0.47</b><small>적중 90.3%</small></td></tr><tr><th scope="row">검색 · 조건을 바꿔 조회</th><td class="h-o2"><b><span class="was">1.81</span> → 1.50</b><small>적중 0.0%</small></td><td class="h-o2"><b><span class="was">1.75</span> → 1.33</b><small>적중 0.0%</small></td><td class="h-o2"><b><span class="was">1.67</span> → 1.43</b><small>적중 0.0%</small></td></tr></tbody></table></div></figure>
+
+
+</main>
+</div>
+
+</body>
+</html>
