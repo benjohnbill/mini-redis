@@ -115,10 +115,12 @@ SQLite 설치부터 상품 데이터 준비와 두 번의 조회까지 [상품 �
 
 ### 측정 방법
 
-| | mini-redis 서버만 실행 | 상품 API + mini-redis |
+| | mini-redis 단독 | 상품 API + mini-redis 캐시 |
 |---|---|---|
-| **무엇을 확인했나** | 큰 값 저장이나 해시 테이블 확장 중에 **작은 조회가 얼마나 기다리는가** | 같은 상품 요청에서 캐시를 켜면 **응답 시간과 DB 조회 횟수가 얼마나 달라지는가** |
-| **어떻게 비교했나** | 같은 부하에서 **코드 개선 전후** 비교 | 같은 요청에서 **캐시 OFF/ON** 비교 |
+| **정확성 · 맞게 동작하나** | 저장·조회·삭제, HTTP, 동시성, 만료 | 조회 결과, 수정 후 캐시 무효화, 캐시 장애 복구 |
+| **성능 · 무엇을 쟀나** | 큰 값 저장·삭제, 만료, 해시 테이블 확장 중에 **작은 조회가 얼마나 기다리는가** | 같은 상품 요청에서 캐시를 켜면 **응답 시간과 DB 조회 횟수가 얼마나 달라지는가** |
+| **성능 · 어떻게 비교했나** | 같은 부하에서 **코드 개선 전후** | 같은 요청에서 **캐시 OFF/ON** |
+| **성능 · 측정 명령** | `make bench` · 시나리오 9개 | `make cache-bench` / `make cache-bench-postgres` · 시나리오 18개 |
 
 상품 API는 기준선과 최종 모두 **조회 패턴 6가지 × 조회·수정 비율 3가지 × TTL 2가지(60초·2초)**로, DB마다 **36개 조건**에서 캐시 OFF와 ON을 비교했습니다.
 
@@ -167,7 +169,7 @@ SQLite 설치부터 상품 데이터 준비와 두 번의 조회까지 [상품 �
 - 칸의 큰 숫자는 캐시 ON p50 − OFF p50이고, 작은 숫자는 OFF → ON p50(ms)입니다. PostgreSQL, 최종 코드, TTL 60초입니다.
 
 <p align="center">
-  <img src="docs/images/mini-redis-cache-heatmap.png" width="100%" alt="PostgreSQL 18개 시나리오, TTL 60초의 캐시 ON − OFF p50 차이: 같은 조건 반복과 상품 상세는 모든 칸이 빨라지고, 매번 다른 조건은 모든 칸이 느려집니다.">
+  <img src="docs/images/mini-redis-cache-heatmap-ttl60.png" width="100%" alt="PostgreSQL 18개 시나리오, TTL 60초의 캐시 ON − OFF p50 차이: 같은 조건 반복과 상품 상세는 모든 칸이 빨라지고, 매번 다른 조건은 모든 칸이 느려집니다.">
 </p>
 
 [두 그림의 출처 · 최종 PostgreSQL 측정 결과 (`1a64bd7`)](docs/measurements/cache-demo/010-DA-postgres-final-grid.md)
