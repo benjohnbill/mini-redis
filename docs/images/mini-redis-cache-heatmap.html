@@ -1,43 +1,34 @@
 <!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8"><title>캐시를 켜면 응답 시간이 얼마나 바뀌나</title>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- 원본입니다. 그림을 바꾸면 이 파일을 고치고 같은 이름의 .png를 다시 만듭니다.
-     숫자: PostgreSQL, 최종 코드(1a64bd7), 조회 p50 3회 중앙값. 출처는 ../measurements/cache-demo/010-DA-postgres-final-grid.md입니다.
-     칸 색과 큰 숫자 = 캐시 ON p50 − OFF p50. 색은 README 배너와 구조 그림에 맞췄습니다. -->
+     숫자: PostgreSQL, 최종 코드(1a64bd7), TTL 60초, 조회 p50 3회 중앙값. 출처는 ../measurements/cache-demo/010-DA-postgres-final-grid.md입니다.
+     칸 색과 큰 숫자 = 캐시 ON p50 − OFF p50. 색은 README 배너와 구조 그림에 맞췄습니다.
+     제목, 설명, 측정 조건은 README의 글로 둡니다. TTL 2초 결과는 측정 기록에 있습니다. -->
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--paper:#f3f1ed;--card:#fbfaf8;--ink:#232a3a;--muted:#4f5a6e;--line:#dcd8d0;
---sans:'Geist','Noto Sans KR','Malgun Gothic',sans-serif;--serif:'Instrument Serif','Noto Serif KR',serif;--mono:'Geist Mono',ui-monospace,monospace}
+--sans:'Geist','Noto Sans KR','Malgun Gothic',sans-serif;--mono:'Geist Mono',ui-monospace,monospace}
 body{font-family:var(--sans);background:var(--paper);color:var(--ink);word-break:keep-all}
-.frame{width:1280px;padding:44px 48px 32px}
-.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
-h1{font-family:var(--serif);font-weight:400;font-size:34px;letter-spacing:-.02em;margin-bottom:6px}
-.lede{font-size:16px;color:var(--muted);margin-bottom:22px}
-.panels{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 14px}
-.panel h2{font-size:17px;font-weight:700;margin-bottom:10px}
-table{width:100%;border-collapse:separate;border-spacing:3px;table-layout:fixed}
-thead th{font-size:11.5px;font-weight:600;color:var(--muted);padding-bottom:4px}
-th.grp{width:58px;font-size:12.5px;font-weight:700;text-align:left;vertical-align:middle;line-height:1.3}
-th.sc{width:104px;font-size:12.5px;font-weight:600;text-align:left;line-height:1.25}
-th.sc code{display:block;font-family:var(--mono);font-size:10px;font-weight:400;color:var(--muted)}
-tr.gs > *{border-top:0} tr.gs:not(:first-child) > *{padding-top:0}
-tbody tr.gs:not(:first-child) td, tbody tr.gs:not(:first-child) th{box-shadow:0 -5px 0 -2px var(--card)}
-td{border-radius:6px;padding:7px 4px 6px;text-align:center;height:62px}
-td b{display:block;font-family:var(--mono);font-size:15px;font-weight:600}
-td span{display:block;font-family:var(--mono);font-size:10.5px;opacity:.85;margin-top:1px}
-td small{display:block;font-size:10.5px;opacity:.8}
+.frame{width:1280px;padding:32px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 20px 16px}
+table{width:100%;border-collapse:separate;border-spacing:5px;table-layout:fixed}
+thead th{font-size:21px;font-weight:700;color:var(--muted);padding-bottom:6px}
+th.grp{width:120px;font-size:21px;font-weight:700;text-align:left;vertical-align:middle;line-height:1.3}
+th.sc{width:200px;font-size:21px;font-weight:600;text-align:left;line-height:1.3}
+th.sc code{display:block;font-family:var(--mono);font-size:15px;font-weight:500;color:var(--muted);margin-top:2px}
+tbody tr.gs:not(:first-child) td, tbody tr.gs:not(:first-child) th{box-shadow:0 -8px 0 -3px var(--card)}
+td{border-radius:8px;padding:10px 6px 9px;text-align:center;height:112px}
+td b{display:block;font-family:var(--mono);font-size:36px;font-weight:600;line-height:1.15}
+td span{display:block;font-family:var(--mono);font-size:19px;opacity:.9;margin-top:4px}
+td small{display:block;font-size:17px;opacity:.85;margin-top:1px}
 .g2{background:#2f7a4f;color:#fff} .g1{background:#a9d3b6;color:#163d27}
 .n{background:#e6e3dc;color:var(--ink)}
 .o1{background:#f1c9a5;color:#5a2a0c} .o2{background:#b8322a;color:#fff}
-.note{margin-top:16px;display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--muted)}
-.legend span{display:inline-flex;align-items:center;gap:6px;margin-left:14px}
-.legend i{width:14px;height:10px;border-radius:2px;display:inline-block}
+.legend{margin-top:22px;display:flex;justify-content:center;flex-wrap:wrap;gap:12px 34px;font-size:22px;font-weight:600;color:var(--ink)}
+.legend span{display:inline-flex;align-items:center;gap:10px}
+.legend i{width:30px;height:22px;border-radius:4px;display:inline-block}
 </style></head><body><div class="frame">
-<p class="eyebrow">Performance · PostgreSQL · 18 scenarios</p>
-<h1>캐시를 켜면 응답 시간이 얼마나 바뀌나</h1>
-<p class="lede">같은 조건을 반복하면 어느 칸에서나 빨라지고, 매번 다른 조건이면 어느 칸에서나 느려집니다.</p>
-<div class="panels"><section class="panel"><h2>TTL 60초</h2><table><thead><tr><th colspan="2"></th><th>조회 100%</th><th>조회 99% · 쓰기 1%</th><th>조회 90% · 쓰기 10%</th></tr></thead><tbody><tr class="gs"><th class="grp" rowspan="2">같은 조건 반복</th><th class="sc">검색<code>search-repeated</code></th><td class="g2"><b>−4.64 ms</b><span>6.56 → 1.92</span><small>적중 100%</small></td><td class="g2"><b>−4.46 ms</b><span>6.72 → 2.26</span><small>적중 99.1%</small></td><td class="g2"><b>−4.79 ms</b><span>9.39 → 4.60</span><small>적중 90.3%</small></td></tr><tr><th class="sc">목록<code>list-repeated</code></th><td class="g2"><b>−2.64 ms</b><span>4.61 → 1.97</span><small>적중 100%</small></td><td class="g2"><b>−2.64 ms</b><span>4.77 → 2.13</span><small>적중 99.1%</small></td><td class="g1"><b>−1.38 ms</b><span>5.32 → 3.94</span><small>적중 90.3%</small></td></tr><tr class="gs"><th class="grp" rowspan="2">상품 상세</th><th class="sc">인기 상품에 집중<code>detail-zoomed</code></th><td class="g1"><b>−1.52 ms</b><span>3.64 → 2.12</span><small>적중 78.0%</small></td><td class="g1"><b>−1.62 ms</b><span>3.94 → 2.32</span><small>적중 77.0%</small></td><td class="g1"><b>−0.90 ms</b><span>3.62 → 2.72</span><small>적중 70.2%</small></td></tr><tr><th class="sc">고르게 조회<code>detail-uniform</code></th><td class="g1"><b>−1.29 ms</b><span>3.73 → 2.44</span><small>적중 71.7%</small></td><td class="g1"><b>−1.26 ms</b><span>3.78 → 2.52</span><small>적중 70.9%</small></td><td class="g1"><b>−0.59 ms</b><span>4.49 → 3.90</span><small>적중 64.5%</small></td></tr><tr class="gs"><th class="grp" rowspan="2">매번 다른 조건</th><th class="sc">목록<code>list-varied</code></th><td class="o2"><b>+3.11 ms</b><span>11.79 → 14.90</span><small>적중 0%</small></td><td class="o1"><b>+2.77 ms</b><span>11.53 → 14.30</span><small>적중 0%</small></td><td class="o2"><b>+3.53 ms</b><span>12.14 → 15.67</span><small>적중 0%</small></td></tr><tr><th class="sc">검색<code>search-varied</code></th><td class="o2"><b>+8.03 ms</b><span>15.85 → 23.88</span><small>적중 0%</small></td><td class="o2"><b>+6.67 ms</b><span>16.23 → 22.90</span><small>적중 0%</small></td><td class="o2"><b>+6.69 ms</b><span>15.96 → 22.65</span><small>적중 0%</small></td></tr></tbody></table></section><section class="panel"><h2>TTL 2초</h2><table><thead><tr><th colspan="2"></th><th>조회 100%</th><th>조회 99% · 쓰기 1%</th><th>조회 90% · 쓰기 10%</th></tr></thead><tbody><tr class="gs"><th class="grp" rowspan="2">같은 조건 반복</th><th class="sc">검색<code>search-repeated</code></th><td class="g2"><b>−4.12 ms</b><span>6.24 → 2.12</span><small>적중 99.9%</small></td><td class="g2"><b>−4.26 ms</b><span>6.53 → 2.27</span><small>적중 99.1%</small></td><td class="g2"><b>−4.99 ms</b><span>9.47 → 4.48</span><small>적중 90.3%</small></td></tr><tr><th class="sc">목록<code>list-repeated</code></th><td class="g2"><b>−2.54 ms</b><span>4.55 → 2.01</span><small>적중 99.9%</small></td><td class="g1"><b>−1.91 ms</b><span>3.94 → 2.03</span><small>적중 99.1%</small></td><td class="g1"><b>−1.67 ms</b><span>5.54 → 3.87</span><small>적중 90.3%</small></td></tr><tr class="gs"><th class="grp" rowspan="2">상품 상세</th><th class="sc">인기 상품에 집중<code>detail-zoomed</code></th><td class="n"><b>−0.14 ms</b><span>3.61 → 3.47</span><small>적중 22.7%</small></td><td class="n"><b>−0.13 ms</b><span>3.04 → 2.91</span><small>적중 22.7%</small></td><td class="n"><b>+0.48 ms</b><span>4.50 → 4.98</span><small>적중 21.4%</small></td></tr><tr><th class="sc">고르게 조회<code>detail-uniform</code></th><td class="n"><b>+0.23 ms</b><span>3.76 → 3.99</span><small>적중 11.1%</small></td><td class="n"><b>+0.31 ms</b><span>3.74 → 4.05</span><small>적중 11.3%</small></td><td class="o1"><b>+0.66 ms</b><span>4.47 → 5.13</span><small>적중 10.4%</small></td></tr><tr class="gs"><th class="grp" rowspan="2">매번 다른 조건</th><th class="sc">목록<code>list-varied</code></th><td class="o2"><b>+3.47 ms</b><span>11.48 → 14.95</span><small>적중 0%</small></td><td class="o1"><b>+2.32 ms</b><span>11.54 → 13.86</span><small>적중 0%</small></td><td class="o2"><b>+3.40 ms</b><span>12.88 → 16.28</span><small>적중 0%</small></td></tr><tr><th class="sc">검색<code>search-varied</code></th><td class="o2"><b>+7.74 ms</b><span>15.36 → 23.10</span><small>적중 0%</small></td><td class="o2"><b>+5.35 ms</b><span>16.16 → 21.51</span><small>적중 0%</small></td><td class="o2"><b>+6.85 ms</b><span>15.84 → 22.69</span><small>적중 0%</small></td></tr></tbody></table></section></div>
-<div class="note"><span>PostgreSQL · 최종 코드 · 조회 응답 시간 중앙값(p50) · 큰 숫자 = 캐시 ON − OFF · 작은 숫자 = OFF → ON (ms)</span>
-<span class="legend"><span><i class="g2"></i>2 ms 넘게 빨라짐</span><span><i class="g1"></i>빨라짐</span><span><i class="n"></i>±0.5 ms 안</span><span><i class="o1"></i>느려짐</span><span><i class="o2"></i>3 ms 넘게 느려짐</span></span></div>
+<section class="panel"><table><thead><tr><th colspan="2"></th><th>조회 100%</th><th>조회 99% · 쓰기 1%</th><th>조회 90% · 쓰기 10%</th></tr></thead><tbody><tr class="gs"><th class="grp" rowspan="2">같은 조건 반복</th><th class="sc">검색<code>search-repeated</code></th><td class="g2"><b>−4.64 ms</b><span>6.56 → 1.92</span><small>적중 100%</small></td><td class="g2"><b>−4.46 ms</b><span>6.72 → 2.26</span><small>적중 99.1%</small></td><td class="g2"><b>−4.79 ms</b><span>9.39 → 4.60</span><small>적중 90.3%</small></td></tr><tr><th class="sc">목록<code>list-repeated</code></th><td class="g2"><b>−2.64 ms</b><span>4.61 → 1.97</span><small>적중 100%</small></td><td class="g2"><b>−2.64 ms</b><span>4.77 → 2.13</span><small>적중 99.1%</small></td><td class="g1"><b>−1.38 ms</b><span>5.32 → 3.94</span><small>적중 90.3%</small></td></tr><tr class="gs"><th class="grp" rowspan="2">상품 상세</th><th class="sc">인기 상품에 집중<code>detail-zoomed</code></th><td class="g1"><b>−1.52 ms</b><span>3.64 → 2.12</span><small>적중 78.0%</small></td><td class="g1"><b>−1.62 ms</b><span>3.94 → 2.32</span><small>적중 77.0%</small></td><td class="g1"><b>−0.90 ms</b><span>3.62 → 2.72</span><small>적중 70.2%</small></td></tr><tr><th class="sc">고르게 조회<code>detail-uniform</code></th><td class="g1"><b>−1.29 ms</b><span>3.73 → 2.44</span><small>적중 71.7%</small></td><td class="g1"><b>−1.26 ms</b><span>3.78 → 2.52</span><small>적중 70.9%</small></td><td class="g1"><b>−0.59 ms</b><span>4.49 → 3.90</span><small>적중 64.5%</small></td></tr><tr class="gs"><th class="grp" rowspan="2">매번 다른 조건</th><th class="sc">목록<code>list-varied</code></th><td class="o2"><b>+3.11 ms</b><span>11.79 → 14.90</span><small>적중 0%</small></td><td class="o1"><b>+2.77 ms</b><span>11.53 → 14.30</span><small>적중 0%</small></td><td class="o2"><b>+3.53 ms</b><span>12.14 → 15.67</span><small>적중 0%</small></td></tr><tr><th class="sc">검색<code>search-varied</code></th><td class="o2"><b>+8.03 ms</b><span>15.85 → 23.88</span><small>적중 0%</small></td><td class="o2"><b>+6.67 ms</b><span>16.23 → 22.90</span><small>적중 0%</small></td><td class="o2"><b>+6.69 ms</b><span>15.96 → 22.65</span><small>적중 0%</small></td></tr></tbody></table></section>
+<div class="legend"><span><i class="g2"></i>2 ms 넘게 빨라짐</span><span><i class="g1"></i>빨라짐</span><span><i class="o1"></i>느려짐</span><span><i class="o2"></i>3 ms 넘게 느려짐</span></div>
 </div></body></html>

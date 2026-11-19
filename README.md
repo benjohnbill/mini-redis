@@ -91,6 +91,10 @@ client ← 200과 저장한 값, 없거나 만료됐으면 404 key_not_found
 
 ## 4. ⭐ 상품 조회 데모
 
+<p align="center">
+  <img src="docs/images/mini-redis-demo.gif" width="100%" alt="상품 조회 데모 화면">
+</p>
+
 같은 상품을 두 번 조회하면 첫 요청은 DB에서 읽고, 두 번째 요청은 캐시에 저장된 응답을 받습니다.
 
 ```text
@@ -150,14 +154,20 @@ SQLite 설치부터 상품 데이터 준비와 두 번의 조회까지 [상품 �
 
 ### 캐시는 언제 유리한가
 
+- 같은 요청이 반복될수록 이득이 크고, 매번 다른 요청이면 캐시 확인·저장만 더해집니다.
+- PostgreSQL, 최종 코드, TTL 60초, 조회만 하는 시나리오의 응답 시간 중앙값(p50)입니다. 세 카드의 막대는 같은 눈금입니다.
+
 <p align="center">
-  <img src="docs/images/mini-redis-cache-when.png" width="100%" alt="캐시는 언제 유리한가 (PostgreSQL, TTL 60초): 같은 검색을 반복하면 p50이 6.56 ms에서 1.92 ms로 4.64 ms 빨라지고, 상품 상세는 3.73 ms에서 2.44 ms로 1.29 ms 빨라지고, 매번 다른 조건으로 검색하면 15.85 ms에서 23.88 ms로 8.03 ms 느려집니다.">
+  <img src="docs/images/mini-redis-cache-when.png" width="100%" alt="같은 검색을 반복하면 p50이 6.56 ms에서 1.92 ms로 4.64 ms 빨라지고, 상품 상세는 3.73 ms에서 2.44 ms로 1.29 ms 빨라지고, 매번 다른 조건으로 검색하면 15.85 ms에서 23.88 ms로 8.03 ms 느려집니다.">
 </p>
 
-이 PostgreSQL 측정에서는 같은 조건을 반복한 목록·검색이 캐시로 빨라졌고, 조건을 바꾼 목록·검색은 캐시를 켰을 때 더 느렸습니다.
+### 캐시를 켜면 응답 시간이 얼마나 바뀌나
+
+- 같은 조건을 반복하면 어느 칸에서나 빨라지고, 매번 다른 조건이면 어느 칸에서나 느려집니다.
+- 칸의 큰 숫자는 캐시 ON p50 − OFF p50이고, 작은 숫자는 OFF → ON p50(ms)입니다. PostgreSQL, 최종 코드, TTL 60초입니다.
 
 <p align="center">
-  <img src="docs/images/mini-redis-cache-heatmap.png" width="100%" alt="PostgreSQL 18개 시나리오의 캐시 ON − OFF p50 차이: TTL 60초와 2초 모두 같은 조건 반복은 모든 칸이 빨라지고, 매번 다른 조건은 모든 칸이 느려집니다. 상품 상세는 TTL 60초에서 빨라지고 TTL 2초에서는 차이가 거의 없습니다.">
+  <img src="docs/images/mini-redis-cache-heatmap.png" width="100%" alt="PostgreSQL 18개 시나리오, TTL 60초의 캐시 ON − OFF p50 차이: 같은 조건 반복과 상품 상세는 모든 칸이 빨라지고, 매번 다른 조건은 모든 칸이 느려집니다.">
 </p>
 
 [두 그림의 출처 · 최종 PostgreSQL 측정 결과 (`1a64bd7`)](docs/measurements/cache-demo/010-DA-postgres-final-grid.md)
