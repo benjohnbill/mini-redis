@@ -138,7 +138,7 @@ SQLite 설치부터 상품 데이터 준비와 두 번의 조회까지 [상품 �
 
 </details>
 
-[서버 측정 기록](docs/measurements/server/) · [상품 API 측정 기록](docs/measurements/cache-demo/)
+[서버 측정 기록](docs/measurements/server/) · [상품 API 측정 기록](docs/measurements/cache-demo/) · [성능 테스트 · 기준선과 최종 비교](docs/measurements/cache-demo/performance-baseline-vs-final.html)
 
 ### 성능 개선 사례
 
