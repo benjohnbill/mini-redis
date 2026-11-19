@@ -144,13 +144,15 @@ SQLite 설치부터 상품 데이터 준비와 두 번의 조회까지 [상품 �
 
 해시 테이블은 entry가 많아지면 버킷 배열을 키우고 entry를 새 배열로 옮깁니다. 이전에는 이 일을 저장 한 번에 모두 했습니다. 서버가 스레드 하나를 쓰기 때문에, 옮기는 동안 받은 작은 조회 요청도 기다렸습니다.
 
-| 단계 | 버킷을 늘리는 저장 한 번 (ms) | 그때 작은 GET p99 (ms) | 기록 |
-|---|---|---|---|
-| 개선 전 | 531\~637 | 440\~546 | [`server/013`](docs/measurements/server/013-CJG-b1-baseline.md) |
-| entry를 나눠 옮김 (#37) | 29\~56 | 0.68\~1.13 | [`server/014`](docs/measurements/server/014-CJG-pr37-incremental-rehash.md) |
-| 버킷 초기화도 나눔 (#49) | 0.21\~0.29 | 0.66\~0.90 | [`server/024`](docs/measurements/server/024-CJG-lazy-buckets.md) |
+| 측정 항목 | 개선 전 | entry를 나눠 옮김 (#37) | 버킷 초기화도 나눔 (#49) |
+|---|---:|---:|---:|
+| 버킷 배열을 늘린 PUT 1건 (ms) | 531\~637 | 29\~56 | **0.21\~0.29** |
+| 같은 구간의 작은 GET p99 (ms) | 440\~546 | 0.68\~1.13 | **0.66\~0.90** |
+| 측정 기록 | [`server/013`](docs/measurements/server/013-CJG-b1-baseline.md) | [`server/014`](docs/measurements/server/014-CJG-pr37-incremental-rehash.md) | [`server/024`](docs/measurements/server/024-CJG-lazy-buckets.md) |
 
-같은 노트북과 명령으로 각 단계를 3번 측정한 범위입니다. p99는 요청의 약 99%가 이 시간 안에 끝났다는 뜻입니다. 작은 GET의 p99 목표는 10 ms 이하였습니다. [단계별 전체 결과](docs/milestones/perf/spec.md#측정-결과)
+같은 노트북에서 각 단계를 3번 측정한 범위입니다. p99는 요청의 약 99%가 이 시간 안에 끝났다는 뜻입니다. 작은 GET의 p99 목표는 10 ms 이하였습니다.
+
+#49는 초기화 방식만 바꿔 따로 비교했습니다. 그 비교에서 버킷 배열을 늘린 PUT은 99.9\~110.2 ms에서 0.21\~0.29 ms로 줄었습니다. [단계별 전체 결과](docs/milestones/perf/spec.md#측정-결과)
 
 ### 캐시는 언제 유리한가
 
